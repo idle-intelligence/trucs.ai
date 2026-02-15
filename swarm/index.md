@@ -7,7 +7,7 @@ title: swarm
   
 A distributed AI system where your browser is the computer.  
   
-![a screenshot of the swarm logs as seen by a user](/swarm/swarm.png)
+<img src="/swarm/swarm.png" alt="a screenshot of the swarm logs as seen by a user" width="680">
   
 ---
   
