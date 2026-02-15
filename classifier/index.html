@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>classifier — trucs.ai</title>
+  <meta name="description" content="Client-side text classification running in the browser via WASM.">
+  <link rel="stylesheet" href="/assets/style.css">
+  <style>
+    textarea {
+      font-family: inherit;
+      width: 100%;
+      padding: 0.75em;
+      border: 1px solid #ddd;
+      border-radius: 2px;
+      resize: vertical;
+      min-height: 6em;
+      line-height: 1.6;
+      color: #111;
+      background: #fff;
+    }
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+      margin-top: 0.75em;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #results {
+      margin-top: 1.5em;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>classifier</h1>
+      This model was trained in full autonomy by a team of Claude Code agents.
+      It's a small piece of <a href="/swarm/">the swarm</a>, intended to classify input message as one of 4 classes:
+      Time, Weather, Other, or Swarm.
+
+      The tag is used by the Hive to inject relevant data into the drone's prompt.
+    <div>
+      <textarea id="input" placeholder="Enter text to classify..."></textarea>
+      <button id="classify-btn" disabled>classify</button>
+    </div>
+
+    <div id="results"></div>
+      Python for training — HuggingFace Transformers, PyTorch
+      Rust for inference — Candle compiled to WASM via wasm-pack
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script>
+    const input = document.getElementById('input');
+    const btn = document.getElementById('classify-btn');
+    const results = document.getElementById('results');
+
+    // <!-- WRITE: WASM module path and configuration -->
+
+    async function loadModel() {
+      // TODO: Load the WASM module
+      // TODO: Load the tokenizer
+      // TODO: Enable the classify button when ready
+      btn.disabled = false;
+    }
+
+    async function classify() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      btn.disabled = true;
+      results.textContent = 'Running...';
+
+      // TODO: Tokenize the input text
+      // TODO: Run inference through the WASM module
+      // TODO: Format and display results in the results div
+
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', classify);
+    loadModel();
+  </script>
+</body>
+</html>
