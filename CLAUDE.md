@@ -27,7 +27,8 @@ Flat. Each project gets a top-level directory. No `/demos/` grouping — the hom
 
 - `/classifier/` — WASM inference page (BERT text classifier, 4 classes: other/swarm/time/weather)
 - `/swarm/` — links to ruche.world
-- `/stt/`, `/tts/`, `/llm/` — future projects
+- `/llm/` — WebGPU inference page (SmolLM2-1.7B via WebLLM, single-turn chat)
+- `/stt/`, `/tts/` — future projects
 - `/ilnmtlbnm/` — profile page
 
 ## Key Files
@@ -37,7 +38,8 @@ Flat. Each project gets a top-level directory. No `/demos/` grouping — the hom
 - `assets/style.css` — single stylesheet (<80 lines)
 - `index.md` — home page
 - `ilnmtlbnm/index.md` — profile
-- `classifier/index.html` — standalone inference page
+- `classifier/index.html` — standalone inference page (WASM)
+- `llm/index.html` — standalone inference page (WebGPU)
 - `swarm/index.md` — swarm project page
 
 ## Classifier

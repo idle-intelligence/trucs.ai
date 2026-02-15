@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>llm — trucs.ai</title>
+  <meta name="description" content="Run an LLM in your browser via WebGPU. No server, no API key.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    textarea {
+      font-family: inherit;
+      width: 100%;
+      padding: 0.75em;
+      border: 1px solid #ddd;
+      border-radius: 2px;
+      resize: vertical;
+      min-height: 4em;
+      line-height: 1.6;
+      color: #111;
+      background: #fff;
+    }
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+      margin-top: 0.75em;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #output {
+      margin-top: 1.5em;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #stats {
+      margin-top: 0.75em;
+      color: #555;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>llm</h1>
+    <p>
+      A small language model running entirely in your browser via WebGPU.
+      No server, no API key. Your prompt never leaves your machine.
+    </p>
+    <p>
+      This first version is running WebLLM on WebGPU, with a SmolLM2-1.7B from HuggingFace.
+      This chat is single turn, input->output.
+    </p>
+
+    <div>
+      <textarea id="input" placeholder="Say something..." maxlength="2000"></textarea>
+      <button id="send-btn" disabled>send</button>
+    </div>
+
+    <div id="output"></div>
+    <div id="stats"></div>
+
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
+
+    const input = document.getElementById('input');
+    const btn = document.getElementById('send-btn');
+    const output = document.getElementById('output');
+    const stats = document.getElementById('stats');
+
+    let engine = null;
+
+    async function loadModel() {
+      if (!navigator.gpu) {
+        output.textContent = 'WebGPU is not supported in this browser.';
+        return;
+      }
+
+      output.textContent = 'Loading model...';
+
+      try {
+        engine = await CreateMLCEngine('SmolLM2-1.7B-Instruct-q4f16_1-MLC', {
+          initProgressCallback: (progress) => {
+            output.textContent = progress.text;
+          },
+        });
+
+        output.textContent = 'Ready.';
+        btn.disabled = false;
+      } catch (err) {
+        output.textContent = 'Failed to load: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    async function generate() {
+      const text = input.value.trim().slice(0, 2000);
+      if (!text || !engine) return;
+
+      btn.disabled = true;
+      output.textContent = '';
+      stats.textContent = '';
+
+      const start = performance.now();
+
+      try {
+        const chunks = await engine.chat.completions.create({
+          messages: [{ role: 'user', content: text }],
+          max_tokens: 512,
+          stream: true,
+        });
+
+        let tokens = 0;
+        for await (const chunk of chunks) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            output.textContent += delta;
+            tokens++;
+          }
+        }
+
+        const elapsed = (performance.now() - start) / 1000;
+        const tokSec = (tokens / elapsed).toFixed(1);
+        stats.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+      } catch (err) {
+        output.textContent = 'Error: ' + err.message;
+        console.error(err);
+      }
+
+      await engine.resetChat();
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', generate);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !btn.disabled) {
+        e.preventDefault();
+        generate();
+      }
+    });
+
+    loadModel();
+  </script>
+</body>
+</html>
