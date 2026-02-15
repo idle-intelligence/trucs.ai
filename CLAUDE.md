@@ -25,7 +25,7 @@ Monospace system font stack. Black (`#111`) on white (`#fff`). Single column, `m
 
 Flat. Each project gets a top-level directory. No `/demos/` grouping — the home page is the index.
 
-- `/classifier/` — WASM inference page
+- `/classifier/` — WASM inference page (BERT text classifier, 4 classes: other/swarm/time/weather)
 - `/swarm/` — links to ruche.world
 - `/stt/`, `/tts/`, `/llm/` — future projects
 - `/ilnmtlbnm/` — profile page

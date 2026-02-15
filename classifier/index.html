@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>classifier — trucs.ai</title>
-  <meta name="description" content="Client-side text classification running in the browser via WASM.">
-  <link rel="stylesheet" href="/assets/style.css">
+  <meta name="description" content="Client-side BERT text classification running in the browser via WASM.">
+  <link rel="stylesheet" href="../assets/style.css">
   <style>
     textarea {
       font-family: inherit;
@@ -38,59 +38,169 @@
       opacity: 0.4;
       cursor: not-allowed;
     }
+    #status {
+      margin: 0.75em 0;
+      color: #555;
+    }
     #results {
       margin-top: 1.5em;
+    }
+    .scores {
+      margin: 0.5em 0;
+    }
+    .score-row {
+      display: flex;
+      align-items: center;
+      margin: 0.25em 0;
+    }
+    .score-label {
+      width: 5em;
+    }
+    .score-bar {
+      flex: 1;
+      height: 1em;
+      background: #f5f5f5;
+      margin: 0 0.5em;
+    }
+    .score-fill {
+      height: 100%;
+      background: #111;
+    }
+    .score-pct {
+      width: 4em;
+      text-align: right;
     }
   </style>
 </head>
 <body>
   <main>
     <h1>classifier</h1>
+    <p>
       This model was trained in full autonomy by a team of Claude Code agents.
-      It's a small piece of <a href="/swarm/">the swarm</a>, intended to classify input message as one of 4 classes:
+      It's a small piece of <a href="/swarm/">the swarm</a>, intended to classify input messages as one of 4 classes:
       Time, Weather, Other, or Swarm.
-
       The tag is used by the Hive to inject relevant data into the drone's prompt.
+    </p>
+
     <div>
       <textarea id="input" placeholder="Enter text to classify..."></textarea>
       <button id="classify-btn" disabled>classify</button>
     </div>
 
     <div id="results"></div>
-      Python for training — HuggingFace Transformers, PyTorch
+
+    <p>
+      Python for training — HuggingFace Transformers, PyTorch<br>
       Rust for inference — Candle compiled to WASM via wasm-pack
+    </p>
+
     <p><a href="/">← trucs.ai</a></p>
   </main>
 
-  <script>
+  <script type="module">
+    import init, { Classifier } from './swarm_classifier.js';
+
     const input = document.getElementById('input');
     const btn = document.getElementById('classify-btn');
     const results = document.getElementById('results');
+    const status = results;
 
-    // <!-- WRITE: WASM module path and configuration -->
+    let classifier = null;
+
+    async function fetchWithProgress(url, label) {
+      const resp = await fetch(url);
+      const total = parseInt(resp.headers.get('content-length'), 10);
+      if (!total || !resp.body) {
+        return new Uint8Array(await resp.arrayBuffer());
+      }
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        const pct = ((received / total) * 100).toFixed(0);
+        status.textContent = `Downloading ${label}... ${pct}%`;
+      }
+      const buf = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) {
+        buf.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return buf;
+    }
 
     async function loadModel() {
-      // TODO: Load the WASM module
-      // TODO: Load the tokenizer
-      // TODO: Enable the classify button when ready
-      btn.disabled = false;
+      try {
+        status.textContent = 'Initializing WASM...';
+        await init();
+
+        const modelBytes = await fetchWithProgress('/classifier/models/model.safetensors', 'model weights');
+
+        status.textContent = 'Loading tokenizer...';
+        const [configResp, tokenizerResp] = await Promise.all([
+          fetch('/classifier/models/config.json'),
+          fetch('/classifier/models/tokenizer.json')
+        ]);
+        const configBytes = new Uint8Array(await configResp.arrayBuffer());
+        const tokenizerBytes = new Uint8Array(await tokenizerResp.arrayBuffer());
+
+        status.textContent = 'Building classifier...';
+        classifier = new Classifier(modelBytes, configBytes, tokenizerBytes);
+
+        status.textContent = 'Ready.';
+        btn.disabled = false;
+      } catch (err) {
+        status.textContent = 'Failed to load: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    function renderResults(result) {
+      const sorted = Object.entries(result.scores).sort((a, b) => b[1] - a[1]);
+      let html = '<div class="scores">';
+      for (const [label, score] of sorted) {
+        const pct = (score * 100).toFixed(1);
+        html += `<div class="score-row">
+          <span class="score-label">${label}</span>
+          <div class="score-bar"><div class="score-fill" style="width:${pct}%"></div></div>
+          <span class="score-pct">${pct}%</span>
+        </div>`;
+      }
+      html += '</div>';
+      results.innerHTML = html;
     }
 
     async function classify() {
       const text = input.value.trim();
-      if (!text) return;
+      if (!text || !classifier) return;
 
       btn.disabled = true;
       results.textContent = 'Running...';
 
-      // TODO: Tokenize the input text
-      // TODO: Run inference through the WASM module
-      // TODO: Format and display results in the results div
+      try {
+        const resultJson = classifier.classify(text);
+        const result = JSON.parse(resultJson);
+        renderResults(result);
+      } catch (err) {
+        results.textContent = 'Error: ' + err.message;
+        console.error(err);
+      }
 
       btn.disabled = false;
     }
 
     btn.addEventListener('click', classify);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !btn.disabled) {
+        e.preventDefault();
+        classify();
+      }
+    });
+
     loadModel();
   </script>
 </body>
