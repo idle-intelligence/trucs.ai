@@ -1,0 +1,12 @@
+title: trucs.ai
+description: client-side AI demos
+url: https://trucs.ai
+
+markdown: kramdown
+kramdown:
+  input: GFM
+
+exclude:
+  - README.md
+  - CLAUDE.md
+  - LICENSE
