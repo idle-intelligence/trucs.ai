@@ -2,25 +2,25 @@
 layout: default
 title: trucs.ai
 ---
-
+  
 # trucs.ai
-
-Welcome to trucs.ai.
-This is a collection of experiments and ideas, mainly around running AI in the browser.
-
+  
+Welcome to trucs.ai.  
+This is a collection of experiments and ideas, mainly around running AI in the browser.  
+  
 ---
-Projects list
+Projects list  
 
-A [swarm](/swarm/) of LLMs running on users idle compute (inference at home)
-A small [BERT Classifier](/classifier/)
-
-(wip)
-Browser [Speech-to-text](/stt/)
-Browser [LLM](/llm/)
-Browser [Text-to-Speech](/tts/)
-
+A [swarm](/swarm/) of LLMs running on users idle compute (inference at home)  
+A small [BERT Classifier](/classifier/)  
+  
+(wip)  
+Browser [Speech-to-text](/stt/)  
+Browser [LLM](/llm/)  
+Browser [Text-to-Speech](/tts/)  
+  
 ---
-
-[About me](/ilnmtlbnm/)
-
-An Idle Intelligence project 
+  
+[About me](/ilnmtlbnm/)  
+  
+An Idle Intelligence project   
