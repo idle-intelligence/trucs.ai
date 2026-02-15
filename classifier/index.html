@@ -83,7 +83,7 @@
     </p>
 
     <div>
-      <textarea id="input" placeholder="Enter text to classify..."></textarea>
+      <textarea id="input" placeholder="Enter text to classify..." maxlength="1000"></textarea>
       <button id="classify-btn" disabled>classify</button>
     </div>
 
@@ -175,7 +175,7 @@
     }
 
     async function classify() {
-      const text = input.value.trim();
+      const text = input.value.trim().slice(0, 1000);
       if (!text || !classifier) return;
 
       btn.disabled = true;

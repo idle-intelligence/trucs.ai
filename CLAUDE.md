@@ -40,6 +40,21 @@ Flat. Each project gets a top-level directory. No `/demos/` grouping — the hom
 - `classifier/index.html` — standalone inference page
 - `swarm/index.md` — swarm project page
 
+## Classifier
+
+The classifier is a BERT model compiled to WASM via Candle + wasm-pack. Source lives in the hive repo (`/Users/tc/Code/hive/hive-client/swarm-classifier/`).
+
+Files in `classifier/`:
+- `swarm_classifier.js` + `swarm_classifier_bg.wasm` — wasm-pack output (copied from hive repo `pkg/`)
+- `models/model.safetensors` (43 MB), `models/config.json`, `models/tokenizer.json` — copied from hive repo `public/models/`
+- `index.html` — standalone page, uses `<script type="module">` with ES module imports
+
+JS API: `import init, { Classifier } from './swarm_classifier.js'` → `await init()` → `new Classifier(modelBytes, configBytes, tokenizerBytes)` → `JSON.parse(classifier.classify(text))` returns `{ label, score, scores }`.
+
+## Local Development
+
+`python3 -m http.server 8000` from the project root, then open `http://localhost:8000/`. Required because ES modules and WASM don't load from `file://` (CORS). Standalone HTML pages must use relative paths for assets (e.g. `../assets/style.css`) so they work both locally and on GitHub Pages.
+
 ## Rules
 
 - Never add front matter to standalone HTML inference pages.
