@@ -14,14 +14,15 @@ Projects list
 A [swarm](/swarm/) of LLMs running on users idle compute (inference at home)  
 A small [BERT Classifier](/classifier/)  
   
-(wip)  
-Browser [Speech-to-text](/stt/)  
-Browser [LLM](/llm/)  
+Browser [LLM](/llm/)
+
+(wip)
+Browser [Speech-to-text](/stt/)
 Browser [Text-to-Speech](/tts/)  
   
 ---
   
-[Blog](/blog/)
+[Blog](/blog/) — writing about building this
 [About me](/ilnmtlbnm/)  
   
 An Idle Intelligence project   
