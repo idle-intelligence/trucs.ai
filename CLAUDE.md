@@ -53,6 +53,10 @@ Files in `classifier/`:
 
 JS API: `import init, { Classifier } from './swarm_classifier.js'` → `await init()` → `new Classifier(modelBytes, configBytes, tokenizerBytes)` → `JSON.parse(classifier.classify(text))` returns `{ label, score, scores }`.
 
+## LLM
+
+WebLLM-based chat page. No local binaries — the library loads from `esm.run` CDN and model weights download from HuggingFace on first use (cached by the browser). Requires WebGPU (checked at page load). Streaming responses via `engine.chat.completions.create({ stream: true })`. Single-turn only — `engine.resetChat()` after each message.
+
 ## Local Development
 
 `python3 -m http.server 8000` from the project root, then open `http://localhost:8000/`. Required because ES modules and WASM don't load from `file://` (CORS). Standalone HTML pages must use relative paths for assets (e.g. `../assets/style.css`) so they work both locally and on GitHub Pages.

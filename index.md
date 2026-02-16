@@ -21,6 +21,7 @@ Browser [Text-to-Speech](/tts/)
   
 ---
   
+[Blog](/blog/)
 [About me](/ilnmtlbnm/)  
   
 An Idle Intelligence project   

@@ -121,7 +121,7 @@
         if (done) break;
         chunks.push(value);
         received += value.length;
-        const pct = ((received / total) * 100).toFixed(0);
+        const pct = Math.min(100, (received / total) * 100).toFixed(0);
         status.textContent = `Downloading ${label}... ${pct}%`;
       }
       const buf = new Uint8Array(received);
