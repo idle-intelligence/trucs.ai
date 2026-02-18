@@ -9,7 +9,7 @@ Welcome to trucs.ai.
 This is a collection of experiments and ideas, mainly around running AI in the browser.  
   
 ---
-Projects list  
+Projects
 
 A [swarm](/swarm/) of LLMs running on users idle compute (inference at home)
 

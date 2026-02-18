@@ -3,9 +3,9 @@ layout: default
 title: "Claude and stt-web"
 ---
 
-# Claude Code and stt-web
+# Claude and stt-web
 
-As I [wrote somewhere else](/blog/writing-for-a-living),  
+As I [wrote somewhere else](/blog/are-you-an-ai-maximalist),  
 "how you use a coding agent" is a spectrum,  
 from having copilot review a single PR,  
 to blindly vibe coding 100k loc AI Slop products.  

@@ -3,7 +3,7 @@ layout: default
 title: "Are you an AI maximalist?"
 ---
 
-#Are you an AI maximalist?
+# Are you an AI maximalist?
 
 No.
 

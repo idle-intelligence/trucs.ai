@@ -24,4 +24,4 @@ Prompts, system instructions, specs for agent teams, seed datasets, role definit
 
 ---
 
-[← trucs.ai](/)
+[← blog](/blog/)
