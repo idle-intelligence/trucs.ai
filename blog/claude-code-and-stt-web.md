@@ -2,15 +2,7 @@
 layout: default
 title: "Claude Code and stt-web"
 ---
-
-# Claude Code and stt-web
-
-<img src="/blog/images/stt-web.png" alt="a screenshot of stt-web running in the browser" width="680">
-
-stt-web ugly vibe coded interface
-
----
-  
+ 
 As I [wrote somewhere else](/blog/),  
 "how you use a coding agent" is a spectrum,  
 from having copilot review a single PR,  
