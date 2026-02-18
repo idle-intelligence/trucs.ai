@@ -48,7 +48,7 @@ Claude wrote a bunch of stuff, then concluded
 
 > What would that entail?
 > I would like a full "Claude did it":
-> 1. ? 2. unleash a team of claude
+> 1\. ? 2\. unleash a team of claude
 > But what do I tell the team?
 
 It wrote a CLAUDE.md, some doc with some details, and  
