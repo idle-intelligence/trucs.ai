@@ -5,27 +5,27 @@ title: "Claude and stt-web"
 
 # Claude and stt-web
 
-As I [wrote somewhere else](/blog/are-you-an-ai-maximalist),  
-"how you use a coding agent" is a spectrum,  
-from having copilot review a single PR,  
+As I [wrote somewhere else](/blog/are-you-an-ai-maximalist),
+"how you use a coding agent" is a spectrum,
+from having copilot review a single PR,
 to blindly vibe coding 100k loc AI Slop products.  
 
-I tend to steer clear of that last type,  
-and if I am "vibe coding",  
-the project usually starts with a lot of documentation,  
+I tend to steer clear of that last type,
+and if I am "vibe coding",
+the project usually starts with a lot of documentation,
 and ends up with [more doc than code](/blog/claude-and-the-swarm-4-more-docs-than-code).  
 
 I do like to play dumb with new model releases, though.  
-Just to see how they get stuck, on what,  
-detect those failure modes,  
+Just to see how they get stuck, on what,
+detect those failure modes,
 so that I work around them when writing for LLMs.  
 
-I've got that old idea of doing an STT→LLM→TTS loop fully "web",  
-running local models in browser tabs.  
+I've got that old idea of doing an STT→LLM→TTS loop fully "web",
+running local models in browser tabs.
 Maybe at the time you're reading this, it's done at [trucs.ai](/).  
 
-_Bref_, today I was thinking about doing the STT part,  
-and was about to take an off-the-shelf reliable web compatible STT,  
+_Bref_, today I was thinking about doing the STT part,
+and was about to take an off-the-shelf reliable web compatible STT,
 like a small whisper or something.  
 
 Instead, I reached out to Claude (in teams mode) with a project designed to fail:  
@@ -43,7 +43,7 @@ Here's the actual prompt:
 > My goal would be: if something that isn't bespoke already exist, use it.  
 > If not, let's build a WebGPU or WASM demo  
 
-Claude wrote a bunch of stuff, then concluded  
+Claude wrote a bunch of stuff, then concluded:  
 "Kyutai 1B would be the dream candidate to port to WebGPU/WASM but nobody's done it yet."
 
 > What would that entail?  
@@ -59,33 +59,29 @@ It wrote a CLAUDE.md, some doc with some details, and
 > You're porting Kyutai STT 1B (a streaming speech-to-text transformer) to run 100% client-side in a browser using Rust → WASM + WebGPU. The model is 1B params, you need to Q4 quantize it to ~500MB. The audio tokenizer (Mimi) already exists in Rust. The transformer inference needs to be rewritten from Candle to Burn (which has a wgpu backend). Use voxtral-mini-realtime-rs as your architectural reference — they solved the same problem for a larger model. Ship a demo that captures mic audio and streams transcription text in real-time.
 
 It didn't make a team. I was annoyed.  
-But I just forgot to turn it on...
+But I just forgot to allow it...
 
 >    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
 
-My next prompt was about the team  
-"Lead/opus, ML Engineer/sonnet, Systems Programmer/sonnet, ML Systems Engineer/opus, Frontend Engineer/sonnet" and off we went.  
+My next prompt was about the team: "Lead/opus, ML Engineer/sonnet, Systems Programmer/sonnet, ML Systems Engineer/opus, Frontend Engineer/sonnet" and off we went.  
 
 As I expected, the team of Claude Code got stuck on weird bugs, build issues, ... while writing a lot of useless code.
 Handling the audio pipeline, building a quantized version of a model, wasm, wgpu, all at once, impossible.
 
 I let it struggle.  
 Looked from time to time as the team members messaged each other, not "understanding" anything.
-When it announced with all its LLM faked satisfaction that it was done, hours later,
-I opened the website, and of course it wasn't working.
+When it announced with all its LLM faked satisfaction that it was done, hours later, I opened the website, and of course it wasn't working.
 
 Of course.
 
-But... it was kinda close.  
-Too close to let it stay stuck like that.  
+But... it was kinda close. Too close to let it stay stuck like that.  
 
 I helped. A little.  
 Nudged to leverage the rust tooling to run tests.  
 Nudged to add more logs.  
 Nudged to run actual end to end tests.  
 
-When I had something actually working,  
-I spun another team of Claude Code to polish:  
+When I had something actually working, I spun another team of Claude Code to polish:  
 review, cleanup, find issues with the code, the architecture, profile, improve performance.  
 
 You can test the result at [trucs.ai/stt](/stt/).  
