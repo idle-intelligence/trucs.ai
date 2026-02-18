@@ -27,7 +27,7 @@ Client side — 4 commits:
 | 23:51 | Download progress + GPU memory detection |
 | 08:21 | Fix: answerer-only registration when classifier fails |
 
-Core work in 11 minutes. The last commit, 90 minutes later, was a graceful degradation fix from integration testing. 4 files, +145/-36 lines.
+Core work in 11 minutes.
 
 Server side — 10 commits:
 
@@ -43,7 +43,8 @@ Server side — 10 commits:
 | 08:09 | 'other' instead of 'unrouted' in log |
 | 08:18 | Fix: busy_answerers race, message leak |
 
-10 commits in 82 minutes.  
+10 commits in 51 minutes.
+  
 The [review](/blog/claude-and-the-swarm-3-review-team) found 4 bugs, fixed in 3 more commits.  
 Both repos merged within 1 second. 08:22:26 and 08:22:27.  
 
