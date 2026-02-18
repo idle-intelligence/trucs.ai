@@ -36,20 +36,20 @@ Just a vague goal, and some reference implementations.
 
 Here's the actual prompt:
 
-> I would like to use the latest mistral STT,
-> Is there already a way to run it in the browser?
-> Is it CPU or GPU?
-> Are there any other candidates? Kyutai?
-> My goal would be: if something that isn't bespoke already exist, use it.
-> If not, let's build a WebGPU or WASM demo
+> I would like to use the latest mistral STT,  
+> Is there already a way to run it in the browser?  
+> Is it CPU or GPU?  
+> Are there any other candidates? Kyutai?  
+> My goal would be: if something that isn't bespoke already exist, use it.  
+> If not, let's build a WebGPU or WASM demo  
 
 Claude wrote a bunch of stuff, then concluded  
 "Kyutai 1B would be the dream candidate to port to WebGPU/WASM but nobody's done it yet."
 
-> What would that entail?
-> I would like a full "Claude did it":
-> 1\. ? 2\. unleash a team of claude
-> But what do I tell the team?
+> What would that entail?  
+> I would like a full "Claude did it":  
+> 1\. ? 2\. unleash a team of claude  
+> But what do I tell the team?  
 
 It wrote a CLAUDE.md, some doc with some details, and  
 
@@ -74,6 +74,8 @@ Looked from time to time as the team members messaged each other, not "understan
 When it announced with all its LLM faked satisfaction that it was done, hours later,
 I opened the website, and of course it wasn't working.
 
+Of course.
+
 But... it was kinda close.  
 Too close to let it stay stuck like that.  
 
@@ -84,9 +86,9 @@ Nudged to run actual end to end tests.
 
 When I had something actually working,  
 I spun another team of Claude Code to polish:  
-review, cleanup, find obvious and less obvious issues, profile, improve performance.  
+review, cleanup, find issues with the code, the architecture, profile, improve performance.  
 
-You can see the result and test it at [trucs.ai/stt](/stt/).  
+You can test the result at [trucs.ai/stt](/stt/).  
 
 Did _I_ fail? Not sure if AI Slop or not, haven't read [the code](https://github.com/idle-intelligence/stt-web) yet.  
 
