@@ -28,7 +28,6 @@
       color: #111;
       cursor: pointer;
       border-radius: 2px;
-      margin-top: 0.75em;
     }
     button:hover {
       background: #111;
@@ -42,9 +41,19 @@
       margin-top: 1.5em;
       white-space: pre-wrap;
       word-break: break-word;
+      min-height: 4em;
     }
     #stats {
-      margin-top: 0.75em;
+      margin-top: 0.5em;
+      color: #999;
+      font-size: 0.8rem;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
       color: #555;
       font-size: 0.85rem;
     }
@@ -70,10 +79,12 @@
     <div id="output"></div>
     <div id="stats"></div>
 
-    <p>
-      <button id="download-btn">download model</button>
-      <span id="download-note" style="margin-left: 0.5em; color: #555; font-size: 0.85rem;">we are storing the model locally: ~1GB</span>
-    </p>
+    <hr>
+
+    <div id="model-status">
+      <button id="load-btn">download</button>
+      <span id="status-text"></span>
+    </div>
 
     <p>Using <a href="https://github.com/mlc-ai/web-llm">WebLLM</a></p>
 
@@ -85,37 +96,57 @@
     import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
 
     const input = document.getElementById('input');
-    const btn = document.getElementById('send-btn');
-    const downloadBtn = document.getElementById('download-btn');
+    const sendBtn = document.getElementById('send-btn');
+    const loadBtn = document.getElementById('load-btn');
+    const statusText = document.getElementById('status-text');
     const output = document.getElementById('output');
     const stats = document.getElementById('stats');
 
     let engine = null;
+    let isCached = false;
+
+    // Check if model is cached
+    try {
+      const keys = await caches.keys();
+      for (const key of keys) {
+        const cache = await caches.open(key);
+        const matched = await cache.keys();
+        if (matched.some(r => r.url.includes('SmolLM2'))) {
+          isCached = true;
+          loadBtn.textContent = 'load';
+          break;
+        }
+      }
+    } catch (_) {}
+    statusText.textContent = isCached
+      ? 'model cached locally: ~1GB'
+      : 'we are storing the model locally: ~1GB';
+
+    if (!navigator.gpu) {
+      statusText.textContent = 'WebGPU is not supported in this browser.';
+      loadBtn.disabled = true;
+    }
 
     async function loadModel() {
-      if (!navigator.gpu) {
-        output.textContent = 'WebGPU is not supported in this browser.';
-        downloadBtn.disabled = true;
-        return;
-      }
-
-      downloadBtn.disabled = true;
-      output.textContent = 'Loading model...';
+      loadBtn.disabled = true;
+      statusText.textContent = 'Loading...';
 
       try {
         engine = await CreateMLCEngine('SmolLM2-1.7B-Instruct-q4f16_1-MLC', {
-          initProgressCallback: (progress) => {
-            output.textContent = progress.text;
+          initProgressCallback: (report) => {
+            const pct = (report.progress * 100).toFixed(0);
+            const mbMatch = report.text.match(/([\d.]+)\s*MB/);
+            const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
+            const verb = isCached ? 'Loading' : 'Downloading';
+            statusText.textContent = `${verb}: ${mb}${pct}%`;
           },
         });
 
-        output.textContent = 'Ready.';
-        btn.disabled = false;
-        downloadBtn.style.display = 'none';
-        document.getElementById('download-note').style.display = 'none';
+        statusText.textContent = 'Ready.';
+        sendBtn.disabled = false;
       } catch (err) {
-        output.textContent = 'Failed to load: ' + err.message;
-        downloadBtn.disabled = false;
+        statusText.textContent = 'Failed to load: ' + err.message;
+        loadBtn.disabled = false;
         console.error(err);
       }
     }
@@ -124,7 +155,7 @@
       const text = input.value.trim().slice(0, 2000);
       if (!text || !engine) return;
 
-      btn.disabled = true;
+      sendBtn.disabled = true;
       output.textContent = '';
       stats.textContent = '';
 
@@ -155,13 +186,13 @@
       }
 
       await engine.resetChat();
-      btn.disabled = false;
+      sendBtn.disabled = false;
     }
 
-    downloadBtn.addEventListener('click', loadModel);
-    btn.addEventListener('click', generate);
+    loadBtn.addEventListener('click', loadModel);
+    sendBtn.addEventListener('click', generate);
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey && !btn.disabled) {
+      if (e.key === 'Enter' && !e.shiftKey && !sendBtn.disabled) {
         e.preventDefault();
         generate();
       }

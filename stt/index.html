@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>speech-to-text — trucs.ai</title>
+  <meta name="description" content="Client-side speech-to-text running in your browser via WebGPU. No server, no API key.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button.recording {
+      background: #111;
+      color: #fff;
+    }
+    #transcript {
+      margin-top: 1.5em;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 4em;
+    }
+    #metrics {
+      margin-top: 0.5em;
+      color: #999;
+      font-size: 0.8rem;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>speech-to-text</h1>
+    <p>
+      Speech recognition running entirely in your browser via WebGPU.
+      No server, no API key. Your audio never leaves your machine.
+    </p>
+    <p>
+      English and French. Powered by a 1B parameter model compiled to WebGPU.
+    </p>
+
+    <div>
+      <button id="record-btn" disabled>start recording</button>
+    </div>
+
+    <div id="transcript"></div>
+    <div id="metrics"></div>
+
+    <hr>
+
+    <div id="model-status">
+      <button id="load-btn">download</button>
+      <span id="status-text"></span>
+    </div>
+
+    <p>Using <a href="https://github.com/idle-intelligence/stt-web">stt-web</a></p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    import { SttClient } from './stt-client.js';
+
+    const recordBtn = document.getElementById('record-btn');
+    const loadBtn = document.getElementById('load-btn');
+    const statusText = document.getElementById('status-text');
+    const transcript = document.getElementById('transcript');
+    const metrics = document.getElementById('metrics');
+
+    let client = null;
+    let isRecording = false;
+    let isCached = false;
+    let transcriptText = '';
+
+    // Check if model is cached
+    const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
+    try {
+      const cache = await caches.open('stt-model-v1');
+      const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
+      if (cached) {
+        isCached = true;
+        loadBtn.textContent = 'load';
+      }
+    } catch (_) {}
+    statusText.textContent = isCached
+      ? 'model cached locally: ~600MB'
+      : 'we are storing the model locally: ~600MB';
+
+    if (!navigator.gpu) {
+      statusText.textContent = 'WebGPU is not supported in this browser.';
+      loadBtn.disabled = true;
+    }
+
+    async function loadModel() {
+      loadBtn.disabled = true;
+      statusText.textContent = 'Loading...';
+
+      client = new SttClient({
+        baseUrl: 'https://idle-intelligence.github.io/stt-web',
+        workerUrl: './worker.js',
+        audioProcessorUrl: './audio-processor.js',
+
+        onStatus: (text, ready, progress) => {
+          if (ready) {
+            statusText.textContent = 'Ready.';
+            recordBtn.disabled = false;
+            return;
+          }
+
+          if (progress && progress.total > 0) {
+            const mb = (progress.loaded / 1024 / 1024).toFixed(0);
+            const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
+            const verb = isCached ? 'Loading' : 'Downloading';
+            statusText.textContent = `${verb}: ${mb}MB loaded, ${pct}%`;
+          } else {
+            statusText.textContent = text;
+          }
+        },
+
+        onTranscript: (text, isFinal) => {
+          if (text) {
+            transcriptText += text;
+            transcript.textContent = transcriptText;
+          }
+          if (isFinal && transcriptText) {
+            transcriptText += ' ';
+          }
+        },
+
+        onMetrics: (data) => {
+          const parts = [];
+          if (data.rtf != null) parts.push(`RTF ${data.rtf.toFixed(2)}x`);
+          if (data.avgFrameMs != null) parts.push(`${data.avgFrameMs.toFixed(0)} ms/frame`);
+          if (data.ttfb != null && data.ttfb >= 0) parts.push(`TTFB ${data.ttfb.toFixed(0)} ms`);
+          if (parts.length) metrics.textContent = parts.join(' · ');
+        },
+
+        onError: (err) => {
+          statusText.textContent = 'Error: ' + err.message;
+          console.error(err);
+          loadBtn.disabled = false;
+        },
+      });
+
+      try {
+        await client.init();
+      } catch (err) {
+        statusText.textContent = 'Failed to load: ' + err.message;
+        loadBtn.disabled = false;
+        console.error(err);
+      }
+    }
+
+    async function toggleRecording() {
+      if (!isRecording) {
+        recordBtn.disabled = true;
+        recordBtn.textContent = 'requesting mic...';
+        try {
+          transcriptText = '';
+          transcript.textContent = '';
+          metrics.textContent = '';
+          await client.startRecording();
+          isRecording = true;
+          recordBtn.textContent = 'stop recording';
+          recordBtn.classList.add('recording');
+        } catch (err) {
+          statusText.textContent = 'Microphone error: ' + err.message;
+          console.error(err);
+          recordBtn.textContent = 'start recording';
+        }
+        recordBtn.disabled = false;
+      } else {
+        client.stopRecording();
+        isRecording = false;
+        recordBtn.textContent = 'start recording';
+        recordBtn.classList.remove('recording');
+      }
+    }
+
+    loadBtn.addEventListener('click', loadModel);
+    recordBtn.addEventListener('click', toggleRecording);
+  </script>
+</body>
+</html>

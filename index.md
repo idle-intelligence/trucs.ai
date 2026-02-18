@@ -17,9 +17,9 @@ A small [BERT Classifier](/classifier/)
   
 Browser [LLM](/llm/)  
 
-(wip)  
-Browser [Speech-to-text](/stt/)  
-Browser [Text-to-Speech](/tts/)  
+Browser [Speech-to-text](/stt/)
+
+Browser [Text-to-Speech](/tts/)
   
 ---
   
