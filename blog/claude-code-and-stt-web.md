@@ -4,6 +4,12 @@ title: "Claude Code and stt-web"
 ---
 
 # Claude Code and stt-web
+
+<img src="/blog/images/stt-web.png" alt="a screenshot of stt-web running in the browser" width="680">
+
+stt-web ugly vibe coded interface
+
+---
   
 As I [wrote somewhere else](/blog/),  
 "how you use a coding agent" is a spectrum,  
@@ -19,8 +25,6 @@ I do like to play dumb with new model releases, though.
 Just to see how they get stuck, on what,  
 detect those failure modes,  
 so that I work around them when writing for LLMs.  
-
-<img src="/blog/images/stt-web.png" alt="a screenshot of stt-web running in the browser" width="680">
 
 I've got that old idea of doing an STT→LLM→TTS loop fully "web",  
 running local models in browser tabs.  
