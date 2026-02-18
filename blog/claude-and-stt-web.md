@@ -1,11 +1,11 @@
 ---
 layout: default
-title: "Claude Code and stt-web"
+title: "Claude and stt-web"
 ---
 
 # Claude Code and stt-web
 
-As I [wrote somewhere else](/blog/),  
+As I [wrote somewhere else](/blog/writing-for-a-living),  
 "how you use a coding agent" is a spectrum,  
 from having copilot review a single PR,  
 to blindly vibe coding 100k loc AI Slop products.  
@@ -13,7 +13,7 @@ to blindly vibe coding 100k loc AI Slop products.
 I tend to steer clear of that last type,  
 and if I am "vibe coding",  
 the project usually starts with a lot of documentation,  
-and ends up with [more doc than code](/blog/claude-code-and-the-swarm-4-more-docs-than-code).  
+and ends up with [more doc than code](/blog/claude-and-the-swarm-4-more-docs-than-code).  
 
 I do like to play dumb with new model releases, though.  
 Just to see how they get stuck, on what,  
@@ -22,7 +22,7 @@ so that I work around them when writing for LLMs.
 
 I've got that old idea of doing an STT→LLM→TTS loop fully "web",  
 running local models in browser tabs.  
-Maybe at the time you're reading this, it's done at [trucs.ai](/stt/).  
+Maybe at the time you're reading this, it's done at [trucs.ai](/).  
 
 _Bref_, today I was thinking about doing the STT part,  
 and was about to take an off-the-shelf reliable web compatible STT,  

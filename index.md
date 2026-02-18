@@ -11,7 +11,8 @@ This is a collection of experiments and ideas, mainly around running AI in the b
 ---
 Projects list  
 
-A [swarm](/swarm/) of LLMs running on users idle compute (inference at home)  
+A [swarm](/swarm/) of LLMs running on users idle compute (inference at home)
+
 A small [BERT Classifier](/classifier/)  
   
 Browser [LLM](/llm/)  
@@ -22,7 +23,9 @@ Browser [Text-to-Speech](/tts/)
   
 ---
   
-[Blog](/blog/) — writing about building this  
-[About me](/ilnmtlbnm/)  
-  
-An Idle Intelligence project   
+[Blog](/blog/)  
+[About me](/ilnmtlbnm/) 
+
+---
+
+An [Idle Intelligence](https://idleintelligence.org/) project   
