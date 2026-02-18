@@ -20,6 +20,8 @@ Just to see how they get stuck, on what,
 detect those failure modes,  
 so that I work around them when writing for LLMs.  
 
+<img src="/blog/images/stt-web.png" alt="a screenshot of stt-web running in the browser" width="680">
+
 I've got that old idea of doing an STT→LLM→TTS loop fully "web",  
 running local models in browser tabs.  
 Maybe at the time you're reading this, it's done at [trucs.ai](/stt/).  
