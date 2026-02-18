@@ -118,4 +118,6 @@ P.S.: the actual team definition, maybe that's what made the difference:
 >   Cache API, and the MediaDevices API for mic capture. No Rust — consumes the WASM packages as black boxes.
 >   Builds the glue that connects mic → codec → model → text on screen.
 
+---
+
 [← blog](/blog/)
