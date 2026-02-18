@@ -2,7 +2,9 @@
 layout: default
 title: "Claude Code and stt-web"
 ---
- 
+
+# Claude Code and stt-web
+
 As I [wrote somewhere else](/blog/),  
 "how you use a coding agent" is a spectrum,  
 from having copilot review a single PR,  
