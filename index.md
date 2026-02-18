@@ -24,7 +24,7 @@ Browser [Text-to-Speech](/tts/)
 ---
   
 [Blog](/blog/)  
-[About me](/ilnmtlbnm/) 
+[About](/ilnmtlbnm/) 
 
 ---
 
