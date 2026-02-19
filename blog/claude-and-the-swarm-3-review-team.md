@@ -44,6 +44,6 @@ When the review is done, you ask the lead to ask the teammate to shut down. A po
 
 ---
 
-*Last: [more docs than code](/blog/claude-and-the-swarm-4-more-docs-than-code).*
+*Last: [more doc than code](/blog/claude-and-the-swarm-4-more-docs-than-code).*
 
 [← blog](/blog/)

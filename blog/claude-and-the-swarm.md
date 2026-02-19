@@ -16,7 +16,7 @@ Building the [Hive/Swarm](/swarm) — a P2P swarm where browser tabs run small L
 1. [ML Team](/blog/claude-and-the-swarm-1-ml-team)
 2. [Hive Team](/blog/claude-and-the-swarm-2-hive-team)
 3. [Review Team](/blog/claude-and-the-swarm-3-review-team)
-4. [More docs than code](/blog/claude-and-the-swarm-4-more-docs-than-code)
+4. [more doc than code](/blog/claude-and-the-swarm-4-more-docs-than-code)
 
 ---
 
