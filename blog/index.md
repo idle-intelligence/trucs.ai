@@ -11,11 +11,7 @@ title: blog
 
 [Claude and stt-web](/blog/claude-and-stt-web)
 
-Claude and the swarm:
-1. [ML Team](/blog/claude-and-the-swarm-1-ml-team)
-2. [Hive Team](/blog/claude-and-the-swarm-2-hive-team)
-3. [Review Team](/blog/claude-and-the-swarm-3-review-team)
-4. [More docs than code](/blog/claude-and-the-swarm-4-more-docs-than-code)
+[Claude and the Swarm](/blog/claude-and-the-swarm) (4 parts)
 
 ---
 
