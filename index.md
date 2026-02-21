@@ -10,14 +10,16 @@ This is a collection of experiments and ideas, mainly around running AI in the b
   
 ---
 
-[Ruche](/swarm/) (inference at home)
-:   A [swarm](/swarm/) of LLMs running on users idle compute
-:   A small [BERT Classifier](/classifier/)
+<dl>
+  <dt>Ruche (inference at home)</dt>
+  <dd>A <a href="/swarm/">swarm</a> of LLMs running on users idle compute</dd>
+  <dd>A small <a href="/classifier/">BERT Classifier</a></dd>
 
-[STT](/stt/) → [LLM](/llm/) → [TTS](/tts/)
-:   Browser [Speech-to-text](/stt/)
-:   Browser [LLM](/llm/)
-:   Browser [Text-to-Speech](/tts/)
+  <dt>STT → LLM → TTS</dt>
+  <dd>Browser <a href="/stt/">Speech-to-text</a></dd>
+  <dd>Browser <a href="/llm/">LLM</a></dd>
+  <dd>Browser <a href="/tts/">Text-to-Speech</a></dd>
+</dl>
   
 ---
   
