@@ -44,6 +44,14 @@ a:hover {
   color: #111;
 }
 
+dt {
+  margin-top: 1em;
+}
+
+dt:first-child {
+  margin-top: 0;
+}
+
 dd {
   margin-left: 1.5em;
 }
