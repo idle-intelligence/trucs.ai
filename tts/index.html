@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>text-to-speech — trucs.ai</title>
+  <meta name="description" content="Client-side text-to-speech running in your browser via WebAssembly. No server, no API key.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .voice-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5em;
+    }
+    .voice-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.4em 0;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
+    }
+    .voice-btn:hover:not(:disabled) {
+      border-color: #111;
+    }
+    .voice-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .voice-btn.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    .voice-btn.loading {
+      border-color: #999;
+      color: #999;
+    }
+    textarea {
+      font-family: inherit;
+      font-size: 1rem;
+      width: 100%;
+      min-height: 80px;
+      padding: 0.5em;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      resize: vertical;
+      line-height: 1.6;
+      border-radius: 2px;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #111;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+      margin-top: 0.75em;
+      flex-wrap: wrap;
+    }
+    .controls label {
+      font-size: 0.85rem;
+      color: #555;
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+    }
+    .controls input[type="range"] {
+      width: 80px;
+      cursor: pointer;
+    }
+    #step-info {
+      margin-top: 0.5em;
+      color: #999;
+      font-size: 0.8rem;
+      min-height: 1.2em;
+    }
+    #audio-section {
+      display: none;
+    }
+    audio {
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>text-to-speech</h1>
+    <p>
+      Speech synthesis running in your browser.<br>
+      Rust → WebAssembly. No server, no API key.<br>
+      Your text never leaves your machine.
+    </p>
+
+    <div id="model-status">
+      <button id="load-btn">download</button>
+      <span id="status-text"></span>
+    </div>
+
+    <hr>
+
+    <div class="voice-grid" id="voice-grid"></div>
+
+    <hr>
+
+    <textarea id="text-input" placeholder="Type something or tap a voice to hear a demo."></textarea>
+    <div class="controls">
+      <button id="generate-btn" disabled>generate</button>
+      <label>temp <input type="range" id="temp-slider" min="0.1" max="1.5" step="0.05" value="0.7"> <span id="temp-value">0.70</span></label>
+    </div>
+    <div id="step-info"></div>
+
+    <div id="audio-section">
+      <hr>
+      <audio id="audio-player" controls></audio>
+    </div>
+
+    <hr>
+
+    <p>Using <a href="https://github.com/idle-intelligence/tts-web">tts-web</a></p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    import { TtsClient } from './tts-client.js';
+
+    const loadBtn = document.getElementById('load-btn');
+    const statusText = document.getElementById('status-text');
+    const voiceGrid = document.getElementById('voice-grid');
+    const textInput = document.getElementById('text-input');
+    const generateBtn = document.getElementById('generate-btn');
+    const tempSlider = document.getElementById('temp-slider');
+    const tempValue = document.getElementById('temp-value');
+    const stepInfo = document.getElementById('step-info');
+    const audioSection = document.getElementById('audio-section');
+    const audioPlayer = document.getElementById('audio-player');
+
+    const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
+    const GREETINGS = ['Hello', 'Hi', 'Hello there', 'Hey'];
+    const END = 'this is a test!';
+    const PHRASES = [
+      'Tyger Tyger, burning bright, In the forests of the night',
+      'Time is money, who can afford to pay attention?',
+      'There is a pleasure in the pathless woods, There is a rapture on the lonely shore',
+      'Your smile is like a breath of spring, Your voice is soft like summer rain',
+      'I had to call you up in the middle of the night',
+      'Do you think your Wu-Tang sword can defeat me? En garde, I\'ll let you try my Wu-Tang style',
+      'There\'s no one around and your phone is dead. Out of the corner of your eye, you spot him...',
+      'I\'ll tell you one thing about the universe, though. The universe is a pretty big place.',
+    ];
+
+    function voiceText(name) {
+      if (Math.random() < 0.4) return PHRASES[Math.floor(Math.random() * PHRASES.length)];
+      const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+      const display = name.charAt(0).toUpperCase() + name.slice(1);
+      return `${greeting}, my name is ${display}, ${END}`;
+    }
+
+    let tts = null;
+    let activeVoice = null;
+    let loadingVoice = false;
+    let generating = false;
+    let isDemoGen = false;
+    let allChunks = [];
+    let isCached = false;
+
+    // Streaming audio playback
+    const BATCH_MS = 500;
+    let audioCtx = null;
+    let nextStartTime = 0;
+    let pendingChunks = [];
+    let pendingSamples = 0;
+    let playbackStarted = false;
+
+    // Metrics
+    let genStartTime = 0;
+    let firstChunkTime = 0;
+    let totalAudioSamples = 0;
+
+    function flushAudioBatch() {
+      if (pendingChunks.length === 0) return;
+      if (!playbackStarted) {
+        playbackStarted = true;
+        nextStartTime = audioCtx.currentTime;
+      }
+      const totalLen = pendingSamples;
+      const pcm = new Float32Array(totalLen);
+      let off = 0;
+      for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
+      pendingChunks = [];
+      pendingSamples = 0;
+      const buf = audioCtx.createBuffer(1, totalLen, tts.sampleRate);
+      buf.getChannelData(0).set(pcm);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(nextStartTime);
+      nextStartTime += totalLen / tts.sampleRate;
+    }
+
+    // Check if model is cached
+    const MODEL_CACHE = 'tts-model-v1';
+    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-int8/resolve/main/model.safetensors';
+    try {
+      const cache = await caches.open(MODEL_CACHE);
+      const cached = await cache.match(MODEL_CHECK_URL);
+      if (cached) {
+        isCached = true;
+        loadBtn.textContent = 'load';
+      }
+    } catch (_) {}
+    statusText.textContent = isCached
+      ? 'model cached locally'
+      : 'model will be stored locally: ~25MB';
+
+    // Build voice grid
+    for (const name of VOICES) {
+      const btn = document.createElement('button');
+      btn.className = 'voice-btn';
+      btn.textContent = name;
+      btn.disabled = true;
+      btn.dataset.voice = name;
+      btn.addEventListener('click', () => selectVoice(name));
+      voiceGrid.appendChild(btn);
+    }
+
+    function setVoiceBtnsEnabled(enabled) {
+      voiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+        btn.disabled = !enabled || (generating && btn.dataset.voice !== activeVoice);
+      });
+    }
+
+    function selectVoice(name) {
+      if (loadingVoice || generating) return;
+      loadingVoice = true;
+      setVoiceBtnsEnabled(false);
+      voiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.voice === name) btn.classList.add('loading');
+      });
+      tts.loadVoice(name);
+    }
+
+    tempSlider.addEventListener('input', () => {
+      tempValue.textContent = parseFloat(tempSlider.value).toFixed(2);
+    });
+
+    function makeClient() {
+      return new TtsClient({
+        baseUrl: 'https://idle-intelligence.github.io/tts-web',
+        workerUrl: './worker.js',
+
+        onVoiceLoaded: (name) => {
+          loadingVoice = false;
+          activeVoice = name;
+          voiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+            btn.classList.remove('loading');
+            if (btn.dataset.voice === name) btn.classList.add('active');
+            else btn.classList.remove('active');
+          });
+          generateBtn.disabled = false;
+          setVoiceBtnsEnabled(true);
+
+          // Auto-generate: use user text if present, otherwise voice demo text
+          const userText = textInput.value.trim();
+          const text = userText || voiceText(name);
+          if (!userText) textInput.placeholder = text;
+          isDemoGen = !userText;
+          generating = true;
+          generateBtn.disabled = true;
+          setVoiceBtnsEnabled(false);
+          tts.generate(text, parseFloat(tempSlider.value));
+        },
+
+        onStatus: (text, ready, progress) => {
+          if (ready) {
+            statusText.textContent = 'ready';
+            setVoiceBtnsEnabled(true);
+            loadBtn.disabled = true;
+          } else if (progress && progress.total > 0) {
+            const mb = (progress.loaded / 1024 / 1024).toFixed(1);
+            const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
+            const verb = isCached ? 'Loading' : 'Downloading';
+            statusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
+          } else {
+            statusText.textContent = text;
+          }
+        },
+
+        onError: (err) => {
+          statusText.textContent = 'error: ' + err.message;
+          generating = false;
+          loadingVoice = false;
+          isDemoGen = false;
+          generateBtn.disabled = !activeVoice;
+          setVoiceBtnsEnabled(true);
+          stepInfo.textContent = '';
+          console.error(err);
+        },
+
+        onGenStart: (numTokens) => {
+          allChunks = [];
+          pendingChunks = [];
+          pendingSamples = 0;
+          playbackStarted = false;
+          totalAudioSamples = 0;
+          genStartTime = performance.now();
+          firstChunkTime = 0;
+          audioSection.style.display = 'none';
+          stepInfo.textContent = `generating... (${numTokens} tokens)`;
+          statusText.textContent = 'generating...';
+          audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
+          nextStartTime = 0;
+        },
+
+        onChunk: (data, step) => {
+          if (!firstChunkTime) firstChunkTime = performance.now();
+          const chunk = new Float32Array(data);
+          allChunks.push(chunk);
+          pendingChunks.push(chunk);
+          pendingSamples += chunk.length;
+          totalAudioSamples += chunk.length;
+          const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
+          const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
+          const rtf = (totalAudioSamples / tts.sampleRate) / ((performance.now() - genStartTime) / 1000);
+          stepInfo.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
+          const batchSamples = (BATCH_MS / 1000) * tts.sampleRate;
+          const threshold = playbackStarted ? batchSamples : batchSamples * 2;
+          if (pendingSamples >= threshold) flushAudioBatch();
+        },
+
+        onDone: (totalSteps) => {
+          flushAudioBatch();
+          const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
+          const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
+          const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
+          const rtf = (totalAudioSamples / tts.sampleRate / parseFloat(totalTime)).toFixed(2);
+          generating = false;
+          generateBtn.disabled = false;
+          setVoiceBtnsEnabled(true);
+          stepInfo.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
+          statusText.textContent = 'ready';
+
+          if (isDemoGen) {
+            isDemoGen = false;
+            return;
+          }
+
+          const totalLength = allChunks.reduce((sum, c) => sum + c.length, 0);
+          if (totalLength === 0) return;
+          const pcm = new Float32Array(totalLength);
+          let offset = 0;
+          for (const chunk of allChunks) { pcm.set(chunk, offset); offset += chunk.length; }
+          const wav = encodeWav(pcm, tts.sampleRate);
+          const blob = new Blob([wav], { type: 'audio/wav' });
+          audioPlayer.src = URL.createObjectURL(blob);
+          audioSection.style.display = 'block';
+        }
+      });
+    }
+
+    async function initClient() {
+      loadBtn.disabled = true;
+      statusText.textContent = 'loading...';
+      try {
+        await tts.init();
+      } catch (err) {
+        statusText.textContent = 'failed to load: ' + err.message;
+        loadBtn.disabled = false;
+        console.error(err);
+      }
+    }
+
+    tts = makeClient();
+    if (isCached) {
+      await initClient();
+    } else {
+      loadBtn.addEventListener('click', () => initClient());
+    }
+
+    generateBtn.addEventListener('click', () => {
+      const text = textInput.value.trim();
+      if (!text || generating || !activeVoice) return;
+      isDemoGen = false;
+      generating = true;
+      generateBtn.disabled = true;
+      setVoiceBtnsEnabled(false);
+      tts.generate(text, parseFloat(tempSlider.value));
+    });
+
+    function encodeWav(samples, sampleRate) {
+      const numChannels = 1;
+      const bitsPerSample = 32;
+      const blockAlign = numChannels * (bitsPerSample / 8);
+      const byteRate = sampleRate * blockAlign;
+      const dataSize = samples.length * 4;
+      const buffer = new ArrayBuffer(44 + dataSize);
+      const view = new DataView(buffer);
+      function writeStr(offset, str) {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      }
+      writeStr(0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeStr(8, 'WAVE');
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 3, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, bitsPerSample, true);
+      writeStr(36, 'data');
+      view.setUint32(40, dataSize, true);
+      new Float32Array(buffer, 44).set(samples);
+      return buffer;
+    }
+  </script>
+</body>
+</html>
