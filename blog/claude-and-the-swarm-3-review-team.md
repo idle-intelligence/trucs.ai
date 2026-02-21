@@ -24,7 +24,7 @@ The perf engineer finished first. No major concerns.
 
 The senior dev took longer — 475 lines of changes in `hub.rs`. Found two blocking bugs:
 
-A **busy_answerers race**: the classify phase could transition a peer without atomic state checks. Under load, two tasks could claim the same peer.
+A **busy_answerers race condition**: the classify phase could transition a peer without atomic state checks. Under load, two tasks could claim the same peer.
 
 A **message leak**: if classification timed out, the pending message stayed in the HashMap forever.
 
