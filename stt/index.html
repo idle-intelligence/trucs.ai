@@ -25,9 +25,22 @@
       opacity: 0.4;
       cursor: not-allowed;
     }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
     button.recording {
       background: #111;
       color: #fff;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
     }
     #transcript {
       margin-top: 1.5em;
@@ -40,38 +53,30 @@
       color: #999;
       font-size: 0.8rem;
     }
-    #model-status {
-      display: flex;
-      align-items: center;
-      gap: 0.75em;
-    }
-    #status-text {
-      color: #555;
-      font-size: 0.85rem;
-    }
   </style>
 </head>
 <body>
   <main>
     <h1>speech-to-text</h1>
     <p>
-      English and French Speech recognition running in your browser.<br>
+      English and French speech recognition running in your browser.<br>
       Rust → WebAssembly + WebGPU. No server, no API key.<br>
       Your audio never leaves your machine.
     </p>
-    <div>
-      <button id="record-btn" disabled>start recording</button>
-    </div>
-
-    <div id="transcript"></div>
-    <div id="metrics"></div>
-
-    <hr>
 
     <div id="model-status">
       <button id="load-btn">download</button>
       <span id="status-text"></span>
     </div>
+
+    <hr>
+
+    <button id="record-btn" disabled>start recording</button>
+
+    <div id="transcript"></div>
+    <div id="metrics"></div>
+
+    <hr>
 
     <p>Using <a href="https://github.com/idle-intelligence/stt-web">stt-web</a></p>
 
@@ -105,7 +110,7 @@
     } catch (_) {}
     statusText.textContent = isCached
       ? 'model cached locally: ~600MB'
-      : 'we are storing the model locally: ~600MB';
+      : 'model will be stored locally: ~600MB';
 
     if (!navigator.gpu) {
       statusText.textContent = 'WebGPU is not supported in this browser.';
@@ -114,7 +119,7 @@
 
     async function loadModel() {
       loadBtn.disabled = true;
-      statusText.textContent = 'Loading...';
+      statusText.textContent = 'loading...';
 
       client = new SttClient({
         baseUrl: 'https://idle-intelligence.github.io/stt-web',
@@ -123,7 +128,7 @@
 
         onStatus: (text, ready, progress) => {
           if (ready) {
-            statusText.textContent = 'Ready.';
+            statusText.textContent = 'ready';
             recordBtn.disabled = false;
             return;
           }
@@ -157,7 +162,7 @@
         },
 
         onError: (err) => {
-          statusText.textContent = 'Error: ' + err.message;
+          statusText.textContent = 'error: ' + err.message;
           console.error(err);
           loadBtn.disabled = false;
         },
@@ -166,7 +171,7 @@
       try {
         await client.init();
       } catch (err) {
-        statusText.textContent = 'Failed to load: ' + err.message;
+        statusText.textContent = 'failed to load: ' + err.message;
         loadBtn.disabled = false;
         console.error(err);
       }
@@ -185,7 +190,7 @@
           recordBtn.textContent = 'stop recording';
           recordBtn.classList.add('recording');
         } catch (err) {
-          statusText.textContent = 'Microphone error: ' + err.message;
+          statusText.textContent = 'microphone error: ' + err.message;
           console.error(err);
           recordBtn.textContent = 'start recording';
         }
@@ -198,7 +203,11 @@
       }
     }
 
-    loadBtn.addEventListener('click', loadModel);
+    if (isCached) {
+      loadModel();
+    } else {
+      loadBtn.addEventListener('click', loadModel);
+    }
     recordBtn.addEventListener('click', toggleRecording);
   </script>
 </body>
