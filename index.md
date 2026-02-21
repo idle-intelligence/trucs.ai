@@ -28,4 +28,4 @@ This is a collection of experiments and ideas, mainly around running AI in the b
 
 ---
 
-An [Idle Intelligence](https://idleintelligence.org/) project   
+An [Idle Intelligence](https://idleintelligence.org/) Initiative   
