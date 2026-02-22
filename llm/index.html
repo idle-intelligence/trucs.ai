@@ -72,6 +72,16 @@
       color: #999;
       font-size: 0.8rem;
     }
+    #voice-link {
+      margin-top: 0.75em;
+      font-size: 0.85rem;
+    }
+    #voice-link a {
+      color: #111;
+    }
+    #voice-status {
+      color: #555;
+    }
   </style>
 </head>
 <body>
@@ -95,6 +105,8 @@
       <button id="send-btn" disabled>send</button>
     </div>
 
+    <div id="voice-link"><a href="#" id="voice-open">give a voice to your LLM</a> <span id="voice-status"></span></div>
+
     <div id="output"></div>
     <div id="stats"></div>
 
@@ -115,6 +127,63 @@
     const statusText = document.getElementById('status-text');
     const output = document.getElementById('output');
     const stats = document.getElementById('stats');
+
+    // Cross-tab voice link
+    const channel = new BroadcastChannel('trucs-ai');
+    const voiceOpen = document.getElementById('voice-open');
+    const voiceStatus = document.getElementById('voice-status');
+    let voiceConnected = false;
+    let voiceTimeout = null;
+    let openFallback = null;
+
+    function disconnectVoice() {
+      voiceConnected = false;
+      voiceOpen.textContent = 'give a voice to your LLM';
+      voiceStatus.textContent = '';
+      if (voiceTimeout) { clearTimeout(voiceTimeout); voiceTimeout = null; }
+    }
+
+    function resetVoiceTimeout() {
+      if (voiceTimeout) clearTimeout(voiceTimeout);
+      voiceTimeout = setTimeout(disconnectVoice, 5000);
+    }
+
+    voiceOpen.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (voiceConnected) {
+        channel.postMessage({ from: 'llm', type: 'disconnect' });
+        disconnectVoice();
+      } else {
+        channel.postMessage({ from: 'llm', type: 'enter_voice' });
+        openFallback = setTimeout(() => {
+          openFallback = null;
+          window.open('/tts/?mode=voice', 'tts-voice');
+        }, 300);
+      }
+    });
+
+    channel.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.from !== 'tts') return;
+
+      if (openFallback) { clearTimeout(openFallback); openFallback = null; }
+
+      if (msg.type === 'disconnect') {
+        disconnectVoice();
+        return;
+      }
+
+      if (!voiceConnected) {
+        voiceConnected = true;
+        voiceOpen.textContent = 'disconnect voice';
+      }
+
+      if (msg.type === 'ready' || msg.type === 'voice') {
+        voiceStatus.textContent = `voice: ${msg.voice}`;
+      }
+
+      resetVoiceTimeout();
+    };
 
     let engine = null;
     let isCached = false;
@@ -172,6 +241,7 @@
       sendBtn.disabled = true;
       output.textContent = '';
       stats.textContent = '';
+      if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
 
       const start = performance.now();
 
@@ -183,13 +253,29 @@
         });
 
         let tokens = 0;
+        let sentenceBuffer = '';
         for await (const chunk of chunks) {
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
             output.textContent += delta;
             tokens++;
+            sentenceBuffer += delta;
+            let boundary;
+            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+              const ch = sentenceBuffer[boundary];
+              const cutAt = ch === '\n' ? boundary : boundary + 1;
+              const sentence = sentenceBuffer.slice(0, cutAt).trim();
+              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
+              if (sentence && voiceConnected) {
+                channel.postMessage({ from: 'llm', type: 'chunk', text: sentence });
+              }
+            }
           }
         }
+        if (sentenceBuffer.trim() && voiceConnected) {
+          channel.postMessage({ from: 'llm', type: 'chunk', text: sentenceBuffer.trim() });
+        }
+        if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
 
         const elapsed = (performance.now() - start) / 1000;
         const tokSec = (tokens / elapsed).toFixed(1);

@@ -117,6 +117,19 @@
     audio {
       width: 100%;
     }
+    #voice-mode-bar {
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 0.5em;
+    }
+    #voice-mode-bar a {
+      color: #111;
+    }
+    #voice-output {
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 4em;
+    }
   </style>
 </head>
 <body>
@@ -139,6 +152,8 @@
 
     <hr>
 
+    <div id="voice-mode-bar" style="display:none">LLM voice mode — <a href="#" id="voice-disconnect">disconnect</a></div>
+    <div id="voice-output" style="display:none"></div>
     <textarea id="text-input" placeholder="Type something or tap a voice to hear a demo."></textarea>
     <div class="controls">
       <button id="generate-btn" disabled>generate</button>
@@ -172,6 +187,9 @@
     const stepInfo = document.getElementById('step-info');
     const audioSection = document.getElementById('audio-section');
     const audioPlayer = document.getElementById('audio-player');
+    const voiceOutput = document.getElementById('voice-output');
+    const voiceModeBar = document.getElementById('voice-mode-bar');
+    const voiceDisconnect = document.getElementById('voice-disconnect');
 
     const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
     const GREETINGS = ['Hello', 'Hi', 'Hello there', 'Hey'];
@@ -201,6 +219,49 @@
     let isDemoGen = false;
     let allChunks = [];
     let isCached = false;
+    let discardGeneration = false;
+
+    // Voice mode (cross-tab from LLM)
+    let voiceMode = new URLSearchParams(window.location.search).get('mode') === 'voice';
+    let sentenceQueue = [];
+    const channel = new BroadcastChannel('trucs-ai');
+    let sentReady = false;
+    let pingInterval = null;
+
+    channel.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.from !== 'llm') return;
+
+      if (msg.type === 'enter_voice' && !voiceMode) {
+        enterVoiceMode();
+        return;
+      }
+
+      if (!voiceMode) return;
+
+      if (msg.type === 'clear') {
+        discardGeneration = true;
+        generating = false;
+        sentenceQueue = [];
+        voiceOutput.textContent = '';
+        if (audioCtx) {
+          audioCtx.close();
+          audioCtx = null;
+          playbackStarted = false;
+          nextStartTime = 0;
+        }
+        return;
+      }
+      if (msg.type === 'chunk') {
+        if (sentenceQueue.length === 0 && !generating) voiceOutput.textContent = '';
+        voiceOutput.textContent += (voiceOutput.textContent ? ' ' : '') + msg.text;
+        sentenceQueue.push(msg.text);
+        processQueue();
+      }
+      if (msg.type === 'disconnect') {
+        exitVoiceMode();
+      }
+    };
 
     // Streaming audio playback
     const BATCH_MS = 500;
@@ -264,12 +325,17 @@
 
     function setVoiceBtnsEnabled(enabled) {
       voiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
-        btn.disabled = !enabled || (generating && btn.dataset.voice !== activeVoice);
+        btn.disabled = !enabled;
       });
     }
 
     function selectVoice(name) {
-      if (loadingVoice || generating) return;
+      if (loadingVoice) return;
+      // Standalone: discard current generation (audio keeps playing until new gen starts)
+      if (!voiceMode) {
+        discardGeneration = true;
+        generating = false;
+      }
       loadingVoice = true;
       setVoiceBtnsEnabled(false);
       voiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
@@ -299,6 +365,13 @@
           generateBtn.disabled = false;
           setVoiceBtnsEnabled(true);
 
+          if (voiceMode) {
+            channel.postMessage({ from: 'tts', type: sentReady ? 'voice' : 'ready', voice: name });
+            sentReady = true;
+            processQueue();
+            return;
+          }
+
           // Auto-generate: use user text if present, otherwise voice demo text
           const userText = textInput.value.trim();
           const text = userText || voiceText(name);
@@ -306,7 +379,6 @@
           isDemoGen = !userText;
           generating = true;
           generateBtn.disabled = true;
-          setVoiceBtnsEnabled(false);
           tts.generate(text, parseFloat(tempSlider.value));
         },
 
@@ -337,21 +409,29 @@
         },
 
         onGenStart: (numTokens) => {
+          discardGeneration = false;
           allChunks = [];
           pendingChunks = [];
           pendingSamples = 0;
-          playbackStarted = false;
           totalAudioSamples = 0;
           genStartTime = performance.now();
           firstChunkTime = 0;
           audioSection.style.display = 'none';
           stepInfo.textContent = `generating... (${numTokens} tokens)`;
           statusText.textContent = 'generating...';
-          audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
-          nextStartTime = 0;
+          if (voiceMode && audioCtx) {
+            playbackStarted = true;
+            nextStartTime = Math.max(nextStartTime, audioCtx.currentTime);
+          } else {
+            if (audioCtx) audioCtx.close();
+            playbackStarted = false;
+            audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
+            nextStartTime = 0;
+          }
         },
 
         onChunk: (data, step) => {
+          if (discardGeneration) return;
           if (!firstChunkTime) firstChunkTime = performance.now();
           const chunk = new Float32Array(data);
           allChunks.push(chunk);
@@ -368,6 +448,7 @@
         },
 
         onDone: (totalSteps) => {
+          if (discardGeneration) { discardGeneration = false; return; }
           flushAudioBatch();
           const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
           const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
@@ -378,6 +459,11 @@
           setVoiceBtnsEnabled(true);
           stepInfo.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
           statusText.textContent = 'ready';
+
+          if (voiceMode) {
+            processQueue();
+            return;
+          }
 
           if (isDemoGen) {
             isDemoGen = false;
@@ -410,11 +496,62 @@
     }
 
     tts = makeClient();
+
+    function processQueue() {
+      if (generating || sentenceQueue.length === 0 || !activeVoice) return;
+      const text = sentenceQueue.shift();
+      generating = true;
+      generateBtn.disabled = true;
+      tts.generate(text, parseFloat(tempSlider.value));
+    }
+
+    function enterVoiceMode() {
+      voiceMode = true;
+      voiceModeBar.style.display = 'block';
+      textInput.style.display = 'none';
+      voiceOutput.style.display = 'block';
+      voiceOutput.textContent = '';
+      generateBtn.style.display = 'none';
+      channel.postMessage({ from: 'tts', type: 'ping' });
+      pingInterval = setInterval(() => {
+        channel.postMessage({ from: 'tts', type: 'ping' });
+      }, 2000);
+    }
+
+    function exitVoiceMode() {
+      voiceMode = false;
+      sentReady = false;
+      generating = false;
+      discardGeneration = true;
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+      history.replaceState(null, '', window.location.pathname);
+      voiceModeBar.style.display = 'none';
+      voiceOutput.style.display = 'none';
+      textInput.style.display = '';
+      generateBtn.style.display = '';
+      generateBtn.disabled = !activeVoice;
+      sentenceQueue = [];
+      if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+        playbackStarted = false;
+        nextStartTime = 0;
+      }
+    }
+
+    voiceDisconnect.addEventListener('click', (e) => {
+      e.preventDefault();
+      channel.postMessage({ from: 'tts', type: 'disconnect' });
+      exitVoiceMode();
+    });
+
     if (isCached) {
       await initClient();
     } else {
       loadBtn.addEventListener('click', () => initClient());
     }
+
+    if (voiceMode) enterVoiceMode();
 
     generateBtn.addEventListener('click', () => {
       const text = textInput.value.trim();
@@ -422,7 +559,6 @@
       isDemoGen = false;
       generating = true;
       generateBtn.disabled = true;
-      setVoiceBtnsEnabled(false);
       tts.generate(text, parseFloat(tempSlider.value));
     });
 

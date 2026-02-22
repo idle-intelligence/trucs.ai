@@ -238,7 +238,7 @@ async function handleLoadVoice(name) {
     post('voice_loaded', { name, voiceIndex });
 }
 
-async function handleGenerate(text, temperature) {
+function handleGenerate(text, temperature) {
     const [processedText, framesAfterEos] = model.prepare_text(text);
     const tokenIds = tokenizer.encode(processedText);
 
@@ -250,15 +250,6 @@ async function handleGenerate(text, temperature) {
     while (true) {
         const chunk = model.generation_step();
         if (!chunk) break;
-        // Debug: log PCM stats for each step
-        let min = Infinity, max = -Infinity, sum = 0;
-        for (let i = 0; i < chunk.length; i++) {
-            const v = chunk[i];
-            if (v < min) min = v;
-            if (v > max) max = v;
-            sum += v;
-        }
-        console.log(`[gen] step=${step} len=${chunk.length} min=${min.toFixed(6)} max=${max.toFixed(6)} mean=${(sum/chunk.length).toFixed(6)}`);
         post('chunk', { data: chunk, step }, [chunk.buffer]);
         step++;
     }
@@ -274,7 +265,7 @@ self.onmessage = async (e) => {
         } else if (type === 'load_voice') {
             await handleLoadVoice(data.name);
         } else if (type === 'generate') {
-            await handleGenerate(data.text, data.temperature || 0.7);
+            handleGenerate(data.text, data.temperature || 0.7);
         }
     } catch (err) {
         post('error', { message: err.message || String(err) });
