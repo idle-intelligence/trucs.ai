@@ -119,7 +119,7 @@
   </main>
 
   <script type="module">
-    import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
+    import { CreateMLCEngine, prebuiltAppConfig } from 'https://esm.run/@mlc-ai/web-llm';
 
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('send-btn');
@@ -198,7 +198,6 @@
 
     let selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
     let modelSize = '~2.7GB';
-    let modelBytes = 2.7e9;
     let modelLabel = 'SmolLM2-1.7B';
 
     if (navigator.gpu) {
@@ -207,34 +206,36 @@
         if (adapter && adapter.features.has('shader-f16')) {
           selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
           modelSize = '~1GB';
-          modelBytes = 1e9;
         } else if (isMobile) {
           selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
           modelSize = '~580MB';
-          modelBytes = 580e6;
           modelLabel = 'SmolLM2-360M';
         }
       } catch (_) {}
     }
     document.getElementById('model-name').textContent = modelLabel;
 
-    // Check if model is cached
-    const modelSlug = selectedModel.split('-Instruct-')[1].split('-MLC')[0];
-    try {
-      const keys = await caches.keys();
-      for (const key of keys) {
-        const cache = await caches.open(key);
-        const matched = await cache.keys();
-        if (matched.some(r => r.url.includes('SmolLM2') && r.url.includes(modelSlug))) {
-          isCached = true;
-          loadBtn.textContent = 'load';
-          break;
+    // Check if model is cached (desktop only — mobile doesn't persist)
+    if (!isMobile) {
+      const modelSlug = selectedModel.split('-Instruct-')[1].split('-MLC')[0];
+      try {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          const matched = await cache.keys();
+          if (matched.some(r => r.url.includes('SmolLM2') && r.url.includes(modelSlug))) {
+            isCached = true;
+            loadBtn.textContent = 'load';
+            break;
+          }
         }
-      }
-    } catch (_) {}
-    statusText.textContent = isCached
-      ? `model cached locally: ${modelSize}`
-      : `model will be stored locally: ${modelSize}`;
+      } catch (_) {}
+    }
+    statusText.textContent = isMobile
+      ? `model download: ${modelSize} (not cached)`
+      : isCached
+        ? `model cached locally: ${modelSize}`
+        : `model will be stored locally: ${modelSize}`;
 
     if (!navigator.gpu) {
       statusText.textContent = 'WebGPU is not supported in this browser.';
@@ -245,30 +246,26 @@
       loadBtn.disabled = true;
       statusText.textContent = 'loading...';
 
-      // Check available storage before downloading
-      if (!isCached && navigator.storage?.estimate) {
-        try {
-          const { usage, quota } = await navigator.storage.estimate();
-          const available = quota - usage;
-          const needed = modelBytes;
-          if (available < needed * 1.2) {
-            statusText.textContent = 'not enough storage — free up space and try again';
-            loadBtn.disabled = false;
-            return;
-          }
-        } catch (_) {}
+      // On mobile, use IndexedDB instead of Cache API to avoid
+      // Cache.add() failures, and clean up on page unload.
+      const engineConfig = {
+        initProgressCallback: (report) => {
+          const pct = (report.progress * 100).toFixed(0);
+          const mbMatch = report.text.match(/([\d.]+)\s*MB/);
+          const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
+          const verb = isCached ? 'Loading' : 'Downloading';
+          statusText.textContent = `${verb}: ${mb}${pct}%`;
+        },
+      };
+      if (isMobile) {
+        engineConfig.appConfig = {
+          ...prebuiltAppConfig,
+          useIndexedDBCache: true,
+        };
       }
 
       try {
-        engine = await CreateMLCEngine(selectedModel, {
-          initProgressCallback: (report) => {
-            const pct = (report.progress * 100).toFixed(0);
-            const mbMatch = report.text.match(/([\d.]+)\s*MB/);
-            const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
-            const verb = isCached ? 'Loading' : 'Downloading';
-            statusText.textContent = `${verb}: ${mb}${pct}%`;
-          },
-        });
+        engine = await CreateMLCEngine(selectedModel, engineConfig);
 
         statusText.textContent = 'ready';
         sendBtn.disabled = false;
@@ -358,6 +355,18 @@
         generate();
       }
     });
+
+    // On mobile, clear cached model weights when leaving the page
+    if (isMobile) {
+      addEventListener('pagehide', async () => {
+        try {
+          const dbs = await indexedDB.databases();
+          for (const db of dbs) {
+            if (db.name?.includes('webllm')) indexedDB.deleteDatabase(db.name);
+          }
+        } catch (_) {}
+      });
+    }
   </script>
 </body>
 </html>
