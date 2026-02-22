@@ -188,40 +188,30 @@
     let engine = null;
     let isCached = false;
 
-    // Model selection matrix:
-    // shader-f16 (any device): 1.7B q4f16 (~1GB)
-    // no f16 + mobile: 360M q4f32 (~290MB)
-    // no f16 + desktop: 1.7B q4f32 (~2.7GB)
+    // Mobile: always 360M q4f32 (~290MB) — shader-f16 unreliable on Android
+    // Desktop + shader-f16: 1.7B q4f16 (~1GB)
+    // Desktop − shader-f16: 1.7B q4f32 (~2.7GB)
     const isMobile = navigator.userAgentData?.mobile
       ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
 
     let selectedModel, modelSize, modelLabel;
-    if (navigator.gpu) {
+    if (isMobile) {
+      selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
+      modelSize = '~290MB';
+      modelLabel = 'SmolLM2-360M';
+    } else if (navigator.gpu) {
+      selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+      modelSize = '~2.7GB';
+      modelLabel = 'SmolLM2-1.7B';
       try {
         const adapter = await navigator.gpu.requestAdapter();
-        const hasF16 = adapter?.features.has('shader-f16');
-        if (hasF16) {
+        if (adapter?.features.has('shader-f16')) {
           selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
           modelSize = '~1GB';
-          modelLabel = 'SmolLM2-1.7B';
-        } else if (isMobile) {
-          selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
-          modelSize = '~290MB';
-          modelLabel = 'SmolLM2-360M';
-        } else {
-          selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-          modelSize = '~2.7GB';
-          modelLabel = 'SmolLM2-1.7B';
         }
-      } catch (_) {
-        selectedModel = isMobile
-          ? 'SmolLM2-360M-Instruct-q4f32_1-MLC'
-          : 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-        modelSize = isMobile ? '~290MB' : '~2.7GB';
-        modelLabel = isMobile ? 'SmolLM2-360M' : 'SmolLM2-1.7B';
-      }
+      } catch (_) {}
     }
-    document.getElementById('model-name').textContent = modelLabel;
+    if (modelLabel) document.getElementById('model-name').textContent = modelLabel;
 
     // Purge caches for wrong model variants, then check for valid cache
     try {
