@@ -360,7 +360,7 @@
 
     // Mobile: clean up model cache on page unload
     if (isMobile) {
-      addEventListener('pagehide', async () => {
+      addEventListener('beforeunload', async () => {
         try {
           const keys = await caches.keys();
           for (const key of keys) {
