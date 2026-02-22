@@ -188,50 +188,60 @@
     let engine = null;
     let isCached = false;
 
-    // Detect platform and shader-f16 support to pick model variant
-    // Desktop + f16 → 1.7B q4f16 (~1GB)
-    // Desktop − f16 → 1.7B q4f32 (~2.7GB)  (Linux, older GPUs)
-    // Mobile  + f16 → 1.7B q4f16 (~1GB)
-    // Mobile  − f16 → 360M q4f32 (~580MB)  (most Android)
+    // Model selection matrix:
+    // shader-f16 (any device): 1.7B q4f16 (~1GB)
+    // no f16 + mobile: 360M q4f32 (~290MB)
+    // no f16 + desktop: 1.7B q4f32 (~2.7GB)
     const isMobile = navigator.userAgentData?.mobile
-      ?? /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
 
-    let selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-    let modelSize = '~2.7GB';
-    let modelLabel = 'SmolLM2-1.7B';
-
+    let selectedModel, modelSize, modelLabel;
     if (navigator.gpu) {
       try {
         const adapter = await navigator.gpu.requestAdapter();
-        if (adapter && adapter.features.has('shader-f16')) {
+        const hasF16 = adapter?.features.has('shader-f16');
+        if (hasF16) {
           selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
           modelSize = '~1GB';
+          modelLabel = 'SmolLM2-1.7B';
         } else if (isMobile) {
           selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
-          modelSize = '~580MB';
+          modelSize = '~290MB';
           modelLabel = 'SmolLM2-360M';
+        } else {
+          selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+          modelSize = '~2.7GB';
+          modelLabel = 'SmolLM2-1.7B';
         }
-      } catch (_) {}
+      } catch (_) {
+        selectedModel = isMobile
+          ? 'SmolLM2-360M-Instruct-q4f32_1-MLC'
+          : 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+        modelSize = isMobile ? '~290MB' : '~2.7GB';
+        modelLabel = isMobile ? 'SmolLM2-360M' : 'SmolLM2-1.7B';
+      }
     }
     document.getElementById('model-name').textContent = modelLabel;
 
-    // Check if model is cached
-    const modelSlug = selectedModel.split('-Instruct-')[1].split('-MLC')[0];
+    // Purge caches for wrong model variants, then check for valid cache
     try {
       const keys = await caches.keys();
       for (const key of keys) {
         const cache = await caches.open(key);
-        const matched = await cache.keys();
-        if (matched.some(r => r.url.includes('SmolLM2') && r.url.includes(modelSlug))) {
+        const entries = await cache.keys();
+        const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
+        if (!hasSmolLM2) continue;
+        if (entries.some(r => r.url.includes(selectedModel))) {
           isCached = true;
           loadBtn.textContent = 'load';
-          break;
+        } else {
+          await caches.delete(key);
         }
       }
     } catch (_) {}
     statusText.textContent = isCached
       ? `model cached locally: ${modelSize}`
-      : `model will be stored locally: ${modelSize}`;
+      : `model download: ${modelSize}`;
 
     if (!navigator.gpu) {
       statusText.textContent = 'WebGPU is not supported in this browser.';
@@ -256,7 +266,12 @@
         statusText.textContent = 'ready';
         sendBtn.disabled = false;
       } catch (err) {
-        statusText.textContent = 'failed to load: ' + err.message;
+        const msg = err.message || String(err);
+        if (/network|cache|fetch/i.test(msg)) {
+          statusText.textContent = 'download failed — check your connection and try again';
+        } else {
+          statusText.textContent = 'failed to load: ' + msg;
+        }
         loadBtn.disabled = false;
         console.error(err);
       }
@@ -338,6 +353,7 @@
         generate();
       }
     });
+
   </script>
 </body>
 </html>
