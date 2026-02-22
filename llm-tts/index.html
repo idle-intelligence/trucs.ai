@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>llm + tts — trucs.ai</title>
+  <meta name="description" content="LLM and text-to-speech running side by side in your browser. No server, no API key.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    body { max-width: 1200px; }
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover { background: #111; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button:disabled:hover { background: #fff; color: #111; }
+    .model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    .status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    textarea {
+      font-family: inherit;
+      font-size: 1rem;
+      width: 100%;
+      min-height: 4em;
+      padding: 0.5em;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      resize: vertical;
+      line-height: 1.6;
+      border-radius: 2px;
+    }
+    textarea:focus { outline: none; border-color: #111; }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+      margin-top: 0.75em;
+    }
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2em;
+    }
+    .panel hr { margin: 1.5em 0; }
+    #llm-output {
+      margin-top: 1.5em;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 4em;
+    }
+    #llm-stats {
+      margin-top: 0.5em;
+      color: #999;
+      font-size: 0.8rem;
+    }
+    .voice-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5em;
+    }
+    .voice-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.4em 0;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
+    }
+    .voice-btn:hover:not(:disabled) { border-color: #111; }
+    .voice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .voice-btn.active { background: #111; color: #fff; border-color: #111; }
+    .voice-btn.loading { border-color: #999; color: #999; }
+    #tts-voice-output {
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 4em;
+    }
+    #tts-step-info {
+      margin-top: 0.5em;
+      color: #999;
+      font-size: 0.8rem;
+      min-height: 1.2em;
+    }
+    #mobile-fallback { display: none; }
+    @media (max-width: 768px) {
+      .panels { display: none; }
+      #mobile-fallback { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>llm + tts</h1>
+    <p>
+      Language model and speech synthesis running side by side in your browser.<br>
+      No server, no API key. Nothing leaves your machine.
+    </p>
+
+    <div id="mobile-fallback">
+      <p>This demo works best on desktop.</p>
+      <p>
+        Try the individual pages:<br>
+        <a href="/llm/">LLM</a> &middot; <a href="/tts/">Text-to-Speech</a>
+      </p>
+    </div>
+
+    <div class="panels">
+      <div class="panel" id="llm-panel">
+        <div class="model-status">
+          <button id="llm-load-btn">download</button>
+          <span class="status-text" id="llm-status-text"></span>
+        </div>
+
+        <hr>
+
+        <textarea id="llm-input" placeholder="Say something..." maxlength="2000"></textarea>
+        <div class="controls">
+          <button id="llm-send-btn" disabled>send</button>
+        </div>
+
+        <div id="llm-output"></div>
+        <div id="llm-stats"></div>
+      </div>
+
+      <div class="panel" id="tts-panel">
+        <div class="model-status">
+          <button id="tts-load-btn">download</button>
+          <span class="status-text" id="tts-status-text"></span>
+        </div>
+
+        <hr>
+
+        <div class="voice-grid" id="tts-voice-grid"></div>
+
+        <hr>
+
+        <div id="tts-voice-output"></div>
+        <div id="tts-step-info"></div>
+      </div>
+    </div>
+
+    <hr>
+
+    <p>
+      Using <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>
+      and <a href="https://github.com/idle-intelligence/tts-web">tts-web</a>
+    </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
+    import { TtsClient } from '../tts/tts-client.js';
+
+    // ── LLM elements ──
+    const llmInput = document.getElementById('llm-input');
+    const llmSendBtn = document.getElementById('llm-send-btn');
+    const llmLoadBtn = document.getElementById('llm-load-btn');
+    const llmStatusText = document.getElementById('llm-status-text');
+    const llmOutput = document.getElementById('llm-output');
+    const llmStats = document.getElementById('llm-stats');
+
+    // ── TTS elements ──
+    const ttsLoadBtn = document.getElementById('tts-load-btn');
+    const ttsStatusText = document.getElementById('tts-status-text');
+    const ttsVoiceGrid = document.getElementById('tts-voice-grid');
+    const ttsVoiceOutput = document.getElementById('tts-voice-output');
+    const ttsStepInfo = document.getElementById('tts-step-info');
+
+    // ── Message passing (LLM → TTS) ──
+    function sendToTts(type, data) {
+      handleTtsMessage(type, data);
+    }
+
+    // ════════════════════════════════════════════
+    // LLM
+    // ════════════════════════════════════════════
+
+    let engine = null;
+    let llmCached = false;
+
+    // Desktop only — always use 1.7B
+    let selectedModel, modelSize;
+    if (navigator.gpu) {
+      selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+      modelSize = '~2.7GB';
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter?.features.has('shader-f16')) {
+          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
+          modelSize = '~1GB';
+        }
+      } catch (_) {}
+    }
+
+    // Cache check + purge wrong variants
+    try {
+      const keys = await caches.keys();
+      for (const key of keys) {
+        const cache = await caches.open(key);
+        const entries = await cache.keys();
+        const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
+        if (!hasSmolLM2) continue;
+        if (entries.some(r => r.url.includes(selectedModel))) {
+          llmCached = true;
+          llmLoadBtn.textContent = 'load';
+        } else {
+          await caches.delete(key);
+        }
+      }
+    } catch (_) {}
+    llmStatusText.textContent = llmCached
+      ? `model cached locally: ${modelSize}`
+      : `model download: ${modelSize}`;
+
+    if (!navigator.gpu) {
+      llmStatusText.textContent = 'WebGPU is not supported in this browser.';
+      llmLoadBtn.disabled = true;
+    }
+
+    async function loadLlm() {
+      llmLoadBtn.disabled = true;
+      llmStatusText.textContent = 'loading...';
+      try {
+        engine = await CreateMLCEngine(selectedModel, {
+          initProgressCallback: (report) => {
+            const pct = (report.progress * 100).toFixed(0);
+            const mbMatch = report.text.match(/([\d.]+)\s*MB/);
+            const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
+            const verb = llmCached ? 'Loading' : 'Downloading';
+            const phase = pct === '100' ? ' — testing WebGPU...' : '';
+            llmStatusText.textContent = `${verb}: ${mb}${pct}%${phase}`;
+          },
+        });
+        llmStatusText.textContent = 'ready';
+        llmSendBtn.disabled = false;
+      } catch (err) {
+        const msg = err.message || String(err);
+        if (/network|cache|fetch/i.test(msg)) {
+          llmStatusText.textContent = 'download failed — check your connection and try again';
+          llmLoadBtn.disabled = false;
+        } else if (/VK_ERROR|pipeline/i.test(msg)) {
+          llmStatusText.textContent = 'WebGPU is not stable enough on this device yet.';
+        } else {
+          llmStatusText.textContent = 'failed to load: ' + msg;
+          llmLoadBtn.disabled = false;
+        }
+        console.error(err);
+      }
+    }
+
+    async function generate() {
+      const text = llmInput.value.trim().slice(0, 2000);
+      if (!text || !engine) return;
+
+      llmSendBtn.disabled = true;
+      llmOutput.textContent = '';
+      llmStats.textContent = '';
+      sendToTts('clear');
+
+      const start = performance.now();
+
+      try {
+        const chunks = await engine.chat.completions.create({
+          messages: [{ role: 'user', content: text }],
+          max_tokens: 512,
+          stream: true,
+        });
+
+        let tokens = 0;
+        let sentenceBuffer = '';
+        for await (const chunk of chunks) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            llmOutput.textContent += delta;
+            tokens++;
+            sentenceBuffer += delta;
+            let boundary;
+            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+              const ch = sentenceBuffer[boundary];
+              const cutAt = ch === '\n' ? boundary : boundary + 1;
+              const sentence = sentenceBuffer.slice(0, cutAt).trim();
+              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
+              if (sentence) sendToTts('chunk', sentence);
+            }
+            if (sentenceBuffer.length > 200) {
+              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
+              const cut = spaceAt > 0 ? spaceAt : 200;
+              const fragment = sentenceBuffer.slice(0, cut).trim();
+              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+              if (fragment) sendToTts('chunk', fragment);
+            }
+          }
+        }
+        if (sentenceBuffer.trim()) sendToTts('chunk', sentenceBuffer.trim());
+        sendToTts('done');
+
+        const elapsed = (performance.now() - start) / 1000;
+        const tokSec = (tokens / elapsed).toFixed(1);
+        llmStats.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+      } catch (err) {
+        llmOutput.textContent = 'error: ' + err.message;
+        console.error(err);
+      }
+
+      await engine.resetChat();
+      llmSendBtn.disabled = false;
+    }
+
+    if (llmCached) {
+      loadLlm();
+    } else {
+      llmLoadBtn.addEventListener('click', loadLlm);
+    }
+    llmSendBtn.addEventListener('click', generate);
+    llmInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !llmSendBtn.disabled) {
+        e.preventDefault();
+        generate();
+      }
+    });
+
+    // ════════════════════════════════════════════
+    // TTS
+    // ════════════════════════════════════════════
+
+    const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
+    const TEMPERATURE = 0.7;
+
+    let tts = null;
+    let activeVoice = null;
+    let loadingVoice = false;
+    let ttsGenerating = false;
+    let ttsCached = false;
+    let discardGeneration = false;
+    let sentenceQueue = [];
+
+    // Streaming audio playback via AudioWorklet
+    let audioCtx = null;
+    let workletNode = null;
+    let pendingChunks = [];
+    let pendingSamples = 0;
+    const BATCH_SAMPLES = 12000; // ~500ms at 24kHz
+
+    // Metrics
+    let genStartTime = 0;
+    let firstChunkTime = 0;
+    let totalAudioSamples = 0;
+
+    function queueChunk(chunk) {
+      pendingChunks.push(chunk);
+      pendingSamples += chunk.length;
+      if (pendingSamples >= BATCH_SAMPLES) flushToWorklet();
+    }
+
+    function flushToWorklet() {
+      if (!workletNode || pendingChunks.length === 0) return;
+      const pcm = new Float32Array(pendingSamples);
+      let off = 0;
+      for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
+      workletNode.port.postMessage({ type: 'chunk', samples: pcm }, [pcm.buffer]);
+      pendingChunks = [];
+      pendingSamples = 0;
+    }
+
+    async function ensureAudioContext() {
+      if (audioCtx) return;
+      audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
+      await audioCtx.audioWorklet.addModule('../tts/audio-worklet.js');
+      workletNode = new AudioWorkletNode(audioCtx, 'streaming-audio');
+      workletNode.connect(audioCtx.destination);
+    }
+
+    // Check if TTS model is cached
+    const MODEL_CACHE = 'tts-model-v1';
+    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-int8/resolve/main/model.safetensors';
+    try {
+      const cache = await caches.open(MODEL_CACHE);
+      const cached = await cache.match(MODEL_CHECK_URL);
+      if (cached) {
+        ttsCached = true;
+        ttsLoadBtn.textContent = 'load';
+      }
+    } catch (_) {}
+    ttsStatusText.textContent = ttsCached
+      ? 'model cached locally'
+      : 'model will be stored locally: ~130MB';
+
+    // Build voice grid
+    for (const name of VOICES) {
+      const btn = document.createElement('button');
+      btn.className = 'voice-btn';
+      btn.textContent = name;
+      btn.disabled = true;
+      btn.dataset.voice = name;
+      btn.addEventListener('click', () => selectVoice(name));
+      ttsVoiceGrid.appendChild(btn);
+    }
+
+    function setVoiceBtnsEnabled(enabled) {
+      ttsVoiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+        btn.disabled = !enabled;
+      });
+    }
+
+    function selectVoice(name) {
+      if (loadingVoice) return;
+      loadingVoice = true;
+      setVoiceBtnsEnabled(false);
+      ttsVoiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.voice === name) btn.classList.add('loading');
+      });
+      tts.loadVoice(name);
+    }
+
+    tts = new TtsClient({
+      baseUrl: 'https://idle-intelligence.github.io/tts-web',
+      workerUrl: '../tts/worker.js',
+
+      onVoiceLoaded: (name) => {
+        loadingVoice = false;
+        activeVoice = name;
+        ttsVoiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+          btn.classList.remove('loading');
+          if (btn.dataset.voice === name) btn.classList.add('active');
+          else btn.classList.remove('active');
+        });
+        setVoiceBtnsEnabled(true);
+        processQueue();
+      },
+
+      onStatus: (text, ready, progress) => {
+        if (ready) {
+          ttsStatusText.textContent = 'ready — select a voice';
+          setVoiceBtnsEnabled(true);
+          ttsLoadBtn.disabled = true;
+        } else if (progress && progress.total > 0) {
+          const mb = (progress.loaded / 1024 / 1024).toFixed(1);
+          const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
+          const verb = ttsCached ? 'Loading' : 'Downloading';
+          ttsStatusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
+        } else {
+          ttsStatusText.textContent = text;
+        }
+      },
+
+      onError: (err) => {
+        ttsStatusText.textContent = 'error: ' + err.message;
+        ttsGenerating = false;
+        loadingVoice = false;
+        setVoiceBtnsEnabled(true);
+        ttsStepInfo.textContent = '';
+        console.error(err);
+      },
+
+      onGenStart: async (numTokens) => {
+        discardGeneration = false;
+        totalAudioSamples = 0;
+        genStartTime = performance.now();
+        firstChunkTime = 0;
+        ttsStepInfo.textContent = `generating... (${numTokens} tokens)`;
+        ttsStatusText.textContent = 'generating...';
+        pendingChunks = [];
+        pendingSamples = 0;
+        await ensureAudioContext();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      },
+
+      onChunk: (data, step) => {
+        if (discardGeneration) return;
+        if (!firstChunkTime) firstChunkTime = performance.now();
+        const chunk = new Float32Array(data);
+        totalAudioSamples += chunk.length;
+        queueChunk(chunk);
+        const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
+        const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
+        const rtf = (totalAudioSamples / tts.sampleRate) / ((performance.now() - genStartTime) / 1000);
+        ttsStepInfo.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
+      },
+
+      onDone: (totalSteps) => {
+        if (discardGeneration) { discardGeneration = false; return; }
+        flushToWorklet();
+        const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
+        const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
+        const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
+        const rtf = (totalAudioSamples / tts.sampleRate / parseFloat(totalTime)).toFixed(2);
+        ttsGenerating = false;
+        setVoiceBtnsEnabled(true);
+        ttsStepInfo.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
+        ttsStatusText.textContent = 'ready';
+        processQueue();
+      }
+    });
+
+    async function initTts() {
+      ttsLoadBtn.disabled = true;
+      ttsStatusText.textContent = 'loading...';
+      try {
+        await tts.init();
+      } catch (err) {
+        ttsStatusText.textContent = 'failed to load: ' + err.message;
+        ttsLoadBtn.disabled = false;
+        console.error(err);
+      }
+    }
+
+    if (ttsCached) {
+      await initTts();
+    } else {
+      ttsLoadBtn.addEventListener('click', () => initTts());
+    }
+
+    function processQueue() {
+      if (ttsGenerating || sentenceQueue.length === 0 || !activeVoice) return;
+      const text = sentenceQueue.shift();
+      ttsGenerating = true;
+      tts.generate(text, TEMPERATURE);
+    }
+
+    // ── Handle messages from LLM ──
+    function handleTtsMessage(type, data) {
+      if (type === 'clear') {
+        discardGeneration = true;
+        ttsGenerating = false;
+        sentenceQueue = [];
+        ttsVoiceOutput.textContent = '';
+        if (workletNode) workletNode.port.postMessage({ type: 'clear' });
+        return;
+      }
+      if (type === 'chunk') {
+        ttsVoiceOutput.textContent += (ttsVoiceOutput.textContent ? ' ' : '') + data;
+        sentenceQueue.push(data);
+        processQueue();
+      }
+      // 'done' — no-op, queue drains naturally
+    }
+  </script>
+</body>
+</html>
