@@ -244,12 +244,7 @@
         generating = false;
         sentenceQueue = [];
         voiceOutput.textContent = '';
-        if (audioCtx) {
-          audioCtx.close();
-          audioCtx = null;
-          playbackStarted = false;
-          nextStartTime = 0;
-        }
+        if (workletNode) workletNode.port.postMessage({ type: 'clear' });
         return;
       }
       if (msg.type === 'chunk') {
@@ -263,38 +258,25 @@
       }
     };
 
-    // Streaming audio playback
-    const BATCH_MS = 500;
+    // Streaming audio playback via AudioWorklet
     let audioCtx = null;
-    let nextStartTime = 0;
-    let pendingChunks = [];
-    let pendingSamples = 0;
-    let playbackStarted = false;
+    let workletNode = null;
 
     // Metrics
     let genStartTime = 0;
     let firstChunkTime = 0;
     let totalAudioSamples = 0;
 
-    function flushAudioBatch() {
-      if (pendingChunks.length === 0) return;
-      if (!playbackStarted) {
-        playbackStarted = true;
-        nextStartTime = audioCtx.currentTime;
-      }
-      const totalLen = pendingSamples;
-      const pcm = new Float32Array(totalLen);
-      let off = 0;
-      for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
-      pendingChunks = [];
-      pendingSamples = 0;
-      const buf = audioCtx.createBuffer(1, totalLen, tts.sampleRate);
-      buf.getChannelData(0).set(pcm);
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(audioCtx.destination);
-      src.start(nextStartTime);
-      nextStartTime += totalLen / tts.sampleRate;
+    function sendChunkToWorklet(chunk) {
+      if (workletNode) workletNode.port.postMessage({ type: 'chunk', samples: chunk });
+    }
+
+    async function ensureAudioContext() {
+      if (audioCtx) return;
+      audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
+      await audioCtx.audioWorklet.addModule('./audio-worklet.js');
+      workletNode = new AudioWorkletNode(audioCtx, 'streaming-audio');
+      workletNode.connect(audioCtx.destination);
     }
 
     // Check if model is cached
@@ -408,26 +390,19 @@
           console.error(err);
         },
 
-        onGenStart: (numTokens) => {
+        onGenStart: async (numTokens) => {
           discardGeneration = false;
           allChunks = [];
-          pendingChunks = [];
-          pendingSamples = 0;
           totalAudioSamples = 0;
           genStartTime = performance.now();
           firstChunkTime = 0;
           audioSection.style.display = 'none';
           stepInfo.textContent = `generating... (${numTokens} tokens)`;
           statusText.textContent = 'generating...';
-          if (voiceMode && audioCtx) {
-            playbackStarted = true;
-            nextStartTime = Math.max(nextStartTime, audioCtx.currentTime);
-          } else {
-            if (audioCtx) audioCtx.close();
-            playbackStarted = false;
-            audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
-            nextStartTime = 0;
+          if (!voiceMode && workletNode) {
+            workletNode.port.postMessage({ type: 'clear' });
           }
+          await ensureAudioContext();
           if (audioCtx.state === 'suspended') audioCtx.resume();
         },
 
@@ -436,21 +411,16 @@
           if (!firstChunkTime) firstChunkTime = performance.now();
           const chunk = new Float32Array(data);
           allChunks.push(chunk);
-          pendingChunks.push(chunk);
-          pendingSamples += chunk.length;
           totalAudioSamples += chunk.length;
+          sendChunkToWorklet(chunk);
           const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
           const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
           const rtf = (totalAudioSamples / tts.sampleRate) / ((performance.now() - genStartTime) / 1000);
           stepInfo.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
-          const batchSamples = (BATCH_MS / 1000) * tts.sampleRate;
-          const threshold = playbackStarted ? batchSamples : batchSamples * 2;
-          if (pendingSamples >= threshold) flushAudioBatch();
         },
 
         onDone: (totalSteps) => {
           if (discardGeneration) { discardGeneration = false; return; }
-          flushAudioBatch();
           const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
           const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
           const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
@@ -533,12 +503,7 @@
       generateBtn.style.display = '';
       generateBtn.disabled = !activeVoice;
       sentenceQueue = [];
-      if (audioCtx) {
-        audioCtx.close();
-        audioCtx = null;
-        playbackStarted = false;
-        nextStartTime = 0;
-      }
+      if (workletNode) workletNode.port.postMessage({ type: 'clear' });
     }
 
     voiceDisconnect.addEventListener('click', (e) => {
