@@ -261,14 +261,29 @@
     // Streaming audio playback via AudioWorklet
     let audioCtx = null;
     let workletNode = null;
+    let pendingChunks = [];
+    let pendingSamples = 0;
+    const BATCH_SAMPLES = 12000; // ~500ms at 24kHz
 
     // Metrics
     let genStartTime = 0;
     let firstChunkTime = 0;
     let totalAudioSamples = 0;
 
-    function sendChunkToWorklet(chunk) {
-      if (workletNode) workletNode.port.postMessage({ type: 'chunk', samples: chunk });
+    function queueChunk(chunk) {
+      pendingChunks.push(chunk);
+      pendingSamples += chunk.length;
+      if (pendingSamples >= BATCH_SAMPLES) flushToWorklet();
+    }
+
+    function flushToWorklet() {
+      if (!workletNode || pendingChunks.length === 0) return;
+      const pcm = new Float32Array(pendingSamples);
+      let off = 0;
+      for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
+      workletNode.port.postMessage({ type: 'chunk', samples: pcm }, [pcm.buffer]);
+      pendingChunks = [];
+      pendingSamples = 0;
     }
 
     async function ensureAudioContext() {
@@ -399,6 +414,8 @@
           audioSection.style.display = 'none';
           stepInfo.textContent = `generating... (${numTokens} tokens)`;
           statusText.textContent = 'generating...';
+          pendingChunks = [];
+          pendingSamples = 0;
           if (!voiceMode && workletNode) {
             workletNode.port.postMessage({ type: 'clear' });
           }
@@ -412,7 +429,7 @@
           const chunk = new Float32Array(data);
           allChunks.push(chunk);
           totalAudioSamples += chunk.length;
-          sendChunkToWorklet(chunk);
+          queueChunk(chunk);
           const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
           const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
           const rtf = (totalAudioSamples / tts.sampleRate) / ((performance.now() - genStartTime) / 1000);
@@ -421,6 +438,7 @@
 
         onDone: (totalSteps) => {
           if (discardGeneration) { discardGeneration = false; return; }
+          flushToWorklet();
           const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
           const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
           const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
