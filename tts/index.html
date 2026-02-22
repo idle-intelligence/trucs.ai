@@ -428,6 +428,7 @@
             audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
             nextStartTime = 0;
           }
+          if (audioCtx.state === 'suspended') audioCtx.resume();
         },
 
         onChunk: (data, step) => {
