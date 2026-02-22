@@ -198,6 +198,7 @@
 
     let selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
     let modelSize = '~2.7GB';
+    let modelBytes = 2.7e9;
     let modelLabel = 'SmolLM2-1.7B';
 
     if (navigator.gpu) {
@@ -206,9 +207,11 @@
         if (adapter && adapter.features.has('shader-f16')) {
           selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
           modelSize = '~1GB';
+          modelBytes = 1e9;
         } else if (isMobile) {
           selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
           modelSize = '~580MB';
+          modelBytes = 580e6;
           modelLabel = 'SmolLM2-360M';
         }
       } catch (_) {}
@@ -241,6 +244,20 @@
     async function loadModel() {
       loadBtn.disabled = true;
       statusText.textContent = 'loading...';
+
+      // Check available storage before downloading
+      if (!isCached && navigator.storage?.estimate) {
+        try {
+          const { usage, quota } = await navigator.storage.estimate();
+          const available = quota - usage;
+          const needed = modelBytes;
+          if (available < needed * 1.2) {
+            statusText.textContent = 'not enough storage — free up space and try again';
+            loadBtn.disabled = false;
+            return;
+          }
+        } catch (_) {}
+      }
 
       try {
         engine = await CreateMLCEngine(selectedModel, {
