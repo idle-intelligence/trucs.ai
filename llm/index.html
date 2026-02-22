@@ -256,9 +256,12 @@
         statusText.textContent = 'ready';
         sendBtn.disabled = false;
       } catch (err) {
-        statusText.textContent = 'failed to load: ' + err.message;
-        loadBtn.disabled = false;
         console.error(err);
+        const isNetwork = /network|cache|fetch|abort/i.test(err.message);
+        statusText.textContent = isNetwork
+          ? 'download failed — check your connection and try again'
+          : 'failed to load: ' + err.message;
+        loadBtn.disabled = false;
       }
     }
 
