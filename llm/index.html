@@ -270,6 +270,15 @@
                 channel.postMessage({ from: 'llm', type: 'chunk', text: sentence });
               }
             }
+            if (sentenceBuffer.length > 200) {
+              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
+              const cut = spaceAt > 0 ? spaceAt : 200;
+              const fragment = sentenceBuffer.slice(0, cut).trim();
+              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+              if (fragment && voiceConnected) {
+                channel.postMessage({ from: 'llm', type: 'chunk', text: fragment });
+              }
+            }
           }
         }
         if (sentenceBuffer.trim() && voiceConnected) {

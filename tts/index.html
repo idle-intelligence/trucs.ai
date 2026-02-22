@@ -516,6 +516,7 @@
       pingInterval = setInterval(() => {
         channel.postMessage({ from: 'tts', type: 'ping' });
       }, 2000);
+      if (tts.isReady()) selectVoice(activeVoice || 'fantine');
     }
 
     function exitVoiceMode() {
