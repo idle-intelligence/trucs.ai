@@ -90,7 +90,7 @@
     <p>
       A small language model running entirely in your browser via WebGPU.<br>
       No server, no API key. Your prompt never leaves your machine.<br>
-      SmolLM2-1.7B, single-turn chat.
+      <span id="model-name">SmolLM2-1.7B</span>, single-turn chat.
     </p>
 
     <div id="model-status">
@@ -188,13 +188,41 @@
     let engine = null;
     let isCached = false;
 
+    // Detect platform and shader-f16 support to pick model variant
+    // Desktop + f16 → 1.7B q4f16 (~1GB)
+    // Desktop − f16 → 1.7B q4f32 (~2.7GB)  (Linux, older GPUs)
+    // Mobile  + f16 → 1.7B q4f16 (~1GB)
+    // Mobile  − f16 → 360M q4f32 (~580MB)  (most Android)
+    const isMobile = navigator.userAgentData?.mobile
+      ?? /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    let selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+    let modelSize = '~2.7GB';
+    let modelLabel = 'SmolLM2-1.7B';
+
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter && adapter.features.has('shader-f16')) {
+          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
+          modelSize = '~1GB';
+        } else if (isMobile) {
+          selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
+          modelSize = '~580MB';
+          modelLabel = 'SmolLM2-360M';
+        }
+      } catch (_) {}
+    }
+    document.getElementById('model-name').textContent = modelLabel;
+
     // Check if model is cached
+    const modelSlug = selectedModel.split('-Instruct-')[1].split('-MLC')[0];
     try {
       const keys = await caches.keys();
       for (const key of keys) {
         const cache = await caches.open(key);
         const matched = await cache.keys();
-        if (matched.some(r => r.url.includes('SmolLM2'))) {
+        if (matched.some(r => r.url.includes('SmolLM2') && r.url.includes(modelSlug))) {
           isCached = true;
           loadBtn.textContent = 'load';
           break;
@@ -202,8 +230,8 @@
       }
     } catch (_) {}
     statusText.textContent = isCached
-      ? 'model cached locally: ~1GB'
-      : 'model will be stored locally: ~1GB';
+      ? `model cached locally: ${modelSize}`
+      : `model will be stored locally: ${modelSize}`;
 
     if (!navigator.gpu) {
       statusText.textContent = 'WebGPU is not supported in this browser.';
@@ -215,7 +243,7 @@
       statusText.textContent = 'loading...';
 
       try {
-        engine = await CreateMLCEngine('SmolLM2-1.7B-Instruct-q4f16_1-MLC', {
+        engine = await CreateMLCEngine(selectedModel, {
           initProgressCallback: (report) => {
             const pct = (report.progress * 100).toFixed(0);
             const mbMatch = report.text.match(/([\d.]+)\s*MB/);
