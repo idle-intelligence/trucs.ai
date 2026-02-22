@@ -188,64 +188,60 @@
     let engine = null;
     let isCached = false;
 
-    // Mobile: 360M q4f32 (~290MB) — small, no f16 needed, no caching
-    // Desktop + shader-f16: 1.7B q4f16 (~1GB)
-    // Desktop − shader-f16: 1.7B q4f32 (~2.7GB)
+    // Model selection matrix:
+    // shader-f16 (any device): 1.7B q4f16 (~1GB)
+    // no f16 + mobile: 360M q4f32 (~290MB)
+    // no f16 + desktop: 1.7B q4f32 (~2.7GB)
     const isMobile = navigator.userAgentData?.mobile
       ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
 
     let selectedModel, modelSize, modelLabel;
-    if (isMobile) {
-      selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
-      modelSize = '~290MB';
-      modelLabel = 'SmolLM2-360M';
-    } else {
-      selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-      modelSize = '~2.7GB';
-      modelLabel = 'SmolLM2-1.7B';
-      if (navigator.gpu) {
-        try {
-          const adapter = await navigator.gpu.requestAdapter();
-          if (adapter?.features.has('shader-f16')) {
-            selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
-            modelSize = '~1GB';
-          }
-        } catch (_) {}
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        const hasF16 = adapter?.features.has('shader-f16');
+        if (hasF16) {
+          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
+          modelSize = '~1GB';
+          modelLabel = 'SmolLM2-1.7B';
+        } else if (isMobile) {
+          selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
+          modelSize = '~290MB';
+          modelLabel = 'SmolLM2-360M';
+        } else {
+          selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+          modelSize = '~2.7GB';
+          modelLabel = 'SmolLM2-1.7B';
+        }
+      } catch (_) {
+        selectedModel = isMobile
+          ? 'SmolLM2-360M-Instruct-q4f32_1-MLC'
+          : 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+        modelSize = isMobile ? '~290MB' : '~2.7GB';
+        modelLabel = isMobile ? 'SmolLM2-360M' : 'SmolLM2-1.7B';
       }
     }
     document.getElementById('model-name').textContent = modelLabel;
 
-    // On mobile, purge any stale model caches from previous visits
-    // and skip cache check — model is small enough to re-download
-    if (isMobile) {
-      try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          if (entries.some(r => r.url.includes('SmolLM2'))) {
-            await caches.delete(key);
-          }
+    // Purge caches for wrong model variants, then check for valid cache
+    try {
+      const keys = await caches.keys();
+      for (const key of keys) {
+        const cache = await caches.open(key);
+        const entries = await cache.keys();
+        const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
+        if (!hasSmolLM2) continue;
+        if (entries.some(r => r.url.includes(selectedModel))) {
+          isCached = true;
+          loadBtn.textContent = 'load';
+        } else {
+          await caches.delete(key);
         }
-      } catch (_) {}
-      statusText.textContent = `model download: ${modelSize}`;
-    } else {
-      try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          if (entries.some(r => r.url.includes(selectedModel))) {
-            isCached = true;
-            loadBtn.textContent = 'load';
-            break;
-          }
-        }
-      } catch (_) {}
-      statusText.textContent = isCached
-        ? `model cached locally: ${modelSize}`
-        : `model will be stored locally: ${modelSize}`;
-    }
+      }
+    } catch (_) {}
+    statusText.textContent = isCached
+      ? `model cached locally: ${modelSize}`
+      : `model download: ${modelSize}`;
 
     if (!navigator.gpu) {
       statusText.textContent = 'WebGPU is not supported in this browser.';
@@ -358,21 +354,6 @@
       }
     });
 
-    // Mobile: clean up model cache on page unload
-    if (isMobile) {
-      addEventListener('beforeunload', async () => {
-        try {
-          const keys = await caches.keys();
-          for (const key of keys) {
-            const cache = await caches.open(key);
-            const entries = await cache.keys();
-            if (entries.some(r => r.url.includes('SmolLM2'))) {
-              await caches.delete(key);
-            }
-          }
-        } catch (_) {}
-      });
-    }
   </script>
 </body>
 </html>
