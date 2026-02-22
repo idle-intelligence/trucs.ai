@@ -94,17 +94,6 @@
       margin-top: 0.75em;
       flex-wrap: wrap;
     }
-    .controls label {
-      font-size: 0.85rem;
-      color: #555;
-      display: flex;
-      align-items: center;
-      gap: 0.5em;
-    }
-    .controls input[type="range"] {
-      width: 80px;
-      cursor: pointer;
-    }
     #step-info {
       margin-top: 0.5em;
       color: #999;
@@ -120,7 +109,7 @@
     #voice-mode-bar {
       font-size: 0.85rem;
       color: #555;
-      margin-bottom: 0.5em;
+      margin-top: 0.5em;
     }
     #voice-mode-bar a {
       color: #111;
@@ -145,6 +134,11 @@
       <button id="load-btn">download</button>
       <span id="status-text"></span>
     </div>
+    <div id="voice-mode-bar" style="display:none">
+      Connected to the LLM.<br>
+      <a href="#" id="voice-disconnect">disconnect</a> if the LLM is speaking too much, or if you want to listen to the voices first.<br>
+      <span id="voice-guide"></span>
+    </div>
 
     <hr>
 
@@ -152,12 +146,10 @@
 
     <hr>
 
-    <div id="voice-mode-bar" style="display:none">LLM voice mode — <a href="#" id="voice-disconnect">disconnect</a></div>
     <div id="voice-output" style="display:none"></div>
     <textarea id="text-input" placeholder="Type something or tap a voice to hear a demo."></textarea>
     <div class="controls">
       <button id="generate-btn" disabled>generate</button>
-      <label>temp <input type="range" id="temp-slider" min="0.1" max="1.5" step="0.05" value="0.7"> <span id="temp-value">0.70</span></label>
     </div>
     <div id="step-info"></div>
 
@@ -182,14 +174,13 @@
     const voiceGrid = document.getElementById('voice-grid');
     const textInput = document.getElementById('text-input');
     const generateBtn = document.getElementById('generate-btn');
-    const tempSlider = document.getElementById('temp-slider');
-    const tempValue = document.getElementById('temp-value');
     const stepInfo = document.getElementById('step-info');
     const audioSection = document.getElementById('audio-section');
     const audioPlayer = document.getElementById('audio-player');
     const voiceOutput = document.getElementById('voice-output');
     const voiceModeBar = document.getElementById('voice-mode-bar');
     const voiceDisconnect = document.getElementById('voice-disconnect');
+    const voiceGuide = document.getElementById('voice-guide');
 
     const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
     const GREETINGS = ['Hello', 'Hi', 'Hello there', 'Hey'];
@@ -220,6 +211,21 @@
     let allChunks = [];
     let isCached = false;
     let discardGeneration = false;
+
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+    function updateVoiceGuide() {
+      if (!voiceMode) return;
+      if (!tts || !tts.isReady()) {
+        voiceGuide.textContent = 'Download the model and select a voice to get started.';
+      } else if (!activeVoice) {
+        voiceGuide.textContent = 'Select a voice to use with the LLM.';
+      } else {
+        let text = 'Once you\'re set, go back to the LLM tab to test LLM → TTS.';
+        if (isSafari) text += '\n(disclaimer: Safari is a bit picky with tabs playing background audio)';
+        voiceGuide.textContent = text;
+      }
+    }
 
     // Voice mode (cross-tab from LLM)
     let voiceMode = new URLSearchParams(window.location.search).get('mode') === 'voice';
@@ -342,9 +348,7 @@
       tts.loadVoice(name);
     }
 
-    tempSlider.addEventListener('input', () => {
-      tempValue.textContent = parseFloat(tempSlider.value).toFixed(2);
-    });
+    const TEMPERATURE = 0.7;
 
     function makeClient() {
       return new TtsClient({
@@ -365,6 +369,7 @@
           if (voiceMode) {
             channel.postMessage({ from: 'tts', type: sentReady ? 'voice' : 'ready', voice: name });
             sentReady = true;
+            updateVoiceGuide();
             processQueue();
             return;
           }
@@ -376,7 +381,7 @@
           isDemoGen = !userText;
           generating = true;
           generateBtn.disabled = true;
-          tts.generate(text, parseFloat(tempSlider.value));
+          tts.generate(text, TEMPERATURE);
         },
 
         onStatus: (text, ready, progress) => {
@@ -384,6 +389,7 @@
             statusText.textContent = 'ready';
             setVoiceBtnsEnabled(true);
             loadBtn.disabled = true;
+            updateVoiceGuide();
           } else if (progress && progress.total > 0) {
             const mb = (progress.loaded / 1024 / 1024).toFixed(1);
             const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
@@ -491,7 +497,7 @@
       const text = sentenceQueue.shift();
       generating = true;
       generateBtn.disabled = true;
-      tts.generate(text, parseFloat(tempSlider.value));
+      tts.generate(text, TEMPERATURE);
     }
 
     function enterVoiceMode() {
@@ -501,6 +507,7 @@
       voiceOutput.style.display = 'block';
       voiceOutput.textContent = '';
       generateBtn.style.display = 'none';
+      updateVoiceGuide();
       channel.postMessage({ from: 'tts', type: 'ping' });
       pingInterval = setInterval(() => {
         channel.postMessage({ from: 'tts', type: 'ping' });
@@ -544,7 +551,7 @@
       isDemoGen = false;
       generating = true;
       generateBtn.disabled = true;
-      tts.generate(text, parseFloat(tempSlider.value));
+      tts.generate(text, TEMPERATURE);
     });
 
     function encodeWav(samples, sampleRate) {

@@ -97,6 +97,7 @@
       <button id="load-btn">download</button>
       <span id="status-text"></span>
     </div>
+    <div id="voice-link"><a href="#" id="voice-open">give a voice to your LLM</a> <span id="voice-status"></span><br><span id="voice-hint"></span></div>
 
     <hr>
 
@@ -104,8 +105,6 @@
     <div class="controls">
       <button id="send-btn" disabled>send</button>
     </div>
-
-    <div id="voice-link"><a href="#" id="voice-open">give a voice to your LLM</a> <span id="voice-status"></span></div>
 
     <div id="output"></div>
     <div id="stats"></div>
@@ -132,6 +131,7 @@
     const channel = new BroadcastChannel('trucs-ai');
     const voiceOpen = document.getElementById('voice-open');
     const voiceStatus = document.getElementById('voice-status');
+    const voiceHint = document.getElementById('voice-hint');
     let voiceConnected = false;
     let voiceTimeout = null;
     let openFallback = null;
@@ -140,6 +140,7 @@
       voiceConnected = false;
       voiceOpen.textContent = 'give a voice to your LLM';
       voiceStatus.textContent = '';
+      voiceHint.textContent = '';
       if (voiceTimeout) { clearTimeout(voiceTimeout); voiceTimeout = null; }
     }
 
@@ -176,6 +177,7 @@
       if (!voiceConnected) {
         voiceConnected = true;
         voiceOpen.textContent = 'disconnect voice';
+        voiceHint.textContent = 'go to the TTS tab to choose another voice';
       }
 
       if (msg.type === 'ready' || msg.type === 'voice') {
