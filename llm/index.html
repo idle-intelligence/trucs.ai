@@ -188,13 +188,30 @@
     let engine = null;
     let isCached = false;
 
+    // Detect shader-f16 support and pick model variant
+    const F16_MODEL = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
+    const F32_MODEL = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+    let selectedModel = F32_MODEL;
+    let modelSize = '~2.7GB';
+
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter && adapter.features.has('shader-f16')) {
+          selectedModel = F16_MODEL;
+          modelSize = '~1GB';
+        }
+      } catch (_) {}
+    }
+
     // Check if model is cached
+    const modelTag = selectedModel.includes('f16') ? 'q4f16_1' : 'q4f32_1';
     try {
       const keys = await caches.keys();
       for (const key of keys) {
         const cache = await caches.open(key);
         const matched = await cache.keys();
-        if (matched.some(r => r.url.includes('SmolLM2'))) {
+        if (matched.some(r => r.url.includes('SmolLM2') && r.url.includes(modelTag))) {
           isCached = true;
           loadBtn.textContent = 'load';
           break;
@@ -202,8 +219,8 @@
       }
     } catch (_) {}
     statusText.textContent = isCached
-      ? 'model cached locally: ~1GB'
-      : 'model will be stored locally: ~1GB';
+      ? `model cached locally: ${modelSize}`
+      : `model will be stored locally: ${modelSize}`;
 
     if (!navigator.gpu) {
       statusText.textContent = 'WebGPU is not supported in this browser.';
@@ -215,7 +232,7 @@
       statusText.textContent = 'loading...';
 
       try {
-        engine = await CreateMLCEngine('SmolLM2-1.7B-Instruct-q4f16_1-MLC', {
+        engine = await CreateMLCEngine(selectedModel, {
           initProgressCallback: (report) => {
             const pct = (report.progress * 100).toFixed(0);
             const mbMatch = report.text.match(/([\d.]+)\s*MB/);
