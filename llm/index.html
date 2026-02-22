@@ -249,7 +249,8 @@
             const mbMatch = report.text.match(/([\d.]+)\s*MB/);
             const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
             const verb = isCached ? 'Loading' : 'Downloading';
-            statusText.textContent = `${verb}: ${mb}${pct}%`;
+            const phase = pct === '100' ? ' — testing WebGPU...' : '';
+            statusText.textContent = `${verb}: ${mb}${pct}%${phase}`;
           },
         });
 
@@ -259,10 +260,13 @@
         const msg = err.message || String(err);
         if (/network|cache|fetch/i.test(msg)) {
           statusText.textContent = 'download failed — check your connection and try again';
+          loadBtn.disabled = false;
+        } else if (/VK_ERROR|pipeline/i.test(msg)) {
+          statusText.textContent = 'WebGPU is not stable enough on this device yet.';
         } else {
           statusText.textContent = 'failed to load: ' + msg;
+          loadBtn.disabled = false;
         }
-        loadBtn.disabled = false;
         console.error(err);
       }
     }
