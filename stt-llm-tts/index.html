@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stt + llm + tts — trucs.ai</title>
+  <meta name="description" content="Speak, transcribe, generate, and listen — all running in your browser. No server, no API key.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    body { max-width: 1200px; }
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover { background: #111; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button:disabled:hover { background: #fff; color: #111; }
+    button.recording { background: #111; color: #fff; }
+    .global-status {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+    }
+    .global-status button { flex-shrink: 0; }
+    .status-lines {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15em;
+    }
+    .status-line {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .status-line span { color: #999; }
+    .panel-header {
+      display: flex;
+      align-items: baseline;
+      gap: 1em;
+      margin-bottom: 0.75em;
+    }
+    .panel-title {
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: #111;
+    }
+    .panel-metrics {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    .action-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 1em;
+    }
+    #app { display: block; }
+    .panel hr { margin: 1.5em 0; }
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 2em;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+      margin-bottom: 0.75em;
+    }
+    .panel-output {
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 8em;
+    }
+    .voice-grid {
+      flex-shrink: 0;
+      width: 50%;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5em;
+    }
+    .voice-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.4em 0;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
+    }
+    .voice-btn:hover:not(:disabled) { border-color: #111; }
+    .voice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .voice-btn.active { background: #111; color: #fff; border-color: #111; }
+    .voice-btn.loading { border-color: #999; color: #999; }
+    #mobile-fallback { display: none; }
+    @media (max-width: 768px) {
+      #app { display: none; }
+      #mobile-fallback { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>stt + llm + tts</h1>
+    <p>
+      Speak, transcribe, generate, and listen — all in your browser.<br>
+      No server, no API key. Nothing leaves your machine.
+    </p>
+
+    <div id="mobile-fallback">
+      <p>This demo works best on desktop.</p>
+      <p>
+        Try the individual pages:<br>
+        <a href="/stt/">Speech-to-Text</a> &middot; <a href="/llm/">LLM</a> &middot; <a href="/tts/">Text-to-Speech</a>
+      </p>
+    </div>
+
+    <div id="app">
+      <div class="global-status">
+        <button id="load-btn">download</button>
+        <div class="status-lines">
+          <div class="status-line"><span>stt:</span> <span id="stt-status-text"></span></div>
+          <div class="status-line"><span>llm:</span> <span id="llm-status-text"></span></div>
+          <div class="status-line"><span>tts:</span> <span id="tts-status-text"></span></div>
+        </div>
+        <div class="voice-grid" id="tts-voice-grid"></div>
+      </div>
+
+      <hr>
+
+      <div class="action-buttons">
+        <button id="stt-record-btn" disabled>start recording</button>
+        <button id="reset-btn" disabled>reset</button>
+      </div>
+
+      <hr>
+
+      <div class="panels">
+        <div class="panel" id="stt-panel">
+          <div class="panel-header">
+            <span class="panel-title">stt</span>
+            <span class="panel-metrics" id="stt-metrics"></span>
+          </div>
+          <div class="panel-output" id="stt-transcript"></div>
+        </div>
+
+        <div class="panel" id="llm-panel">
+          <div class="panel-header">
+            <span class="panel-title">llm</span>
+            <span class="panel-metrics" id="llm-metrics"></span>
+          </div>
+          <div class="panel-output" id="llm-output"></div>
+        </div>
+
+        <div class="panel" id="tts-panel">
+          <div class="panel-header">
+            <span class="panel-title">tts</span>
+            <span class="panel-metrics" id="tts-metrics"></span>
+          </div>
+          <div class="panel-output" id="tts-voice-output"></div>
+        </div>
+      </div>
+    </div>
+
+    <hr>
+
+    <p>
+      Using <a href="https://github.com/idle-intelligence/stt-web">stt-web</a>,
+      <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>,
+      and <a href="https://github.com/idle-intelligence/tts-web">tts-web</a>
+    </p>
+    <p class="panel-desc">
+      STT: English and French speech recognition. Rust + WebAssembly + WebGPU.<br>
+      LLM: SmolLM2-1.7B, single-turn chat via WebGPU.<br>
+      TTS: Speech synthesis. Rust + WebAssembly.
+    </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    import { SttClient } from '../stt/stt-client.js';
+    import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
+    import { TtsClient } from '../tts/tts-client.js';
+
+    // ── Global elements ──
+    const loadBtn = document.getElementById('load-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const sttStatusText = document.getElementById('stt-status-text');
+    const llmStatusText = document.getElementById('llm-status-text');
+    const ttsStatusText = document.getElementById('tts-status-text');
+
+    // ── STT elements ──
+    const sttRecordBtn = document.getElementById('stt-record-btn');
+    const sttTranscript = document.getElementById('stt-transcript');
+    const sttMetricsEl = document.getElementById('stt-metrics');
+
+    // ── LLM elements ──
+    const llmOutput = document.getElementById('llm-output');
+    const llmMetricsEl = document.getElementById('llm-metrics');
+
+    // ── TTS elements ──
+    const ttsVoiceGrid = document.getElementById('tts-voice-grid');
+    const ttsVoiceOutput = document.getElementById('tts-voice-output');
+    const ttsMetricsEl = document.getElementById('tts-metrics');
+
+    // ── State ──
+    let llmReady = false;
+    let llmAbort = false;
+    let pendingLlmText = '';
+    let silenceTimer = null;
+    const SILENCE_MS = 1500;
+    let llmDone = false;
+
+    const SYSTEM_PROMPT = 'You are a voice assistant running entirely in the browser — no server, no API. This is a trucs.ai demo. The user speaks, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.';
+    const MAX_TURNS = 5;
+    let chatHistory = [];
+
+    function isUsableTranscript(text) {
+      return /[a-zA-ZÀ-ÿ]{2,}/.test(text);
+    }
+
+    function sendToLlm(text) {
+      pendingLlmText = text;
+      if (engine && llmReady) generate();
+    }
+
+
+    // ════════════════════════════════════════════
+    // Cache checks
+    // ════════════════════════════════════════════
+
+    let sttCached = false;
+    let llmCached = false;
+    let ttsCached = false;
+
+    // STT cache
+    const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
+    try {
+      const cache = await caches.open('stt-model-v1');
+      const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
+      if (cached) sttCached = true;
+    } catch (_) {}
+
+    // LLM cache + model selection
+    let selectedModel, modelSize;
+    if (navigator.gpu) {
+      selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+      modelSize = '~2.7GB';
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter?.features.has('shader-f16')) {
+          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
+          modelSize = '~1GB';
+        }
+      } catch (_) {}
+    }
+
+    if (selectedModel) {
+      try {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          const entries = await cache.keys();
+          const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
+          if (!hasSmolLM2) continue;
+          if (entries.some(r => r.url.includes(selectedModel))) {
+            llmCached = true;
+          } else {
+            await caches.delete(key);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // TTS cache
+    const MODEL_CACHE = 'tts-model-v1';
+    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-int8/resolve/main/model.safetensors';
+    try {
+      const cache = await caches.open(MODEL_CACHE);
+      const cached = await cache.match(MODEL_CHECK_URL);
+      if (cached) ttsCached = true;
+    } catch (_) {}
+
+    // Set initial status texts
+    const allCached = sttCached && llmCached && ttsCached;
+    if (allCached) loadBtn.textContent = 'load';
+
+    if (!navigator.gpu) {
+      sttStatusText.textContent = 'WebGPU required';
+      llmStatusText.textContent = 'WebGPU required';
+      ttsStatusText.textContent = '';
+      loadBtn.disabled = true;
+    } else {
+      sttStatusText.textContent = sttCached ? 'cached (~600MB)' : '~600MB';
+      llmStatusText.textContent = llmCached ? `cached (${modelSize})` : modelSize;
+      ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
+    }
+
+    // ════════════════════════════════════════════
+    // STT
+    // ════════════════════════════════════════════
+
+    let sttClient = null;
+    let isRecording = false;
+    let transcriptText = '';
+    let lastToken = '';
+    let repeatCount = 0;
+
+    async function loadStt() {
+      sttStatusText.textContent = 'loading...';
+
+      sttClient = new SttClient({
+        baseUrl: 'https://idle-intelligence.github.io/stt-web',
+        workerUrl: '../stt/worker.js',
+        audioProcessorUrl: '../stt/audio-processor.js',
+
+        onStatus: (text, ready, progress) => {
+          if (ready) {
+            sttStatusText.textContent = 'ready';
+            sttRecordBtn.disabled = false;
+            return;
+          }
+          if (progress && progress.total > 0) {
+            const mb = (progress.loaded / 1024 / 1024).toFixed(0);
+            const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
+            const verb = sttCached ? 'Loading' : 'Downloading';
+            sttStatusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
+          } else {
+            sttStatusText.textContent = text;
+          }
+        },
+
+        onTranscript: (text, isFinal) => {
+          console.log('[loop] onTranscript text=%s isFinal=%s isRecording=%s', text ? JSON.stringify(text.slice(0, 40)) : null, isFinal, isRecording);
+          if (text && text.trim()) {
+            const token = text.trim().toLowerCase();
+            if (token === lastToken) repeatCount++;
+            else { lastToken = token; repeatCount = 1; }
+            if (repeatCount > 3) return; // STT hallucination, let silence timer fire
+            transcriptText += text;
+            sttTranscript.textContent = transcriptText;
+            if (isRecording) {
+              clearTimeout(silenceTimer);
+              silenceTimer = setTimeout(onSilenceDetected, SILENCE_MS);
+            }
+          }
+          if (isFinal && transcriptText) {
+            transcriptText += ' ';
+          }
+        },
+
+        onMetrics: (data) => {
+          const parts = [];
+          if (data.rtf != null) parts.push(`RTF ${data.rtf.toFixed(2)}x`);
+          if (data.avgFrameMs != null) parts.push(`${data.avgFrameMs.toFixed(0)} ms/frame`);
+          if (data.ttfb != null && data.ttfb >= 0) parts.push(`TTFB ${data.ttfb.toFixed(0)} ms`);
+          if (parts.length) sttMetricsEl.textContent = parts.join(' · ');
+        },
+
+        onError: (err) => {
+          sttStatusText.textContent = 'error: ' + err.message;
+          console.error(err);
+        },
+      });
+
+      try {
+        await sttClient.init();
+      } catch (err) {
+        sttStatusText.textContent = 'failed: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    function onSilenceDetected() {
+      console.log('[loop] silence detected, isRecording=%s', isRecording);
+      if (!isRecording) return;
+      sttClient.stopRecording();
+      isRecording = false;
+      updateRecordBtn();
+      const text = transcriptText.trim();
+      console.log('[loop] silence → text=%s', text ? text.slice(0, 60) : '(empty)');
+      if (text && isUsableTranscript(text)) sendToLlm(text);
+    }
+
+    function updateRecordBtn() {
+      sttRecordBtn.textContent = isRecording ? 'stop recording' : 'start recording';
+      sttRecordBtn.classList.toggle('recording', isRecording);
+    }
+
+    async function toggleRecording() {
+      if (!isRecording) {
+        clearTimeout(silenceTimer);
+        sttRecordBtn.disabled = true;
+        sttRecordBtn.textContent = 'requesting mic...';
+        try {
+          transcriptText = '';
+          lastToken = '';
+          repeatCount = 0;
+          sttTranscript.textContent = '';
+          sttMetricsEl.textContent = '';
+          await sttClient.startRecording();
+          isRecording = true;
+        } catch (err) {
+          sttStatusText.textContent = 'microphone error: ' + err.message;
+          console.error(err);
+        }
+        updateRecordBtn();
+        sttRecordBtn.disabled = false;
+      } else {
+        clearTimeout(silenceTimer);
+        sttClient.stopRecording();
+        isRecording = false;
+        updateRecordBtn();
+        const text = transcriptText.trim();
+        if (text && isUsableTranscript(text)) sendToLlm(text);
+      }
+    }
+
+    sttRecordBtn.addEventListener('click', toggleRecording);
+
+    // ════════════════════════════════════════════
+    // LLM
+    // ════════════════════════════════════════════
+
+    let engine = null;
+
+    async function loadLlm() {
+      llmStatusText.textContent = 'loading...';
+      try {
+        engine = await CreateMLCEngine(selectedModel, {
+          initProgressCallback: (report) => {
+            const pct = (report.progress * 100).toFixed(0);
+            const mbMatch = report.text.match(/([\d.]+)\s*MB/);
+            const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB, ` : '';
+            const verb = llmCached ? 'Loading' : 'Downloading';
+            const phase = pct === '100' ? ' — testing WebGPU...' : '';
+            llmStatusText.textContent = `${verb}: ${mb}${pct}%${phase}`;
+          },
+        });
+        llmStatusText.textContent = 'ready';
+        llmReady = true;
+      } catch (err) {
+        const msg = err.message || String(err);
+        if (/network|cache|fetch/i.test(msg)) {
+          llmStatusText.textContent = 'download failed';
+        } else if (/VK_ERROR|pipeline/i.test(msg)) {
+          llmStatusText.textContent = 'WebGPU not stable on this device';
+        } else {
+          llmStatusText.textContent = 'failed: ' + msg;
+        }
+        console.error(err);
+      }
+    }
+
+    async function generate() {
+      const text = pendingLlmText.trim().slice(0, 2000);
+      pendingLlmText = '';
+      if (!text || !engine) return;
+
+      llmReady = false;
+      llmAbort = false;
+      llmOutput.textContent = '';
+      llmMetricsEl.textContent = '';
+      handleTtsMessage('clear');
+
+      const start = performance.now();
+
+      try {
+        chatHistory.push({ role: 'user', content: text });
+        const messages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...chatHistory,
+        ];
+        const chunks = await engine.chat.completions.create({
+          messages,
+          max_tokens: 256,
+          stream: true,
+        });
+
+        let tokens = 0;
+        let sentenceBuffer = '';
+        for await (const chunk of chunks) {
+          if (llmAbort) break;
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            llmOutput.textContent += delta;
+            tokens++;
+            sentenceBuffer += delta;
+            let boundary;
+            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+              const ch = sentenceBuffer[boundary];
+              const cutAt = ch === '\n' ? boundary : boundary + 1;
+              const sentence = sentenceBuffer.slice(0, cutAt).trim();
+              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
+              if (sentence) handleTtsMessage('chunk', sentence);
+            }
+            if (sentenceBuffer.length > 200) {
+              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
+              const cut = spaceAt > 0 ? spaceAt : 200;
+              const fragment = sentenceBuffer.slice(0, cut).trim();
+              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+              if (fragment) handleTtsMessage('chunk', fragment);
+            }
+          }
+        }
+        if (!llmAbort) {
+          if (sentenceBuffer.trim()) handleTtsMessage('chunk', sentenceBuffer.trim());
+          handleTtsMessage('done');
+          chatHistory.push({ role: 'assistant', content: llmOutput.textContent });
+          const elapsed = (performance.now() - start) / 1000;
+          const tokSec = (tokens / elapsed).toFixed(1);
+          llmMetricsEl.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+        }
+      } catch (err) {
+        if (!llmAbort) llmOutput.textContent = 'error: ' + err.message;
+        console.error(err);
+      }
+
+      if (llmAbort) {
+        // reset() already cleared chatHistory; wipe stale KV cache
+        await engine.resetChat();
+      } else if (chatHistory.length > MAX_TURNS * 2) {
+        chatHistory = chatHistory.slice(-MAX_TURNS * 2);
+        await engine.resetChat(); // KV cache invalid after trim
+      }
+      llmReady = true;
+    }
+
+    // ════════════════════════════════════════════
+    // TTS
+    // ════════════════════════════════════════════
+
+    const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
+    const DEFAULT_VOICE = 'javert';
+    const TEMPERATURE = 0.7;
+
+    let tts = null;
+    let activeVoice = null;
+    let loadingVoice = false;
+    let ttsGenerating = false;
+    let discardGeneration = false;
+    let sentenceQueue = [];
+    let currentTtsSpan = null;
+
+    // Streaming audio playback via AudioWorklet
+    let audioCtx = null;
+    let workletNode = null;
+    let pendingChunks = [];
+    let pendingSamples = 0;
+    const BATCH_SAMPLES = 12000; // ~500ms at 24kHz
+
+    // Metrics
+    let genStartTime = 0;
+    let firstChunkTime = 0;
+    let totalAudioSamples = 0;
+
+    function queueChunk(chunk) {
+      pendingChunks.push(chunk);
+      pendingSamples += chunk.length;
+      if (pendingSamples >= BATCH_SAMPLES) flushToWorklet();
+    }
+
+    function flushToWorklet() {
+      if (!workletNode || pendingChunks.length === 0) return;
+      const pcm = new Float32Array(pendingSamples);
+      let off = 0;
+      for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
+      workletNode.port.postMessage({ type: 'chunk', samples: pcm }, [pcm.buffer]);
+      pendingChunks = [];
+      pendingSamples = 0;
+    }
+
+    async function ensureAudioContext() {
+      if (audioCtx) return;
+      audioCtx = new AudioContext({ sampleRate: tts.sampleRate });
+      await audioCtx.audioWorklet.addModule('../tts/audio-worklet.js');
+      workletNode = new AudioWorkletNode(audioCtx, 'streaming-audio');
+      workletNode.connect(audioCtx.destination);
+      workletNode.port.onmessage = (e) => {
+        console.log('[loop] worklet message: %s', e.data.type);
+        if (e.data.type === 'ended') autoRestartRecording();
+      };
+    }
+
+    function autoRestartRecording() {
+      console.log('[loop] autoRestart, sttClient=%s, isRecording=%s', !!sttClient, isRecording);
+      if (!sttClient || isRecording) return;
+      llmDone = false;
+      toggleRecording();
+    }
+
+    // Build voice grid
+    for (const name of VOICES) {
+      const btn = document.createElement('button');
+      btn.className = 'voice-btn';
+      btn.textContent = name;
+      btn.disabled = true;
+      btn.dataset.voice = name;
+      btn.addEventListener('click', () => selectVoice(name));
+      ttsVoiceGrid.appendChild(btn);
+    }
+
+    function setVoiceBtnsEnabled(enabled) {
+      ttsVoiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+        btn.disabled = !enabled;
+      });
+    }
+
+    function selectVoice(name) {
+      if (loadingVoice) return;
+      loadingVoice = true;
+      setVoiceBtnsEnabled(false);
+      ttsVoiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.voice === name) btn.classList.add('loading');
+      });
+      tts.loadVoice(name);
+    }
+
+    tts = new TtsClient({
+      baseUrl: 'https://idle-intelligence.github.io/tts-web',
+      workerUrl: '../tts/worker.js',
+
+      onVoiceLoaded: (name) => {
+        loadingVoice = false;
+        activeVoice = name;
+        ttsVoiceGrid.querySelectorAll('.voice-btn').forEach(btn => {
+          btn.classList.remove('loading');
+          if (btn.dataset.voice === name) btn.classList.add('active');
+          else btn.classList.remove('active');
+        });
+        setVoiceBtnsEnabled(true);
+        ttsStatusText.textContent = 'ready';
+        processQueue();
+      },
+
+      onStatus: (text, ready, progress) => {
+        if (ready) {
+          ttsStatusText.textContent = 'ready';
+          setVoiceBtnsEnabled(true);
+        } else if (progress && progress.total > 0) {
+          const mb = (progress.loaded / 1024 / 1024).toFixed(1);
+          const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
+          const verb = ttsCached ? 'Loading' : 'Downloading';
+          ttsStatusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
+        } else {
+          ttsStatusText.textContent = text;
+        }
+      },
+
+      onError: (err) => {
+        ttsStatusText.textContent = 'error: ' + err.message;
+        ttsGenerating = false;
+        loadingVoice = false;
+        setVoiceBtnsEnabled(true);
+        ttsMetricsEl.textContent = '';
+        console.error(err);
+      },
+
+      onGenStart: async (numTokens) => {
+        discardGeneration = false;
+        totalAudioSamples = 0;
+        genStartTime = performance.now();
+        firstChunkTime = 0;
+        ttsMetricsEl.textContent = `generating... (${numTokens} tokens)`;
+        ttsStatusText.textContent = 'generating...';
+        pendingChunks = [];
+        pendingSamples = 0;
+        await ensureAudioContext();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      },
+
+      onChunk: (data, step) => {
+        if (discardGeneration) return;
+        if (!firstChunkTime) firstChunkTime = performance.now();
+        const chunk = new Float32Array(data);
+        totalAudioSamples += chunk.length;
+        queueChunk(chunk);
+        const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
+        const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
+        const rtf = (totalAudioSamples / tts.sampleRate) / ((performance.now() - genStartTime) / 1000);
+        ttsMetricsEl.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
+      },
+
+      onDone: (totalSteps) => {
+        if (discardGeneration) { discardGeneration = false; return; }
+        if (currentTtsSpan) { currentTtsSpan.style.fontWeight = ''; currentTtsSpan = null; }
+        flushToWorklet();
+        const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
+        const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
+        const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
+        const rtf = (totalAudioSamples / tts.sampleRate / parseFloat(totalTime)).toFixed(2);
+        ttsGenerating = false;
+        setVoiceBtnsEnabled(true);
+        ttsMetricsEl.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
+        ttsStatusText.textContent = 'ready';
+        processQueue();
+        console.log('[loop] onDone: sentenceQueue=%d, llmDone=%s, ttsGenerating=%s', sentenceQueue.length, llmDone, ttsGenerating);
+        if (sentenceQueue.length === 0 && llmDone && !ttsGenerating && workletNode) {
+          console.log('[loop] sending finish to worklet');
+          workletNode.port.postMessage({ type: 'finish' });
+        }
+      }
+    });
+
+    async function initTts() {
+      ttsStatusText.textContent = 'loading...';
+      try {
+        await tts.init();
+        selectVoice(DEFAULT_VOICE);
+      } catch (err) {
+        ttsStatusText.textContent = 'failed: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    function processQueue() {
+      if (ttsGenerating || sentenceQueue.length === 0 || !activeVoice) return;
+      const item = sentenceQueue.shift();
+      currentTtsSpan = item.el;
+      if (currentTtsSpan) currentTtsSpan.style.fontWeight = 'bold';
+      ttsGenerating = true;
+      tts.generate(item.text, TEMPERATURE);
+    }
+
+    // ── Handle messages from LLM ──
+    function handleTtsMessage(type, data) {
+      if (type === 'clear') {
+        discardGeneration = true;
+        ttsGenerating = false;
+        sentenceQueue = [];
+        llmDone = false;
+        currentTtsSpan = null;
+        ttsVoiceOutput.textContent = '';
+        ttsStatusText.textContent = activeVoice ? 'ready' : '';
+        if (workletNode) workletNode.port.postMessage({ type: 'clear' });
+        return;
+      }
+      if (type === 'chunk') {
+        const clean = data.replace(/\p{Emoji_Presentation}/gu, '').replace(/  +/g, ' ').trim();
+        if (!clean) return;
+        const span = document.createElement('span');
+        span.textContent = clean;
+        if (ttsVoiceOutput.childNodes.length) ttsVoiceOutput.append(' ');
+        ttsVoiceOutput.appendChild(span);
+        sentenceQueue.push({ text: clean, el: span });
+        processQueue();
+      }
+      if (type === 'done') {
+        llmDone = true;
+        console.log('[loop] llmDone=true, sentenceQueue=%d, ttsGenerating=%s', sentenceQueue.length, ttsGenerating);
+      }
+    }
+
+    // ════════════════════════════════════════════
+    // Reset
+    // ════════════════════════════════════════════
+
+    function reset() {
+      // Stop recording
+      clearTimeout(silenceTimer);
+      if (isRecording) {
+        sttClient.stopRecording();
+        isRecording = false;
+        updateRecordBtn();
+      }
+
+      // Stop LLM generation
+      pendingLlmText = '';
+      llmAbort = true;
+      llmDone = false;
+      chatHistory = [];
+      if (engine && llmReady) engine.resetChat();
+
+      // Stop TTS
+      handleTtsMessage('clear');
+
+      // Clear outputs + metrics
+      sttTranscript.textContent = '';
+      transcriptText = '';
+      sttMetricsEl.textContent = '';
+      llmOutput.textContent = '';
+      llmMetricsEl.textContent = '';
+      ttsMetricsEl.textContent = '';
+    }
+
+    resetBtn.addEventListener('click', reset);
+
+    // ════════════════════════════════════════════
+    // Global load button
+    // ════════════════════════════════════════════
+
+    async function loadAll() {
+      loadBtn.disabled = true;
+      await Promise.all([loadStt(), loadLlm(), initTts()]);
+      resetBtn.disabled = false;
+    }
+
+    if (allCached) {
+      loadAll();
+    } else {
+      loadBtn.addEventListener('click', loadAll);
+    }
+  </script>
+</body>
+</html>

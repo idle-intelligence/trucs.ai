@@ -3,12 +3,16 @@ class StreamingAudioProcessor extends AudioWorkletProcessor {
     super();
     this.queue = [];    // array of Float32Array chunks
     this.offset = 0;    // read position in first chunk
+    this.finishing = false;
     this.port.onmessage = (e) => {
       if (e.data.type === 'chunk') {
         this.queue.push(e.data.samples);
+      } else if (e.data.type === 'finish') {
+        this.finishing = true;
       } else if (e.data.type === 'clear') {
         this.queue = [];
         this.offset = 0;
+        this.finishing = false;
       }
     };
   }
@@ -31,6 +35,11 @@ class StreamingAudioProcessor extends AudioWorkletProcessor {
     }
     // Fill remainder with silence
     for (let i = written; i < out.length; i++) out[i] = 0;
+    if (this.finishing && this.queue.length === 0) {
+      console.log('[worklet] posting ended');
+      this.port.postMessage({ type: 'ended' });
+      this.finishing = false;
+    }
     return true;
   }
 }
