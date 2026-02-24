@@ -337,7 +337,6 @@
         },
 
         onTranscript: (text, isFinal) => {
-          console.log('[loop] onTranscript text=%s isFinal=%s isRecording=%s', text ? JSON.stringify(text.slice(0, 40)) : null, isFinal, isRecording);
           if (text && text.trim()) {
             const hasLetters = /[a-zA-ZÀ-ÿ]/.test(text);
             if (hasLetters) {
@@ -381,13 +380,11 @@
     }
 
     function onSilenceDetected() {
-      console.log('[loop] silence detected, isRecording=%s', isRecording);
       if (!isRecording) return;
       sttClient.stopRecording();
       isRecording = false;
       updateRecordBtn();
       const text = transcriptText.trim();
-      console.log('[loop] silence → text=%s', text ? text.slice(0, 60) : '(empty)');
       if (text && isUsableTranscript(text)) sendToLlm(text);
     }
 
@@ -634,7 +631,6 @@
       workletNode = new AudioWorkletNode(audioCtx, 'streaming-audio');
       workletNode.connect(audioCtx.destination);
       workletNode.port.onmessage = (e) => {
-        console.log('[loop] worklet message: %s', e.data.type);
         if (e.data.type === 'ended') autoRestartRecording();
       };
     }
@@ -642,7 +638,6 @@
     let autoRestartEnabled = false;
 
     function autoRestartRecording() {
-      console.log('[loop] autoRestart, sttClient=%s, isRecording=%s, enabled=%s', !!sttClient, isRecording, autoRestartEnabled);
       if (!sttClient || isRecording || !autoRestartEnabled) return;
       llmDone = false;
       toggleRecording();
@@ -754,9 +749,7 @@
         ttsMetricsEl.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
         ttsStatusText.textContent = 'ready';
         processQueue();
-        console.log('[loop] onDone: sentenceQueue=%d, llmDone=%s, ttsGenerating=%s', sentenceQueue.length, llmDone, ttsGenerating);
         if (sentenceQueue.length === 0 && llmDone && !ttsGenerating && workletNode) {
-          console.log('[loop] sending finish to worklet');
           workletNode.port.postMessage({ type: 'finish' });
         }
       }
@@ -796,7 +789,7 @@
         return;
       }
       if (type === 'chunk') {
-        const clean = data.replace(/\p{Extended_Pictographic}/gu, '').replace(/\uFE0F/g, '').replace(/  +/g, ' ').trim();
+        const clean = data.replace(/\p{Extended_Pictographic}/gu, '').replace(/\uFE0F/g, '').replace(/[":]/g, '').replace(/  +/g, ' ').trim();
         if (!clean) return;
         const span = document.createElement('span');
         span.textContent = clean;
@@ -807,7 +800,6 @@
       }
       if (type === 'done') {
         llmDone = true;
-        console.log('[loop] llmDone=true, sentenceQueue=%d, ttsGenerating=%s', sentenceQueue.length, ttsGenerating);
       }
     }
 

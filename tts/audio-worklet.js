@@ -36,7 +36,6 @@ class StreamingAudioProcessor extends AudioWorkletProcessor {
     // Fill remainder with silence
     for (let i = written; i < out.length; i++) out[i] = 0;
     if (this.finishing && this.queue.length === 0) {
-      console.log('[worklet] posting ended');
       this.port.postMessage({ type: 'ended' });
       this.finishing = false;
     }
