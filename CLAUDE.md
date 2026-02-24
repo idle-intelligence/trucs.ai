@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-trucs.ai — a static site hosted on GitHub Pages with Jekyll. Personal site + client-side AI projects. Part of the Unnecessary Intelligence ecosystem (trucs.ai, ruche.world, unnecessaryintelligence.ai).
+trucs.ai — a static site hosted on GitHub Pages with Jekyll. Client-side AI experiments running entirely in the browser. An [Idle Intelligence](https://idleintelligence.org/) initiative.
 
 ## Architecture
 
@@ -19,43 +19,28 @@ Jekyll on GitHub Pages (built-in, no local install needed). Kramdown with GFM in
 
 ## Design
 
-Monospace system font stack. Black (`#111`) on white (`#fff`). Single column, `max-width: 680px`. No nav component — the home page links to everything, sub-pages link back. No decorative elements. No JS on text pages.
+Monospace system font stack. Black (`#111`) on white (`#fff`). Single column, `max-width: 680px` (wider `1200px` for multi-panel pages). No nav component — the home page links to everything, sub-pages link back. No decorative elements. No JS on text pages.
 
 ## Structure
 
 Flat. Each project gets a top-level directory. No `/demos/` grouping — the home page is the index.
 
-- `/classifier/` — WASM inference page (BERT text classifier, 4 classes: other/swarm/time/weather)
+- `/stt/` — Speech-to-text. Quantized Kyutai STT model (Mimi codec + text decoder), custom Rust inference compiled to WASM, GPU via WebGPU. Uses [stt-web](https://github.com/idle-intelligence/stt-web).
+- `/llm/` — LLM chat. SmolLM2-1.7B-Instruct via [WebLLM](https://github.com/mlc-ai/web-llm), single-turn, WebGPU.
+- `/tts/` — Text-to-speech. Quantized Kyutai Pocket-TTS model, custom Rust inference compiled to WASM. Uses [tts-web](https://github.com/idle-intelligence/tts-web). Audio output via AudioWorklet (`audio-worklet.js`).
+- `/llm-tts/` — Combined LLM + TTS. Two-panel layout.
+- `/stt-llm-tts/` — Full voice loop: STT → LLM → TTS with silence detection, auto-restart, multi-turn chat. Three-panel layout. Includes demo button (`joke.wav`).
+- `/classifier/` — BERT text classifier compiled to WASM via Candle + wasm-pack.
 - `/swarm/` — links to ruche.world
-- `/llm/` — WebGPU inference page (SmolLM2-1.7B via WebLLM, single-turn chat)
-- `/stt/`, `/tts/` — future projects
 - `/ilnmtlbnm/` — profile page
+- `/blog/` — blog posts
 
-## Key Files
+## Key patterns
 
-- `_config.yml` — Jekyll configuration
-- `_layouts/default.html` — single layout for all text pages
-- `assets/style.css` — single stylesheet (<80 lines)
-- `index.md` — home page
-- `ilnmtlbnm/index.md` — profile
-- `classifier/index.html` — standalone inference page (WASM)
-- `llm/index.html` — standalone inference page (WebGPU)
-- `swarm/index.md` — swarm project page
-
-## Classifier
-
-The classifier is a BERT model compiled to WASM via Candle + wasm-pack. Source lives in the hive repo (`/Users/tc/Code/hive/hive-client/swarm-classifier/`).
-
-Files in `classifier/`:
-- `swarm_classifier.js` + `swarm_classifier_bg.wasm` — wasm-pack output (copied from hive repo `pkg/`)
-- `models/model.safetensors` (43 MB), `models/config.json`, `models/tokenizer.json` — copied from hive repo `public/models/`
-- `index.html` — standalone page, uses `<script type="module">` with ES module imports
-
-JS API: `import init, { Classifier } from './swarm_classifier.js'` → `await init()` → `new Classifier(modelBytes, configBytes, tokenizerBytes)` → `JSON.parse(classifier.classify(text))` returns `{ label, score, scores }`.
-
-## LLM
-
-WebLLM-based chat page. No local binaries — the library loads from `esm.run` CDN and model weights download from HuggingFace on first use (cached by the browser). Requires WebGPU (checked at page load). Streaming responses via `engine.chat.completions.create({ stream: true })`. Single-turn only — `engine.resetChat()` after each message.
+- **STT client**: `SttClient` from `stt/stt-client.js`. Worker-based (`stt/worker.js`). Audio resampled to 24kHz, chunked in 1920-sample frames (80ms Mimi codec frames). Worker accepts `{ type: 'audio', samples }` messages.
+- **TTS**: `TtsWorker` from `tts/tts-worker.js`. Audio streamed to `AudioWorklet` (`tts/audio-worklet.js`). Worklet supports `finish`/`ended` signaling for playback completion detection.
+- **LLM**: WebLLM engine loaded from CDN. KV cache reused across turns (don't call `resetChat()` between turns). Only reset on abort, history trim, or explicit reset.
+- **Voice loop** (`stt-llm-tts`): Silence detection via `onTranscript` — only tokens with letters reset the 1.5s timer. Repeat detection filters STT hallucinations (>3 identical consecutive tokens ignored). `autoRestartEnabled` flag guards the loop.
 
 ## Local Development
 
@@ -65,7 +50,7 @@ WebLLM-based chat page. No local binaries — the library loads from `esm.run` C
 
 - Never add front matter to standalone HTML inference pages.
 - Never add JS to text pages.
-- Keep CSS under 80 lines.
 - All text content lives in `.md` files.
 - Binary assets go in their project subdirectory.
 - New project = new top-level directory + a link on the home page.
+- Bottom-of-page descriptions use `.panel-desc` class (grey, small text with links to models and source repos).
