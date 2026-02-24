@@ -136,6 +136,7 @@
 
       <div class="action-buttons">
         <button id="stt-record-btn" disabled>start recording</button>
+        <button id="demo-btn" disabled>play demo</button>
         <button id="reset-btn" disabled>reset</button>
       </div>
 
@@ -170,15 +171,10 @@
 
     <hr>
 
-    <p>
-      Using <a href="https://github.com/idle-intelligence/stt-web">stt-web</a>,
-      <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>,
-      and <a href="https://github.com/idle-intelligence/tts-web">tts-web</a>
-    </p>
     <p class="panel-desc">
-      STT: English and French speech recognition. Rust + WebAssembly + WebGPU.<br>
-      LLM: SmolLM2-1.7B, single-turn chat via WebGPU.<br>
-      TTS: Speech synthesis. Rust + WebAssembly.
+      STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.<br>
+      LLM: <a href="https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2-1.7B-Instruct</a>, multi-turn chat via WebGPU with <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>.<br>
+      TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-int8">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
     <hr>
@@ -199,6 +195,7 @@
 
     // ── STT elements ──
     const sttRecordBtn = document.getElementById('stt-record-btn');
+    const demoBtn = document.getElementById('demo-btn');
     const sttTranscript = document.getElementById('stt-transcript');
     const sttMetricsEl = document.getElementById('stt-metrics');
 
@@ -326,6 +323,7 @@
           if (ready) {
             sttStatusText.textContent = 'ready';
             sttRecordBtn.disabled = false;
+            demoBtn.disabled = false;
             return;
           }
           if (progress && progress.total > 0) {
@@ -341,13 +339,16 @@
         onTranscript: (text, isFinal) => {
           console.log('[loop] onTranscript text=%s isFinal=%s isRecording=%s', text ? JSON.stringify(text.slice(0, 40)) : null, isFinal, isRecording);
           if (text && text.trim()) {
-            const token = text.trim().toLowerCase();
-            if (token === lastToken) repeatCount++;
-            else { lastToken = token; repeatCount = 1; }
-            if (repeatCount > 3) return; // STT hallucination, let silence timer fire
+            const hasLetters = /[a-zA-ZÀ-ÿ]/.test(text);
+            if (hasLetters) {
+              const token = text.trim().toLowerCase();
+              if (token === lastToken) repeatCount++;
+              else { lastToken = token; repeatCount = 1; }
+              if (repeatCount > 3) return; // STT hallucination, let silence timer fire
+            }
             transcriptText += text;
             sttTranscript.textContent = transcriptText;
-            if (isRecording) {
+            if (isRecording && hasLetters) {
               clearTimeout(silenceTimer);
               silenceTimer = setTimeout(onSilenceDetected, SILENCE_MS);
             }
@@ -424,7 +425,53 @@
       }
     }
 
-    sttRecordBtn.addEventListener('click', toggleRecording);
+    sttRecordBtn.addEventListener('click', () => {
+      autoRestartEnabled = !isRecording; // enable on start, disable on manual stop
+      toggleRecording();
+    });
+
+    // ── Demo: feed WAV file to STT ──
+    async function playDemo() {
+      if (!sttClient) return;
+      reset();
+      demoBtn.disabled = true;
+      sttRecordBtn.disabled = true;
+
+      // Decode and resample to 24kHz mono
+      const resp = await fetch('./joke.wav');
+      const arrayBuf = await resp.arrayBuffer();
+      const tmpCtx = new OfflineAudioContext(1, 1, 24000);
+      const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
+      const outLength = Math.ceil(audioBuf.duration * 24000);
+      const renderCtx = new OfflineAudioContext(1, outLength, 24000);
+      const source = renderCtx.createBufferSource();
+      source.buffer = audioBuf;
+      source.connect(renderCtx.destination);
+      source.start();
+      const rendered = await renderCtx.startRendering();
+      const pcm = rendered.getChannelData(0);
+
+      // Feed to worker in 1920-sample chunks (80ms Mimi frames)
+      sttClient.worker.postMessage({ type: 'reset' });
+      const FRAME = 1920;
+      for (let i = 0; i < pcm.length; i += FRAME) {
+        const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
+        sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
+      }
+
+      // Wait for worker to finish processing and flushing
+      sttClient._flushPromise = new Promise(r => { sttClient._flushResolve = r; });
+      sttClient.worker.postMessage({ type: 'stop' });
+      await sttClient._flushPromise;
+      sttClient._flushPromise = null;
+
+      demoBtn.disabled = false;
+      sttRecordBtn.disabled = false;
+      const text = transcriptText.trim();
+      if (text && isUsableTranscript(text)) sendToLlm(text);
+    }
+
+    demoBtn.addEventListener('click', playDemo);
 
     // ════════════════════════════════════════════
     // LLM
@@ -467,6 +514,7 @@
 
       llmReady = false;
       llmAbort = false;
+      llmStatusText.textContent = 'generating...';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
       handleTtsMessage('clear');
@@ -532,6 +580,7 @@
         await engine.resetChat(); // KV cache invalid after trim
       }
       llmReady = true;
+      llmStatusText.textContent = 'ready';
     }
 
     // ════════════════════════════════════════════
@@ -590,9 +639,11 @@
       };
     }
 
+    let autoRestartEnabled = false;
+
     function autoRestartRecording() {
-      console.log('[loop] autoRestart, sttClient=%s, isRecording=%s', !!sttClient, isRecording);
-      if (!sttClient || isRecording) return;
+      console.log('[loop] autoRestart, sttClient=%s, isRecording=%s, enabled=%s', !!sttClient, isRecording, autoRestartEnabled);
+      if (!sttClient || isRecording || !autoRestartEnabled) return;
       llmDone = false;
       toggleRecording();
     }
@@ -745,7 +796,7 @@
         return;
       }
       if (type === 'chunk') {
-        const clean = data.replace(/\p{Emoji_Presentation}/gu, '').replace(/  +/g, ' ').trim();
+        const clean = data.replace(/\p{Extended_Pictographic}/gu, '').replace(/\uFE0F/g, '').replace(/  +/g, ' ').trim();
         if (!clean) return;
         const span = document.createElement('span');
         span.textContent = clean;
@@ -778,6 +829,7 @@
       llmAbort = true;
       llmDone = false;
       chatHistory = [];
+      autoRestartEnabled = false;
       if (engine && llmReady) engine.resetChat();
 
       // Stop TTS
@@ -789,6 +841,7 @@
       sttMetricsEl.textContent = '';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
+      if (engine) llmStatusText.textContent = 'ready';
       ttsMetricsEl.textContent = '';
     }
 
