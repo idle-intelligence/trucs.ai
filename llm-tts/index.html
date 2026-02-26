@@ -164,7 +164,7 @@
 
     <p class="panel-desc">
       LLM: <a href="https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2-1.7B-Instruct</a>, single-turn chat via WebGPU with <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>.<br>
-      TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-int8">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
+      TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
     <hr>
@@ -395,8 +395,8 @@
     }
 
     // Check if TTS model is cached
-    const MODEL_CACHE = 'tts-model-v1';
-    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-int8/resolve/main/model.safetensors';
+    const MODEL_CACHE = 'tts-model-v3';
+    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-gguf/resolve/main/pocket-tts-q8_0.gguf';
     try {
       const cache = await caches.open(MODEL_CACHE);
       const cached = await cache.match(MODEL_CHECK_URL);

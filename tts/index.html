@@ -164,7 +164,7 @@
 
     <hr>
 
-    <p class="panel-desc"><a href="https://huggingface.co/idle-intelligence/pocket-tts-int8">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.</p>
+    <p class="panel-desc"><a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.</p>
 
     <hr>
     <p><a href="/">← trucs.ai</a></p>
@@ -305,8 +305,8 @@
     }
 
     // Check if model is cached
-    const MODEL_CACHE = 'tts-model-v1';
-    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-int8/resolve/main/model.safetensors';
+    const MODEL_CACHE = 'tts-model-v3';
+    const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-gguf/resolve/main/pocket-tts-q8_0.gguf';
     try {
       const cache = await caches.open(MODEL_CACHE);
       const cached = await cache.match(MODEL_CHECK_URL);
