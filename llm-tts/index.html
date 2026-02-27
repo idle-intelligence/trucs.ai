@@ -363,7 +363,9 @@
     let workletNode = null;
     let pendingChunks = [];
     let pendingSamples = 0;
+    let playbackStarted = false;
     const BATCH_SAMPLES = 12000; // ~500ms at 24kHz
+    const PREBUFFER_SAMPLES = 24000; // ~1s at 24kHz
 
     // Metrics
     let genStartTime = 0;
@@ -373,11 +375,13 @@
     function queueChunk(chunk) {
       pendingChunks.push(chunk);
       pendingSamples += chunk.length;
-      if (pendingSamples >= BATCH_SAMPLES) flushToWorklet();
+      const threshold = playbackStarted ? BATCH_SAMPLES : PREBUFFER_SAMPLES;
+      if (pendingSamples >= threshold) flushToWorklet();
     }
 
     function flushToWorklet() {
       if (!workletNode || pendingChunks.length === 0) return;
+      playbackStarted = true;
       const pcm = new Float32Array(pendingSamples);
       let off = 0;
       for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
@@ -487,6 +491,7 @@
         ttsStatusText.textContent = 'generating...';
         pendingChunks = [];
         pendingSamples = 0;
+        playbackStarted = false;
         await ensureAudioContext();
         if (audioCtx.state === 'suspended') audioCtx.resume();
       },
@@ -499,7 +504,8 @@
         queueChunk(chunk);
         const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
         const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
-        const rtf = (totalAudioSamples / tts.sampleRate) / ((performance.now() - genStartTime) / 1000);
+        const genElapsed = (performance.now() - firstChunkTime) / 1000;
+        const rtf = genElapsed > 0.01 ? (totalAudioSamples / tts.sampleRate) / genElapsed : 0;
         ttsStepInfo.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
       },
 
@@ -509,7 +515,8 @@
         const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
         const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
         const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
-        const rtf = (totalAudioSamples / tts.sampleRate / parseFloat(totalTime)).toFixed(2);
+        const genTime = (performance.now() - firstChunkTime) / 1000;
+        const rtf = (genTime > 0.01 ? totalAudioSamples / tts.sampleRate / genTime : 0).toFixed(2);
         ttsGenerating = false;
         setVoiceBtnsEnabled(true);
         ttsStepInfo.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
