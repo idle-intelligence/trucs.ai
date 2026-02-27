@@ -603,23 +603,23 @@
     let pendingSamples = 0;
     let playbackStarted = false;
     const BATCH_SAMPLES = 12000; // ~500ms at 24kHz
-    const PREBUFFER_SAMPLES = 24000; // ~1s at 24kHz
+    const TARGET_DURATION = 8;
+    const MAX_PREBUFFER_S = 4;
 
     // Metrics
     let genStartTime = 0;
     let firstChunkTime = 0;
     let totalAudioSamples = 0;
-
-    function queueChunk(chunk) {
-      pendingChunks.push(chunk);
-      pendingSamples += chunk.length;
-      const threshold = playbackStarted ? BATCH_SAMPLES : PREBUFFER_SAMPLES;
-      if (pendingSamples >= threshold) flushToWorklet();
-    }
+    let measurementDone = false;
+    let dynamicPrebuffer = 0;
+    let playbackStartTime = 0;
 
     function flushToWorklet() {
       if (!workletNode || pendingChunks.length === 0) return;
-      playbackStarted = true;
+      if (!playbackStarted) {
+        playbackStartTime = performance.now();
+        playbackStarted = true;
+      }
       const pcm = new Float32Array(pendingSamples);
       let off = 0;
       for (const c of pendingChunks) { pcm.set(c, off); off += c.length; }
@@ -725,6 +725,9 @@
         pendingChunks = [];
         pendingSamples = 0;
         playbackStarted = false;
+        measurementDone = false;
+        dynamicPrebuffer = 0;
+        playbackStartTime = 0;
         await ensureAudioContext();
         if (audioCtx.state === 'suspended') audioCtx.resume();
       },
@@ -733,12 +736,38 @@
         if (discardGeneration) return;
         if (!firstChunkTime) firstChunkTime = performance.now();
         const chunk = new Float32Array(data);
+        pendingChunks.push(chunk);
+        pendingSamples += chunk.length;
         totalAudioSamples += chunk.length;
-        queueChunk(chunk);
         const elapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
         const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(1);
         const genElapsed = (performance.now() - firstChunkTime) / 1000;
         const rtf = genElapsed > 0.01 ? (totalAudioSamples / tts.sampleRate) / genElapsed : 0;
+
+        if (!measurementDone && pendingSamples >= BATCH_SAMPLES) {
+          measurementDone = true;
+          if (rtf >= 1.0) {
+            dynamicPrebuffer = 0;
+          } else {
+            const needed = (1.1 - rtf) * TARGET_DURATION * tts.sampleRate;
+            dynamicPrebuffer = Math.min(needed, MAX_PREBUFFER_S * tts.sampleRate);
+          }
+          console.log(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);
+        }
+
+        if (!measurementDone) return;
+
+        if (!playbackStarted) {
+          if (pendingSamples >= dynamicPrebuffer) {
+            flushToWorklet();
+          } else {
+            const pct = Math.round((pendingSamples / dynamicPrebuffer) * 100);
+            ttsMetricsEl.textContent = `buffering... ${pct}% (${rtf.toFixed(2)}x realtime)`;
+            return;
+          }
+        } else {
+          flushToWorklet();
+        }
         ttsMetricsEl.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
       },
 
@@ -747,7 +776,9 @@
         if (currentTtsSpan) { currentTtsSpan.style.fontWeight = ''; currentTtsSpan = null; }
         flushToWorklet();
         const totalTime = ((performance.now() - genStartTime) / 1000).toFixed(2);
-        const ttfb = ((firstChunkTime - genStartTime) / 1000).toFixed(2);
+        const ttfb = playbackStartTime > 0
+          ? ((playbackStartTime - genStartTime) / 1000).toFixed(2)
+          : '0.00';
         const audioDur = (totalAudioSamples / tts.sampleRate).toFixed(2);
         const genTime = (performance.now() - firstChunkTime) / 1000;
         const rtf = (genTime > 0.01 ? totalAudioSamples / tts.sampleRate / genTime : 0).toFixed(2);
