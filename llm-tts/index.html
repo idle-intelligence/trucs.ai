@@ -97,6 +97,7 @@
       color: #999;
       font-size: 0.8rem;
       min-height: 1.2em;
+      white-space: pre-line;
     }
     .panel-desc {
       color: #999;
@@ -354,6 +355,7 @@
     let activeVoice = null;
     let loadingVoice = false;
     let ttsGenerating = false;
+    let metricsLines = '';
     let ttsCached = false;
     let discardGeneration = false;
     let sentenceQueue = [];
@@ -479,6 +481,7 @@
         loadingVoice = false;
         setVoiceBtnsEnabled(true);
         ttsStepInfo.textContent = '';
+        metricsLines = '';
         console.error(err);
       },
 
@@ -487,7 +490,8 @@
         totalAudioSamples = 0;
         genStartTime = performance.now();
         firstChunkTime = 0;
-        ttsStepInfo.textContent = `generating... (${numTokens} tokens)`;
+        const runLine = `(${activeVoice}) generating... (${numTokens} tokens)`;
+        ttsStepInfo.textContent = metricsLines ? metricsLines + '\n' + runLine : runLine;
         ttsStatusText.textContent = 'generating...';
         pendingChunks = [];
         pendingSamples = 0;
@@ -529,13 +533,15 @@
             flushToWorklet();
           } else {
             const pct = Math.round((pendingSamples / dynamicPrebuffer) * 100);
-            ttsStepInfo.textContent = `buffering... ${pct}% (${rtf.toFixed(2)}x realtime)`;
+            const runLine = `(${activeVoice}) buffering... ${pct}% (${rtf.toFixed(2)}x realtime)`;
+            ttsStepInfo.textContent = metricsLines ? metricsLines + '\n' + runLine : runLine;
             return;
           }
         } else {
           flushToWorklet();
         }
-        ttsStepInfo.textContent = `step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
+        const runLine = `(${activeVoice}) step ${step + 1} — ${audioDur}s audio in ${elapsed}s (${rtf.toFixed(2)}x realtime)`;
+        ttsStepInfo.textContent = metricsLines ? metricsLines + '\n' + runLine : runLine;
       },
 
       onDone: (totalSteps) => {
@@ -550,7 +556,9 @@
         const rtf = (genTime > 0.01 ? totalAudioSamples / tts.sampleRate / genTime : 0).toFixed(2);
         ttsGenerating = false;
         setVoiceBtnsEnabled(true);
-        ttsStepInfo.textContent = `${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
+        const line = `(${activeVoice}) ${audioDur}s audio in ${totalTime}s — TTFB ${ttfb}s — ${rtf}x realtime`;
+        metricsLines = metricsLines ? metricsLines + '\n' + line : line;
+        ttsStepInfo.textContent = metricsLines;
         ttsStatusText.textContent = 'ready';
         processQueue();
       }
@@ -588,12 +596,16 @@
         ttsGenerating = false;
         sentenceQueue = [];
         ttsVoiceOutput.textContent = '';
+        ttsStepInfo.textContent = '';
+        metricsLines = '';
         if (workletNode) workletNode.port.postMessage({ type: 'clear' });
         return;
       }
       if (type === 'chunk') {
-        ttsVoiceOutput.textContent += (ttsVoiceOutput.textContent ? ' ' : '') + data;
-        sentenceQueue.push(data);
+        const clean = data.replace(/\p{Extended_Pictographic}/gu, '').replace(/\uFE0F/g, '').replace(/[":]/g, '').replace(/  +/g, ' ').trim();
+        if (!clean) return;
+        ttsVoiceOutput.textContent += (ttsVoiceOutput.textContent ? ' ' : '') + clean;
+        sentenceQueue.push(clean);
         processQueue();
       }
       // 'done' — no-op, queue drains naturally
