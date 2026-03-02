@@ -7,6 +7,18 @@ title: "Claude Code tips and tricks"
 
 Most of this is in [the docs](https://docs.anthropic.com/en/docs/claude-code). But docs are long and nobody reads them. So here's the stuff I actually use, compressed.
 
+- [Mode](#mode)
+- [Tools allow list](#tools-allow-list)
+- [PreToolUse hooks](#pretooluse-hooks)
+- [Plugins](#plugins)
+- [MCP](#mcp)
+- [Skills](#skills)
+- [Slash commands](#slash-commands)
+- [Sub-agents](#sub-agents)
+- [Git worktrees](#git-worktrees)
+- [Teams of agents](#teams-of-agents)
+- [SafeYolo(tm)](#but-i-want-to-yolo-safeyolotm)
+
 ---
 
 ## Mode
@@ -69,6 +81,7 @@ One gotcha: `Read`/`Edit`/`Write` deny rules are currently unreliable (known bug
 Don't use `--dangerously-skip-permissions`. It's dangerous and it's in the name.
 
 If you must, run it in a Claude [sandbox](https://code.claude.com/docs/en/sandboxing), or Docker, or a VM.
+Or try [SafeYolo(tm)](#but-i-want-to-yolo-safeyolotm).
 
 ---
 
