@@ -152,7 +152,7 @@ The Metals MCP server currently exposes 9 tools to Claude, including compiling t
 
 ## [Skills](https://code.claude.com/docs/en/skills)
 
-Skills are just markdown. A description that tells Claude when to invoke it and what to do. Lives in `.claude/skills/` — committed to your repo.
+Skills are just markdown. A description that tells Claude when to invoke it and what to do. Lives in `.claude/skills/` (committed to your repo).
 
 Build your own "plugins". Each skill is a directory with `SKILL.md` as the entrypoint:
 
@@ -178,7 +178,7 @@ The point: you can teach Claude the things a linter can't catch.
 
 ## Slash commands
 
-"Light skill that you call explicitly" — just markdown, a description that tells Claude what to do when you invoke manually. Lives in `.claude/commands/`.
+"Light skill that you call explicitly", are just markdown, a description that tells Claude what to do when you invoke manually. Lives in `.claude/commands/`.
 
 The difference:
 
