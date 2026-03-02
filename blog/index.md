@@ -13,6 +13,8 @@ title: blog
 
 [Claude and the Swarm](/blog/claude-and-the-swarm) (4 parts)
 
+[Claude Code tips and tricks](/blog/claude-code-tips-and-tricks)
+
 ---
 
 [← trucs.ai](/)
