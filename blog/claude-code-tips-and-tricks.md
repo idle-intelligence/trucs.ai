@@ -260,7 +260,7 @@ More fun in tmux.
 
 ## But I want to YOLO: SafeYolo(tm)
 
-Or try "SafeYolo" at your own risk: combine `--dangerously-skip-permissions` with a deny list, sandbox mode, and hooks.
+Combine `--dangerously-skip-permissions` with a deny list, sandbox mode, and hooks. At your own risk.
 
 ```json
 {
