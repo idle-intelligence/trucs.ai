@@ -226,7 +226,7 @@
       if (!duplexEnabled) return;
       if (state === 'LISTENING') {
         sttClient?.setVadConfig({
-          thresholds: { positive: 0.5, negative: 0.35 },
+          thresholds: { positive: 0.7, negative: 0.35 },
           startFrames: 3, endFrames: 8
         });
       } else if (state === 'SPEAKING') {
@@ -357,6 +357,7 @@
         baseUrl: 'https://idle-intelligence.github.io/stt-web',
         workerUrl: '../stt/worker.js',
         audioProcessorUrl: '../stt/audio-processor.js',
+        vadThresholds: { positive: 0.7, negative: 0.35 },
 
         onStatus: (text, ready, progress) => {
           if (ready) {
@@ -420,7 +421,6 @@
         await sttClient.init();
         sttClient.worker.addEventListener('message', (e) => {
           if (e.data.type === 'vad') {
-            console.log(`[vad] ${e.data.event === 'speech_start' ? 'Beginning of Speech' : 'End of Speech'}`);
             if (e.data.event === 'speech_start') {
               speechStartTime = performance.now();
               if (duplexEnabled && duplexState === 'SPEAKING') {
@@ -712,7 +712,7 @@
       if (!playbackStarted) {
         playbackStartTime = performance.now();
         playbackStarted = true;
-        setDuplexState('SPEAKING');
+        if (duplexState !== 'SPEAKING') setDuplexState('SPEAKING');
       }
       const pcm = new Float32Array(pendingSamples);
       let off = 0;
@@ -741,6 +741,7 @@
       setDuplexState('LISTENING');
       if (duplexEnabled && isRecording) {
         // Mic already open — just reset transcript state
+        // (STT engine was already reset when entering PROCESSING)
         transcriptText = '';
         sttTranscript.textContent = '';
         lastToken = '';

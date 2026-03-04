@@ -70,6 +70,13 @@ async function drainQueue() {
                     tokenCount = 0;
                     handleReset();
                     break;
+                case 'set-vad-config':
+                    if (engine) {
+                        if (data.thresholds) engine.setVadThresholds(data.thresholds.positive, data.thresholds.negative);
+                        if (data.startFrames != null) engine.setVadStartFrames(data.startFrames);
+                        if (data.endFrames != null) engine.setVadEndFrames(data.endFrames);
+                    }
+                    break;
                 default:
                     console.warn('[worker] Unknown message type:', type);
             }
@@ -236,6 +243,15 @@ async function handleLoad(config) {
         const vadBuf = await cachedFetch(vadUrl, 'Downloading VAD model');
         self.postMessage({ type: 'status', text: 'Loading VAD model...' });
         engine.loadVad(new Uint8Array(vadBuf));
+        if (config.vadThresholds) {
+            engine.setVadThresholds(config.vadThresholds.positive, config.vadThresholds.negative);
+        }
+        if (config.vadStartFrames != null) {
+            engine.setVadStartFrames(config.vadStartFrames);
+        }
+        if (config.vadEndFrames != null) {
+            engine.setVadEndFrames(config.vadEndFrames);
+        }
         logState('VAD model loaded');
     } catch (err) {
         console.warn('[worker] VAD load failed (non-fatal):', err.message);
