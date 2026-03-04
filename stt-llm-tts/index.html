@@ -132,6 +132,10 @@
         <button id="stt-record-btn" disabled>start recording</button>
         <button id="demo-btn" disabled>play demo</button>
         <button id="reset-btn" disabled>reset</button>
+        <label style="display: flex; align-items: center; gap: 0.3em; font-size: 0.85rem; color: #555; cursor: pointer;">
+          <input type="checkbox" id="duplex-toggle"> full-duplex
+        </label>
+        <span id="duplex-state" style="color: #999; font-size: 0.8rem;"></span>
       </div>
 
       <hr>
@@ -209,6 +213,34 @@
     let silenceTimer = null;
     const SILENCE_MS = 1500;
     let llmDone = false;
+
+    // ── Duplex state machine ──
+    // States: LISTENING | PROCESSING | SPEAKING
+    let duplexState = 'LISTENING';
+    let duplexEnabled = false;
+
+    function setDuplexState(state) {
+      console.log(`[duplex] ${duplexState} → ${state}`);
+      duplexState = state;
+      updateStateIndicator();
+      if (!duplexEnabled) return;
+      if (state === 'LISTENING') {
+        sttClient?.setVadConfig({
+          thresholds: { positive: 0.5, negative: 0.35 },
+          startFrames: 3, endFrames: 8
+        });
+      } else if (state === 'SPEAKING') {
+        sttClient?.setVadConfig({
+          thresholds: { positive: 0.8, negative: 0.5 },
+          startFrames: 6, endFrames: 4
+        });
+      }
+    }
+
+    function updateStateIndicator() {
+      const el = document.getElementById('duplex-state');
+      if (el) el.textContent = duplexEnabled ? duplexState : '';
+    }
 
     const SYSTEM_PROMPT = 'You are a voice assistant running entirely in the browser — no server, no API. This is a trucs.ai demo. The user speaks, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.';
     const MAX_TURNS = 5;
@@ -344,6 +376,9 @@
         },
 
         onTranscript: (text, isFinal) => {
+          // In duplex mode, suppress transcripts during PROCESSING/SPEAKING
+          if (duplexEnabled && duplexState !== 'LISTENING') return;
+
           if (text && text.trim()) {
             const hasLetters = /[a-zA-ZÀ-ÿ]/.test(text);
             if (hasLetters) {
@@ -386,7 +421,12 @@
         sttClient.worker.addEventListener('message', (e) => {
           if (e.data.type === 'vad') {
             console.log(`[vad] ${e.data.event === 'speech_start' ? 'Beginning of Speech' : 'End of Speech'}`);
-            if (e.data.event === 'speech_start') speechStartTime = performance.now();
+            if (e.data.event === 'speech_start') {
+              speechStartTime = performance.now();
+              if (duplexEnabled && duplexState === 'SPEAKING') {
+                handleInterruption();
+              }
+            }
           }
         });
       } catch (err) {
@@ -397,11 +437,33 @@
 
     function onSilenceDetected() {
       if (!isRecording) return;
-      sttClient.stopRecording();
-      isRecording = false;
-      updateRecordBtn();
+      if (!duplexEnabled) {
+        // Half-duplex: stop mic as before
+        sttClient.stopRecording();
+        isRecording = false;
+        updateRecordBtn();
+      }
+      // Both modes: send text to LLM
+      setDuplexState('PROCESSING');
       const text = transcriptText.trim();
       if (text && isUsableTranscript(text)) sendToLlm(text);
+    }
+
+    function handleInterruption() {
+      console.log('[duplex] interruption detected — stopping TTS, aborting LLM');
+      // Stop TTS playback
+      handleTtsMessage('clear');
+      // Abort LLM
+      llmAbort = true;
+      // Switch to LISTENING
+      setDuplexState('LISTENING');
+      // Reset transcript for new utterance
+      transcriptText = '';
+      sttTranscript.textContent = '';
+      lastToken = '';
+      repeatCount = 0;
+      speechStartTime = performance.now();
+      vadTtfb = null;
     }
 
     function updateRecordBtn() {
@@ -424,6 +486,7 @@
           sttMetricsEl.textContent = '';
           await sttClient.startRecording();
           isRecording = true;
+          setDuplexState('LISTENING');
         } catch (err) {
           sttStatusText.textContent = 'microphone error: ' + err.message;
           console.error(err);
@@ -442,7 +505,18 @@
 
     sttRecordBtn.addEventListener('click', () => {
       autoRestartEnabled = !isRecording; // enable on start, disable on manual stop
+      if (isRecording && duplexEnabled) {
+        // Manual stop during duplex: revert to half-duplex behavior
+        duplexEnabled = false;
+        document.getElementById('duplex-toggle').checked = false;
+        updateStateIndicator();
+      }
       toggleRecording();
+    });
+
+    document.getElementById('duplex-toggle').addEventListener('change', (e) => {
+      duplexEnabled = e.target.checked;
+      updateStateIndicator();
     });
 
     // ── Demo: feed WAV file to STT ──
@@ -529,6 +603,7 @@
 
       llmReady = false;
       llmAbort = false;
+      setDuplexState('PROCESSING');
       llmStatusText.textContent = 'generating...';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
@@ -637,6 +712,7 @@
       if (!playbackStarted) {
         playbackStartTime = performance.now();
         playbackStarted = true;
+        setDuplexState('SPEAKING');
       }
       const pcm = new Float32Array(pendingSamples);
       let off = 0;
@@ -660,9 +736,20 @@
     let autoRestartEnabled = false;
 
     function autoRestartRecording() {
-      if (!sttClient || isRecording || !autoRestartEnabled) return;
+      if (!sttClient || !autoRestartEnabled) return;
       llmDone = false;
-      toggleRecording();
+      setDuplexState('LISTENING');
+      if (duplexEnabled && isRecording) {
+        // Mic already open — just reset transcript state
+        transcriptText = '';
+        sttTranscript.textContent = '';
+        lastToken = '';
+        repeatCount = 0;
+        speechStartTime = null;
+        vadTtfb = null;
+      } else if (!isRecording) {
+        toggleRecording();
+      }
     }
 
     // Build voice grid
@@ -882,6 +969,11 @@
 
       // Stop TTS
       handleTtsMessage('clear');
+
+      // Reset duplex state
+      duplexEnabled = false;
+      document.getElementById('duplex-toggle').checked = false;
+      setDuplexState('LISTENING');
 
       // Clear outputs + metrics
       sttTranscript.textContent = '';
