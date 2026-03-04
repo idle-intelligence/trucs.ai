@@ -315,6 +315,8 @@
     let transcriptText = '';
     let lastToken = '';
     let repeatCount = 0;
+    let speechStartTime = null;
+    let vadTtfb = null;
 
     async function loadStt() {
       sttStatusText.textContent = 'loading...';
@@ -352,6 +354,9 @@
             }
             transcriptText += text;
             sttTranscript.textContent = transcriptText;
+            if (speechStartTime != null && vadTtfb == null) {
+              vadTtfb = performance.now() - speechStartTime;
+            }
             if (isRecording && hasLetters) {
               clearTimeout(silenceTimer);
               silenceTimer = setTimeout(onSilenceDetected, SILENCE_MS);
@@ -364,9 +369,9 @@
 
         onMetrics: (data) => {
           const parts = [];
-          if (data.rtf != null) parts.push(`RTF ${data.rtf.toFixed(2)}x`);
+          if (data.avgFrameMs != null) parts.push(`RTF ${(data.avgFrameMs / 80).toFixed(2)}x`);
           if (data.avgFrameMs != null) parts.push(`${data.avgFrameMs.toFixed(0)} ms/frame`);
-          if (data.ttfb != null && data.ttfb >= 0) parts.push(`TTFB ${data.ttfb.toFixed(0)} ms`);
+          if (vadTtfb != null) parts.push(`TTFB ${vadTtfb.toFixed(0)} ms`);
           if (parts.length) sttMetricsEl.textContent = parts.join(' · ');
         },
 
@@ -378,6 +383,12 @@
 
       try {
         await sttClient.init();
+        sttClient.worker.addEventListener('message', (e) => {
+          if (e.data.type === 'vad') {
+            console.log(`[vad] ${e.data.event === 'speech_start' ? 'Beginning of Speech' : 'End of Speech'}`);
+            if (e.data.event === 'speech_start') speechStartTime = performance.now();
+          }
+        });
       } catch (err) {
         sttStatusText.textContent = 'failed: ' + err.message;
         console.error(err);
@@ -407,6 +418,8 @@
           transcriptText = '';
           lastToken = '';
           repeatCount = 0;
+          speechStartTime = null;
+          vadTtfb = null;
           sttTranscript.textContent = '';
           sttMetricsEl.textContent = '';
           await sttClient.startRecording();

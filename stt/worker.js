@@ -229,6 +229,18 @@ async function handleLoad(config) {
     self.postMessage({ type: 'status', text: 'Loading tokenizer...' });
     engine.loadTokenizer(new Uint8Array(tokBuf));
 
+    // 7b. Load VAD model (optional — non-fatal if missing).
+    const vadUrl = config.vadUrl ?? 'https://huggingface.co/idle-intelligence/silero-vad-v5-safetensors/resolve/main/silero-vad-v5.safetensors';
+    try {
+        logState(`Loading VAD from ${vadUrl}...`);
+        const vadBuf = await cachedFetch(vadUrl, 'Downloading VAD model');
+        self.postMessage({ type: 'status', text: 'Loading VAD model...' });
+        engine.loadVad(new Uint8Array(vadBuf));
+        logState('VAD model loaded');
+    } catch (err) {
+        console.warn('[worker] VAD load failed (non-fatal):', err.message);
+    }
+
     // 8. Warm up GPU pipelines (pre-compile shaders).
     self.postMessage({ type: 'status', text: 'Warming up GPU...' });
     await engine.warmup();
@@ -259,6 +271,15 @@ async function handleAudio({ samples }) {
     if (text) {
         tokenCount++;
         self.postMessage({ type: 'transcript', text, final: false });
+    }
+
+    // Drain VAD events
+    if (engine.drainVadEvents) {
+        const vadEvents = engine.drainVadEvents();
+        for (const ev of vadEvents) {
+            console.log(`[worker] VAD: ${ev.event === 'speech_start' ? 'Beginning of Speech detected' : 'End of Speech detected'}`);
+            self.postMessage({ type: 'vad', event: ev.event, time: ev.time });
+        }
     }
 
     const now = performance.now();

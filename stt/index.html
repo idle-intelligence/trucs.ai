@@ -101,6 +101,8 @@
     let isRecording = false;
     let isCached = false;
     let transcriptText = '';
+    let speechStartTime = null;
+    let vadTtfb = null;
 
     // Check if model is cached
     const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
@@ -151,6 +153,9 @@
           if (text) {
             transcriptText += text;
             transcript.textContent = transcriptText;
+            if (speechStartTime != null && vadTtfb == null) {
+              vadTtfb = performance.now() - speechStartTime;
+            }
           }
           if (isFinal && transcriptText) {
             transcriptText += ' ';
@@ -159,9 +164,9 @@
 
         onMetrics: (data) => {
           const parts = [];
-          if (data.rtf != null) parts.push(`RTF ${data.rtf.toFixed(2)}x`);
+          if (data.avgFrameMs != null) parts.push(`RTF ${(data.avgFrameMs / 80).toFixed(2)}x`);
           if (data.avgFrameMs != null) parts.push(`${data.avgFrameMs.toFixed(0)} ms/frame`);
-          if (data.ttfb != null && data.ttfb >= 0) parts.push(`TTFB ${data.ttfb.toFixed(0)} ms`);
+          if (vadTtfb != null) parts.push(`TTFB ${vadTtfb.toFixed(0)} ms`);
           if (parts.length) metrics.textContent = parts.join(' · ');
         },
 
@@ -174,6 +179,12 @@
 
       try {
         await client.init();
+        client.worker.addEventListener('message', (e) => {
+          if (e.data.type === 'vad') {
+            console.log(`[vad] ${e.data.event === 'speech_start' ? 'Beginning of Speech' : 'End of Speech'}`);
+            if (e.data.event === 'speech_start') speechStartTime = performance.now();
+          }
+        });
       } catch (err) {
         statusText.textContent = 'failed to load: ' + err.message;
         loadBtn.disabled = false;
@@ -189,6 +200,8 @@
           transcriptText = '';
           transcript.textContent = '';
           metrics.textContent = '';
+          speechStartTime = null;
+          vadTtfb = null;
           await client.startRecording();
           isRecording = true;
           recordBtn.textContent = 'stop recording';
