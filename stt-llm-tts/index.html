@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>stt + llm + tts — trucs.ai</title>
   <meta name="description" content="Speak, transcribe, generate, and listen — all running in your browser. No server, no API key.">
+  <!-- coi-serviceworker: enables SharedArrayBuffer on GitHub Pages (needed for Whisper pthreads + wllama multi-thread) -->
+  <!-- Use credentialless COEP so cross-origin TTS WASM imports aren't blocked -->
+  <script>window.coi = { coepCredentialless: () => true };</script>
+  <script src="coi-serviceworker.js"></script>
   <link rel="stylesheet" href="../assets/style.css">
   <style>
     body { max-width: 1200px; }
@@ -115,6 +119,13 @@
       No server, no API key. Nothing leaves your machine.
     </p>
 
+    <div id="mode-toggle" style="font-size:0.8rem;color:#999;margin-bottom:1em;">
+      mode:
+      <a href="?mode=auto" id="mode-auto">auto</a> ·
+      <a href="?mode=full" id="mode-full">full (WebGPU)</a> ·
+      <a href="?mode=mobile" id="mode-mobile">mobile (WASM)</a>
+    </div>
+
     <div id="app">
       <div class="global-status">
         <button id="load-btn">download</button>
@@ -165,7 +176,7 @@
 
     <hr>
 
-    <p class="panel-desc">
+    <p class="panel-desc" id="bottom-desc">
       STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.<br>
       LLM: <a href="https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2</a> (<span id="llm-model-label">1.7B</span>), multi-turn chat via WebGPU with <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
@@ -176,9 +187,43 @@
   </main>
 
   <script type="module">
-    import { SttClient } from '../stt/stt-client.js';
-    import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
     import { TtsClient } from '../tts/tts-client.js';
+
+    // ════════════════════════════════════════════
+    // WebGPU detection — runs before anything else
+    // ════════════════════════════════════════════
+
+    const modeParam = new URLSearchParams(location.search).get('mode');
+
+    let mobileMode = false;
+    if (modeParam === 'mobile') {
+      mobileMode = true;
+    } else if (modeParam === 'full') {
+      mobileMode = false;
+    } else {
+      // auto-detect
+      if (!navigator.gpu) {
+        mobileMode = true;
+      } else {
+        try {
+          const adapter = await navigator.gpu.requestAdapter();
+          if (!adapter) {
+            mobileMode = true;
+          } else if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) {
+            mobileMode = true;
+          }
+        } catch (_) {
+          mobileMode = true;
+        }
+      }
+    }
+
+    // Highlight active mode link
+    {
+      const active = modeParam || 'auto';
+      const el = document.getElementById(`mode-${active}`);
+      if (el) { el.style.color = '#111'; el.style.fontWeight = 'bold'; }
+    }
 
     // ── Global elements ──
     const loadBtn = document.getElementById('load-btn');
@@ -202,13 +247,20 @@
     const ttsVoiceOutput = document.getElementById('tts-voice-output');
     const ttsMetricsEl = document.getElementById('tts-metrics');
 
-    // ── State ──
+    // ── Update bottom description for mobile mode ──
+    if (mobileMode) {
+      document.getElementById('bottom-desc').innerHTML =
+        'STT: <a href="https://huggingface.co/ggerganov/whisper.cpp">Whisper Tiny Q5_1</a> (~31MB) via <a href="https://github.com/idle-intelligence/stt-web">whisper.cpp</a> compiled to WebAssembly.<br>' +
+        'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M Q4_K_M</a> (~271MB) via <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> compiled to WebAssembly with <a href="https://github.com/ngxson/wllama">wllama</a>.<br>' +
+        'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
+    }
+
+    // ── Shared state ──
     let llmReady = false;
     let llmAbort = false;
     let pendingLlmText = '';
-    let silenceTimer = null;
-    const SILENCE_MS = 1500;
     let llmDone = false;
+    let autoRestartEnabled = false;
 
     const SYSTEM_PROMPT = 'You are a voice assistant running entirely in the browser — no server, no API. This is a trucs.ai demo. The user speaks, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.';
     const MAX_TURNS = 5;
@@ -220,9 +272,8 @@
 
     function sendToLlm(text) {
       pendingLlmText = text;
-      if (engine && llmReady) generate();
+      if (llmReady) generate();
     }
-
 
     // ════════════════════════════════════════════
     // Cache checks
@@ -232,40 +283,52 @@
     let llmCached = false;
     let ttsCached = false;
 
-    // STT cache
-    const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
-    try {
-      const cache = await caches.open('stt-model-v1');
-      const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
-      if (cached) sttCached = true;
-    } catch (_) {}
+    // Full mode only: WebLLM model selection
+    let selectedModel = null;
+    let modelSize = null;
 
-    // LLM cache + model selection
-    // Mobile: always 360M q4f32 (~290MB) — shader-f16 unreliable on Android
-    // Desktop + shader-f16: 1.7B q4f16 (~1GB)
-    // Desktop − shader-f16: 1.7B q4f32 (~2.7GB)
-    const isMobile = navigator.userAgentData?.mobile
-      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
-
-    let selectedModel, modelSize;
-    if (isMobile) {
-      selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
-      modelSize = '~290MB';
-      const label = document.getElementById('llm-model-label');
-      if (label) label.textContent = '360M';
-    } else if (navigator.gpu) {
-      selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-      modelSize = '~2.7GB';
+    if (mobileMode) {
+      // STT: Whisper model cached by worker via Cache API
       try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (adapter?.features.has('shader-f16')) {
-          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
-          modelSize = '~1GB';
-        }
+        const cache = await caches.open('whisper-model-v1');
+        if (await cache.match('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin')) sttCached = true;
       } catch (_) {}
-    }
 
-    if (selectedModel) {
+      // LLM: check Cache API marker (written after successful wllama load)
+      try {
+        const cache = await caches.open('wllama-model-v1');
+        if (await cache.match('__loaded__')) llmCached = true;
+      } catch (_) {}
+    } else {
+      // Full mode: Kyutai STT cache
+      const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
+      try {
+        const cache = await caches.open('stt-model-v1');
+        const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
+        if (cached) sttCached = true;
+      } catch (_) {}
+
+      // Full mode: WebLLM model selection
+      const isMobile = navigator.userAgentData?.mobile
+        ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
+
+      if (isMobile) {
+        selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
+        modelSize = '~290MB';
+        const label = document.getElementById('llm-model-label');
+        if (label) label.textContent = '360M';
+      } else {
+        selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
+        modelSize = '~2.7GB';
+        try {
+          const adapter = await navigator.gpu.requestAdapter();
+          if (adapter?.features.has('shader-f16')) {
+            selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
+            modelSize = '~1GB';
+          }
+        } catch (_) {}
+      }
+
       try {
         const keys = await caches.keys();
         for (const key of keys) {
@@ -282,7 +345,7 @@
       } catch (_) {}
     }
 
-    // TTS cache
+    // TTS cache (same for both modes)
     const MODEL_CACHE = 'tts-model-v3';
     const MODEL_CHECK_URL = 'https://huggingface.co/idle-intelligence/pocket-tts-gguf/resolve/main/pocket-tts-q8_0.gguf';
     try {
@@ -295,11 +358,12 @@
     const allCached = sttCached && llmCached && ttsCached;
     if (allCached) loadBtn.textContent = 'load';
 
-    if (!navigator.gpu) {
-      sttStatusText.textContent = 'WebGPU required';
-      llmStatusText.textContent = 'WebGPU required';
-      ttsStatusText.textContent = '';
-      loadBtn.disabled = true;
+    if (mobileMode) {
+      sttStatusText.textContent = sttCached ? 'cached (~31MB)' : '~31MB';
+      llmStatusText.textContent = llmCached ? 'cached (~271MB)' : '~271MB';
+      ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
+      const label = document.getElementById('llm-model-label');
+      if (label) label.textContent = '360M (mobile)';
     } else {
       sttStatusText.textContent = sttCached ? 'cached (~600MB)' : '~600MB';
       llmStatusText.textContent = llmCached ? `cached (${modelSize})` : modelSize;
@@ -307,18 +371,23 @@
     }
 
     // ════════════════════════════════════════════
-    // STT
+    // Full-mode STT (Kyutai)
     // ════════════════════════════════════════════
 
-    let sttClient = null;
+    let sttClient = null;     // full mode
     let isRecording = false;
     let transcriptText = '';
+    let silenceTimer = null;
+    const SILENCE_MS = 1500;
+
+    // Full mode only
     let lastToken = '';
     let repeatCount = 0;
     let speechStartTime = null;
     let vadTtfb = null;
 
-    async function loadStt() {
+    async function loadSttFull() {
+      const { SttClient } = await import('../stt/stt-client.js');
       sttStatusText.textContent = 'loading...';
 
       sttClient = new SttClient({
@@ -350,7 +419,7 @@
               const token = text.trim().toLowerCase();
               if (token === lastToken) repeatCount++;
               else { lastToken = token; repeatCount = 1; }
-              if (repeatCount > 3) return; // STT hallucination, let silence timer fire
+              if (repeatCount > 3) return;
             }
             transcriptText += text;
             sttTranscript.textContent = transcriptText;
@@ -359,7 +428,7 @@
             }
             if (isRecording && hasLetters) {
               clearTimeout(silenceTimer);
-              silenceTimer = setTimeout(onSilenceDetected, SILENCE_MS);
+              silenceTimer = setTimeout(onSilenceDetectedFull, SILENCE_MS);
             }
           }
           if (isFinal && transcriptText) {
@@ -395,7 +464,7 @@
       }
     }
 
-    function onSilenceDetected() {
+    function onSilenceDetectedFull() {
       if (!isRecording) return;
       sttClient.stopRecording();
       isRecording = false;
@@ -404,12 +473,46 @@
       if (text && isUsableTranscript(text)) sendToLlm(text);
     }
 
-    function updateRecordBtn() {
-      sttRecordBtn.textContent = isRecording ? 'stop recording' : 'start recording';
-      sttRecordBtn.classList.toggle('recording', isRecording);
+    // ── Full mode: Demo ──
+    async function playDemoFull() {
+      if (!sttClient) return;
+      reset();
+      demoBtn.disabled = true;
+      sttRecordBtn.disabled = true;
+
+      const resp = await fetch('./joke.wav');
+      const arrayBuf = await resp.arrayBuffer();
+      const tmpCtx = new OfflineAudioContext(1, 1, 24000);
+      const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
+      const outLength = Math.ceil(audioBuf.duration * 24000);
+      const renderCtx = new OfflineAudioContext(1, outLength, 24000);
+      const source = renderCtx.createBufferSource();
+      source.buffer = audioBuf;
+      source.connect(renderCtx.destination);
+      source.start();
+      const rendered = await renderCtx.startRendering();
+      const pcm = rendered.getChannelData(0);
+
+      sttClient.worker.postMessage({ type: 'reset' });
+      const FRAME = 1920;
+      for (let i = 0; i < pcm.length; i += FRAME) {
+        const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
+        sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
+      }
+
+      sttClient._flushPromise = new Promise(r => { sttClient._flushResolve = r; });
+      sttClient.worker.postMessage({ type: 'stop' });
+      await sttClient._flushPromise;
+      sttClient._flushPromise = null;
+
+      demoBtn.disabled = false;
+      sttRecordBtn.disabled = false;
+      const text = transcriptText.trim();
+      if (text && isUsableTranscript(text)) sendToLlm(text);
     }
 
-    async function toggleRecording() {
+    // ── Full mode: toggle recording ──
+    async function toggleRecordingFull() {
       if (!isRecording) {
         clearTimeout(silenceTimer);
         sttRecordBtn.disabled = true;
@@ -440,25 +543,177 @@
       }
     }
 
-    sttRecordBtn.addEventListener('click', () => {
-      autoRestartEnabled = !isRecording; // enable on start, disable on manual stop
-      toggleRecording();
-    });
+    // ════════════════════════════════════════════
+    // Mobile STT (Whisper WASM)
+    // ════════════════════════════════════════════
 
-    // ── Demo: feed WAV file to STT ──
-    async function playDemo() {
-      if (!sttClient) return;
+    let whisperClient = null;
+    let micStream = null;
+    let mobileAudioCtxStt = null;
+    let mobileWorkletNode = null;
+    let mobileAudioBuf = [];     // accumulated Float32Array chunks at 16kHz
+    let speechEndTimer = null;
+    let speechDetected = false;
+    let maxRecordingTimer = null;
+
+    const MOBILE_SILENCE_MS = 1500;
+    const MOBILE_RMS_THRESHOLD = 0.01;
+    const MAX_RECORDING_MS = 30000;
+
+    async function loadSttMobile() {
+      const { WhisperClient, WHISPER_TINY_Q5_1_URL } = await import('./stt-mobile/whisper-client.js');
+      sttStatusText.textContent = 'loading...';
+
+      whisperClient = new WhisperClient('./stt-mobile/worker.js');
+
+      await whisperClient.load(WHISPER_TINY_Q5_1_URL, (progress) => {
+        const pct = (progress * 100).toFixed(0);
+        const verb = sttCached ? 'Loading' : 'Downloading';
+        sttStatusText.textContent = `${verb}: ${pct}%`;
+      });
+
+      sttStatusText.textContent = 'ready';
+      sttRecordBtn.disabled = false;
+      demoBtn.disabled = false;
+    }
+
+    async function startMobileRecording() {
+      mobileAudioBuf = [];
+      speechDetected = false;
+      sttTranscript.textContent = '';
+      sttMetricsEl.textContent = '';
+
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+      // AudioContext at device rate — the worklet resamples to 16kHz internally
+      mobileAudioCtxStt = new AudioContext();
+      const source = mobileAudioCtxStt.createMediaStreamSource(micStream);
+
+      await mobileAudioCtxStt.audioWorklet.addModule('./stt-mobile/audio-processor.js');
+      mobileWorkletNode = new AudioWorkletNode(mobileAudioCtxStt, 'mobile-audio');
+
+      mobileWorkletNode.port.onmessage = (e) => {
+        if (!isRecording) return;
+        const { samples, rms } = e.data;
+        mobileAudioBuf.push(new Float32Array(samples));
+
+        if (rms > MOBILE_RMS_THRESHOLD) {
+          speechDetected = true;
+          clearTimeout(speechEndTimer);
+          speechEndTimer = null;
+        } else if (speechDetected && speechEndTimer === null) {
+          speechEndTimer = setTimeout(() => {
+            if (isRecording) onMobileSilenceDetected();
+          }, MOBILE_SILENCE_MS);
+        }
+      };
+
+      source.connect(mobileWorkletNode);
+      // Not connected to destination — no mic feedback
+
+      // Safety: force-stop after 30s to prevent runaway recording in noisy rooms
+      maxRecordingTimer = setTimeout(() => {
+        if (isRecording) onMobileSilenceDetected();
+      }, MAX_RECORDING_MS);
+
+      isRecording = true;
+    }
+
+    function stopMobileRecording() {
+      isRecording = false;
+      clearTimeout(speechEndTimer);
+      speechEndTimer = null;
+      clearTimeout(maxRecordingTimer);
+      maxRecordingTimer = null;
+
+      if (mobileWorkletNode) {
+        mobileWorkletNode.port.postMessage({ type: 'stop' });
+        mobileWorkletNode.disconnect();
+        mobileWorkletNode = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      if (mobileAudioCtxStt) {
+        mobileAudioCtxStt.close().catch(() => {});
+        mobileAudioCtxStt = null;
+      }
+    }
+
+    async function onMobileSilenceDetected() {
+      if (!isRecording) return;
+      stopMobileRecording();
+      updateRecordBtn();
+      await processMobileAudio();
+    }
+
+    async function processMobileAudio() {
+      if (mobileAudioBuf.length === 0) return;
+
+      // Concatenate all recorded chunks
+      const totalSamples = mobileAudioBuf.reduce((s, c) => s + c.length, 0);
+      const pcm = new Float32Array(totalSamples);
+      let offset = 0;
+      for (const chunk of mobileAudioBuf) {
+        pcm.set(chunk, offset);
+        offset += chunk.length;
+      }
+      mobileAudioBuf = [];
+
+      sttStatusText.textContent = 'transcribing...';
+      const t0 = performance.now();
+
+      try {
+        const text = await whisperClient.transcribe(pcm);
+        const transcribeMs = (performance.now() - t0).toFixed(0);
+        sttMetricsEl.textContent = `transcribed in ${transcribeMs}ms`;
+        sttTranscript.textContent = text;
+        sttStatusText.textContent = 'ready';
+
+        if (text && isUsableTranscript(text)) sendToLlm(text);
+      } catch (err) {
+        sttStatusText.textContent = 'transcription error: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    async function toggleRecordingMobile() {
+      if (!isRecording) {
+        sttRecordBtn.disabled = true;
+        sttRecordBtn.textContent = 'requesting mic...';
+        try {
+          await startMobileRecording();
+        } catch (err) {
+          sttStatusText.textContent = 'microphone error: ' + err.message;
+          console.error(err);
+          sttRecordBtn.disabled = false;
+          updateRecordBtn();
+          return;
+        }
+        updateRecordBtn();
+        sttRecordBtn.disabled = false;
+      } else {
+        stopMobileRecording();
+        updateRecordBtn();
+        // Process buffered audio (manually stopped — bypass isRecording guard)
+        await processMobileAudio();
+      }
+    }
+
+    // Mobile demo: decode WAV to 16kHz and send to Whisper
+    async function playDemoMobile() {
+      if (!whisperClient) return;
       reset();
       demoBtn.disabled = true;
       sttRecordBtn.disabled = true;
 
-      // Decode and resample to 24kHz mono
       const resp = await fetch('./joke.wav');
       const arrayBuf = await resp.arrayBuffer();
-      const tmpCtx = new OfflineAudioContext(1, 1, 24000);
+      const tmpCtx = new OfflineAudioContext(1, 1, 16000);
       const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
-      const outLength = Math.ceil(audioBuf.duration * 24000);
-      const renderCtx = new OfflineAudioContext(1, outLength, 24000);
+      const outLength = Math.ceil(audioBuf.duration * 16000);
+      const renderCtx = new OfflineAudioContext(1, outLength, 16000);
       const source = renderCtx.createBufferSource();
       source.buffer = audioBuf;
       source.connect(renderCtx.destination);
@@ -466,35 +721,53 @@
       const rendered = await renderCtx.startRendering();
       const pcm = rendered.getChannelData(0);
 
-      // Feed to worker in 1920-sample chunks (80ms Mimi frames)
-      sttClient.worker.postMessage({ type: 'reset' });
-      const FRAME = 1920;
-      for (let i = 0; i < pcm.length; i += FRAME) {
-        const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
-        sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
+      sttStatusText.textContent = 'transcribing...';
+      const t0 = performance.now();
+      try {
+        const text = await whisperClient.transcribe(pcm.slice());
+        const transcribeMs = (performance.now() - t0).toFixed(0);
+        sttMetricsEl.textContent = `transcribed in ${transcribeMs}ms`;
+        sttTranscript.textContent = text;
+        sttStatusText.textContent = 'ready';
+        if (text && isUsableTranscript(text)) sendToLlm(text);
+      } catch (err) {
+        sttStatusText.textContent = 'transcription error: ' + err.message;
+        console.error(err);
       }
-
-      // Wait for worker to finish processing and flushing
-      sttClient._flushPromise = new Promise(r => { sttClient._flushResolve = r; });
-      sttClient.worker.postMessage({ type: 'stop' });
-      await sttClient._flushPromise;
-      sttClient._flushPromise = null;
 
       demoBtn.disabled = false;
       sttRecordBtn.disabled = false;
-      const text = transcriptText.trim();
-      if (text && isUsableTranscript(text)) sendToLlm(text);
     }
 
-    demoBtn.addEventListener('click', playDemo);
+    // ── Shared recording control ──
+    function updateRecordBtn() {
+      sttRecordBtn.textContent = isRecording ? 'stop recording' : 'start recording';
+      sttRecordBtn.classList.toggle('recording', isRecording);
+    }
+
+    function toggleRecording() {
+      if (mobileMode) return toggleRecordingMobile();
+      return toggleRecordingFull();
+    }
+
+    sttRecordBtn.addEventListener('click', () => {
+      autoRestartEnabled = !isRecording;
+      toggleRecording();
+    });
+
+    demoBtn.addEventListener('click', () => {
+      if (mobileMode) playDemoMobile();
+      else playDemoFull();
+    });
 
     // ════════════════════════════════════════════
-    // LLM
+    // Full-mode LLM (WebLLM)
     // ════════════════════════════════════════════
 
     let engine = null;
 
-    async function loadLlm() {
+    async function loadLlmFull() {
+      const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
       llmStatusText.textContent = 'loading...';
       try {
         engine = await CreateMLCEngine(selectedModel, {
@@ -522,10 +795,52 @@
       }
     }
 
+    // ════════════════════════════════════════════
+    // Mobile LLM (wllama)
+    // ════════════════════════════════════════════
+
+    let wllama = null;
+    let wllamaAbortSignal = null;
+
+    async function loadLlmMobile() {
+      const { Wllama } = await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@2.1.1/esm/index.js');
+      const WasmFromCDN = (await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@2.1.1/esm/wasm-from-cdn.js')).default;
+
+      llmStatusText.textContent = 'loading...';
+      try {
+        wllama = new Wllama(WasmFromCDN);
+        await wllama.loadModelFromHF(
+          'bartowski/SmolLM2-360M-Instruct-GGUF',
+          'SmolLM2-360M-Instruct-Q4_K_M.gguf',
+          {
+            progressCallback: ({ loaded, total }) => {
+              if (total > 0) {
+                const mb = (loaded / 1024 / 1024).toFixed(0);
+                const pct = ((loaded / total) * 100).toFixed(0);
+                const verb = llmCached ? 'Loading' : 'Downloading';
+                llmStatusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
+              }
+            },
+          }
+        );
+        llmStatusText.textContent = 'ready';
+        llmReady = true;
+        // Write cache marker for next visit
+        try { const c = await caches.open('wllama-model-v1'); await c.put('__loaded__', new Response('1')); } catch (_) {}
+      } catch (err) {
+        llmStatusText.textContent = 'failed: ' + (err.message || String(err));
+        console.error(err);
+      }
+    }
+
+    // ════════════════════════════════════════════
+    // Generate (branches on mode)
+    // ════════════════════════════════════════════
+
     async function generate() {
       const text = pendingLlmText.trim().slice(0, 2000);
       pendingLlmText = '';
-      if (!text || !engine) return;
+      if (!text) return;
 
       llmReady = false;
       llmAbort = false;
@@ -536,6 +851,15 @@
 
       const start = performance.now();
 
+      if (mobileMode) {
+        await generateMobile(text, start);
+      } else {
+        await generateFull(text, start);
+      }
+    }
+
+    async function generateFull(text, start) {
+      if (!engine) return;
       try {
         chatHistory.push({ role: 'user', content: text });
         const messages = [
@@ -588,18 +912,102 @@
       }
 
       if (llmAbort) {
-        // reset() already cleared chatHistory; wipe stale KV cache
         await engine.resetChat();
       } else if (chatHistory.length > MAX_TURNS * 2) {
         chatHistory = chatHistory.slice(-MAX_TURNS * 2);
-        await engine.resetChat(); // KV cache invalid after trim
+        await engine.resetChat();
       }
       llmReady = true;
       llmStatusText.textContent = 'ready';
     }
 
+    async function generateMobile(text, start) {
+      if (!wllama) return;
+      // Build prompt with chat history in SmolLM2 chat format
+      chatHistory.push({ role: 'user', content: text });
+
+      // Format as instruct prompt
+      let prompt = `<|im_start|>system\n${SYSTEM_PROMPT}<|im_end|>\n`;
+      const historyWindow = chatHistory.slice(-(MAX_TURNS * 2));
+      for (const msg of historyWindow) {
+        prompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
+      }
+      prompt += '<|im_start|>assistant\n';
+
+      let fullResponse = '';
+      let sentenceBuffer = '';
+      let tokens = 0;
+
+      try {
+        wllamaAbortSignal = null;
+        await wllama.createCompletion(prompt, {
+          nPredict: 256,
+          sampling: { temp: 0.7, top_k: 40, top_p: 0.9 },
+          onNewToken: (token, piece, currentText, { abortSignal }) => {
+            if (llmAbort) {
+              abortSignal();
+              return;
+            }
+            wllamaAbortSignal = abortSignal;
+            tokens++;
+            // piece may be a Uint8Array — decode to string
+            const pieceStr = typeof piece === 'string' ? piece : new TextDecoder().decode(piece);
+
+            // Stop at end token
+            if (pieceStr.includes('<|im_end|>') || currentText.includes('<|im_end|>')) {
+              abortSignal();
+              return;
+            }
+
+            fullResponse = currentText.replace(/<\|im_end\|>.*$/s, '');
+            llmOutput.textContent = fullResponse;
+            sentenceBuffer += pieceStr;
+
+            let boundary;
+            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+              const ch = sentenceBuffer[boundary];
+              const cutAt = ch === '\n' ? boundary : boundary + 1;
+              const sentence = sentenceBuffer.slice(0, cutAt).trim();
+              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
+              if (sentence) handleTtsMessage('chunk', sentence);
+            }
+            if (sentenceBuffer.length > 200) {
+              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
+              const cut = spaceAt > 0 ? spaceAt : 200;
+              const fragment = sentenceBuffer.slice(0, cut).trim();
+              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+              if (fragment) handleTtsMessage('chunk', fragment);
+            }
+          },
+        });
+
+        if (!llmAbort) {
+          const cleanResponse = fullResponse.replace(/<\|im_end\|>.*$/s, '').trim();
+          llmOutput.textContent = cleanResponse;
+          if (sentenceBuffer.trim()) handleTtsMessage('chunk', sentenceBuffer.trim());
+          handleTtsMessage('done');
+          chatHistory.push({ role: 'assistant', content: cleanResponse });
+          const elapsed = (performance.now() - start) / 1000;
+          const tokSec = (tokens / elapsed).toFixed(1);
+          llmMetricsEl.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+        }
+      } catch (err) {
+        if (!llmAbort) llmOutput.textContent = 'error: ' + (err.message || String(err));
+        console.error(err);
+      }
+
+      if (llmAbort) {
+        chatHistory = [];
+      } else if (chatHistory.length > MAX_TURNS * 2) {
+        chatHistory = chatHistory.slice(-MAX_TURNS * 2);
+      }
+      llmReady = true;
+      llmStatusText.textContent = 'ready';
+      wllamaAbortSignal = null;
+    }
+
     // ════════════════════════════════════════════
-    // TTS
+    // TTS (identical for both modes)
     // ════════════════════════════════════════════
 
     const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
@@ -614,17 +1022,15 @@
     let sentenceQueue = [];
     let currentTtsSpan = null;
 
-    // Streaming audio playback via AudioWorklet
     let audioCtx = null;
     let workletNode = null;
     let pendingChunks = [];
     let pendingSamples = 0;
     let playbackStarted = false;
-    const BATCH_SAMPLES = 12000; // ~500ms at 24kHz
+    const BATCH_SAMPLES = 12000;
     const TARGET_DURATION = 8;
     const MAX_PREBUFFER_S = 4;
 
-    // Metrics
     let genStartTime = 0;
     let firstChunkTime = 0;
     let totalAudioSamples = 0;
@@ -657,10 +1063,10 @@
       };
     }
 
-    let autoRestartEnabled = false;
-
     function autoRestartRecording() {
-      if (!sttClient || isRecording || !autoRestartEnabled) return;
+      if (isRecording || !autoRestartEnabled) return;
+      if (mobileMode && !whisperClient) return;
+      if (!mobileMode && !sttClient) return;
       llmDone = false;
       toggleRecording();
     }
@@ -831,7 +1237,6 @@
       tts.generate(item.text, TEMPERATURE);
     }
 
-    // ── Handle messages from LLM ──
     function handleTtsMessage(type, data) {
       if (type === 'clear') {
         discardGeneration = true;
@@ -864,32 +1269,44 @@
     // ════════════════════════════════════════════
 
     function reset() {
-      // Stop recording
       clearTimeout(silenceTimer);
+      clearTimeout(speechEndTimer);
+      speechEndTimer = null;
+
       if (isRecording) {
-        sttClient.stopRecording();
+        if (mobileMode) {
+          stopMobileRecording();
+        } else {
+          sttClient.stopRecording();
+        }
         isRecording = false;
         updateRecordBtn();
       }
 
-      // Stop LLM generation
       pendingLlmText = '';
       llmAbort = true;
       llmDone = false;
       chatHistory = [];
       autoRestartEnabled = false;
-      if (engine && llmReady) engine.resetChat();
 
-      // Stop TTS
+      // Abort wllama if generating
+      if (mobileMode && wllamaAbortSignal) {
+        try { wllamaAbortSignal(); } catch (_) {}
+        wllamaAbortSignal = null;
+      }
+      if (!mobileMode && engine && llmReady) engine.resetChat();
+
       handleTtsMessage('clear');
 
-      // Clear outputs + metrics
+      mobileAudioBuf = [];
       sttTranscript.textContent = '';
       transcriptText = '';
       sttMetricsEl.textContent = '';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
-      if (engine) llmStatusText.textContent = 'ready';
+      if (llmReady || (!mobileMode && engine) || (mobileMode && wllama)) {
+        llmStatusText.textContent = 'ready';
+      }
       ttsMetricsEl.textContent = '';
     }
 
@@ -901,8 +1318,13 @@
 
     async function loadAll() {
       loadBtn.disabled = true;
-      await Promise.all([loadStt(), loadLlm(), initTts()]);
+      if (mobileMode) {
+        await Promise.all([loadSttMobile(), loadLlmMobile(), initTts()]);
+      } else {
+        await Promise.all([loadSttFull(), loadLlmFull(), initTts()]);
+      }
       resetBtn.disabled = false;
+      if (llmReady && pendingLlmText) generate();
     }
 
     if (allCached) {
