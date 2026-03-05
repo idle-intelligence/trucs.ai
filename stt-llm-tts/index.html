@@ -219,8 +219,11 @@
     let duplexState = 'LISTENING';
     let duplexEnabled = false;
 
+    const _t0 = performance.now();
+    function ts() { return ((performance.now() - _t0) / 1000).toFixed(1) + 's'; }
+
     function setDuplexState(state) {
-      console.log(`[duplex] ${duplexState} → ${state}`);
+      console.log(`[${ts()}] [duplex] ${duplexState} → ${state}`);
       duplexState = state;
       updateStateIndicator();
       if (!duplexEnabled) return;
@@ -450,7 +453,7 @@
     }
 
     function handleInterruption() {
-      console.log('[duplex] interruption detected — stopping TTS, aborting LLM');
+      console.log(`[${ts()}] [duplex] interruption detected — stopping TTS, aborting LLM`);
       // Stop TTS playback
       handleTtsMessage('clear');
       // Abort LLM
