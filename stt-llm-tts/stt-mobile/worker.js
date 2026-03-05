@@ -115,7 +115,7 @@ async function initModule() {
 
     wasmModule = await WhisperModule({
         print:    (t) => {},
-        printErr: (t) => console.warn('[whisper.cpp]', t),
+        printErr: () => {},
         locateFile: (path) => new URL(`./pkg/${path}`, self.location.href).href,
         mainScriptUrlOrBlob: WASM_JS_URL,
     });

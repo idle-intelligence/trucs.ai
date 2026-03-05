@@ -119,12 +119,7 @@
       No server, no API key. Nothing leaves your machine.
     </p>
 
-    <div id="mode-toggle" style="font-size:0.8rem;color:#999;margin-bottom:1em;">
-      mode:
-      <a href="?mode=auto" id="mode-auto">auto</a> ·
-      <a href="?mode=full" id="mode-full">full (WebGPU)</a> ·
-      <a href="?mode=mobile" id="mode-mobile">mobile (WASM)</a>
-    </div>
+    <p id="mode-info" style="font-size:0.85rem;color:#999;margin-bottom:1em;"></p>
 
     <div id="app">
       <div class="global-status">
@@ -141,6 +136,7 @@
 
       <div class="action-buttons">
         <button id="stt-record-btn" disabled>start recording</button>
+        <button id="stop-btn" style="display:none">stop</button>
         <button id="demo-btn" disabled>play demo</button>
         <button id="reset-btn" disabled>reset</button>
       </div>
@@ -218,11 +214,15 @@
       }
     }
 
-    // Highlight active mode link
-    {
-      const active = modeParam || 'auto';
-      const el = document.getElementById(`mode-${active}`);
-      if (el) { el.style.color = '#111'; el.style.fontWeight = 'bold'; }
+    // Console toggle: setMode('mobile') or setMode('full')
+    window.setMode = (mode) => { location.href = `?mode=${mode}`; };
+
+    // Mode info text
+    const modeInfo = document.getElementById('mode-info');
+    if (mobileMode) {
+      modeInfo.textContent = 'Turn-by-turn mode — press Start to record, Stop & send to transcribe. No WebGPU required.';
+    } else {
+      modeInfo.textContent = 'Turn-by-turn with streaming STT — speech is transcribed in real-time. Silence triggers the response automatically.';
     }
 
     // ── Global elements ──
@@ -364,6 +364,7 @@
       ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
       const label = document.getElementById('llm-model-label');
       if (label) label.textContent = '360M (mobile)';
+      sttRecordBtn.textContent = 'start';
     } else {
       sttStatusText.textContent = sttCached ? 'cached (~600MB)' : '~600MB';
       llmStatusText.textContent = llmCached ? `cached (${modelSize})` : modelSize;
@@ -506,9 +507,9 @@
       sttClient._flushPromise = null;
 
       demoBtn.disabled = false;
-      sttRecordBtn.disabled = false;
       const text = transcriptText.trim();
       if (text && isUsableTranscript(text)) sendToLlm(text);
+      else { sttRecordBtn.disabled = false; }
     }
 
     // ── Full mode: toggle recording ──
@@ -572,6 +573,7 @@
         sttStatusText.textContent = `${verb}: ${pct}%`;
       });
 
+      console.log('[stt] whisper-tiny-q5_1 loaded');
       sttStatusText.textContent = 'ready';
       sttRecordBtn.disabled = false;
       demoBtn.disabled = false;
@@ -687,16 +689,14 @@
         } catch (err) {
           sttStatusText.textContent = 'microphone error: ' + err.message;
           console.error(err);
-          sttRecordBtn.disabled = false;
           updateRecordBtn();
           return;
         }
         updateRecordBtn();
-        sttRecordBtn.disabled = false;
       } else {
+        isRecording = false;
         stopMobileRecording();
         updateRecordBtn();
-        // Process buffered audio (manually stopped — bypass isRecording guard)
         await processMobileAudio();
       }
     }
@@ -736,13 +736,30 @@
       }
 
       demoBtn.disabled = false;
-      sttRecordBtn.disabled = false;
+      if (!pipelineBusy) sttRecordBtn.disabled = false;
     }
 
     // ── Shared recording control ──
+    let pipelineBusy = false;
+    const stopBtn = document.getElementById('stop-btn');
+
     function updateRecordBtn() {
-      sttRecordBtn.textContent = isRecording ? 'stop recording' : 'start recording';
-      sttRecordBtn.classList.toggle('recording', isRecording);
+      if (isRecording) {
+        sttRecordBtn.textContent = mobileMode ? 'stop & send' : 'listening...';
+        sttRecordBtn.classList.add('recording');
+        sttRecordBtn.disabled = mobileMode ? false : true;
+        if (!mobileMode) { stopBtn.style.display = ''; stopBtn.textContent = 'stop'; }
+      } else if (pipelineBusy) {
+        sttRecordBtn.textContent = 'thinking...';
+        sttRecordBtn.classList.remove('recording');
+        sttRecordBtn.disabled = true;
+        if (!mobileMode) { stopBtn.style.display = ''; stopBtn.textContent = 'stop'; }
+      } else {
+        sttRecordBtn.textContent = mobileMode ? 'start' : 'start recording';
+        sttRecordBtn.classList.remove('recording');
+        sttRecordBtn.disabled = false;
+        stopBtn.style.display = 'none';
+      }
     }
 
     function toggleRecording() {
@@ -750,10 +767,28 @@
       return toggleRecordingFull();
     }
 
+    function stopEverything() {
+      if (isRecording) {
+        sttClient.stopRecording();
+        isRecording = false;
+      }
+      autoRestartEnabled = false;
+      llmAbort = true;
+      if (mobileMode && wllamaAbortSignal) {
+        try { wllamaAbortSignal(); } catch (_) {}
+        wllamaAbortSignal = null;
+      }
+      handleTtsMessage('clear');
+      pipelineBusy = false;
+      updateRecordBtn();
+    }
+
     sttRecordBtn.addEventListener('click', () => {
-      autoRestartEnabled = !isRecording;
+      autoRestartEnabled = !mobileMode;
       toggleRecording();
     });
+
+    stopBtn.addEventListener('click', stopEverything);
 
     demoBtn.addEventListener('click', () => {
       if (mobileMode) playDemoMobile();
@@ -803,12 +838,14 @@
     let wllamaAbortSignal = null;
 
     async function loadLlmMobile() {
-      const { Wllama } = await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@2.1.1/esm/index.js');
-      const WasmFromCDN = (await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@2.1.1/esm/wasm-from-cdn.js')).default;
+      const { Wllama, LoggerWithoutDebug } = await import('https://idle-intelligence.github.io/llm-web/pkg/wllama/index.js');
 
       llmStatusText.textContent = 'loading...';
       try {
-        wllama = new Wllama(WasmFromCDN);
+        wllama = new Wllama({
+          'single-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/single-thread/wllama.wasm',
+          'multi-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/multi-thread/wllama.wasm',
+        }, { suppressNativeLog: true, logger: LoggerWithoutDebug });
         await wllama.loadModelFromHF(
           'bartowski/SmolLM2-360M-Instruct-GGUF',
           'SmolLM2-360M-Instruct-Q4_K_M.gguf',
@@ -823,6 +860,7 @@
             },
           }
         );
+        console.log('[llm] SmolLM2-360M-Instruct-Q4_K_M loaded (wllama)');
         llmStatusText.textContent = 'ready';
         llmReady = true;
         // Write cache marker for next visit
@@ -844,6 +882,8 @@
 
       llmReady = false;
       llmAbort = false;
+      pipelineBusy = true;
+      updateRecordBtn();
       llmStatusText.textContent = 'generating...';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
@@ -1064,6 +1104,9 @@
     }
 
     function autoRestartRecording() {
+      pipelineBusy = false;
+      updateRecordBtn();
+      sttRecordBtn.disabled = false;
       if (isRecording || !autoRestartEnabled) return;
       if (mobileMode && !whisperClient) return;
       if (!mobileMode && !sttClient) return;
@@ -1118,6 +1161,7 @@
 
       onStatus: (text, ready, progress) => {
         if (ready) {
+          console.log('[tts] pocket-tts-q8_0 loaded');
           ttsStatusText.textContent = 'ready';
           setVoiceBtnsEnabled(true);
         } else if (progress && progress.total > 0) {
@@ -1146,6 +1190,10 @@
         firstChunkTime = 0;
         ttsMetricsEl.textContent = `generating... (${numTokens} tokens)`;
         ttsStatusText.textContent = 'generating...';
+        if (pipelineBusy) {
+          sttRecordBtn.textContent = 'speaking...';
+          sttRecordBtn.disabled = true;
+        }
         pendingChunks = [];
         pendingSamples = 0;
         playbackStarted = false;
@@ -1176,7 +1224,7 @@
             const needed = (1.1 - rtf) * TARGET_DURATION * tts.sampleRate;
             dynamicPrebuffer = Math.min(needed, MAX_PREBUFFER_S * tts.sampleRate);
           }
-          console.log(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);
+          console.debug(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);
         }
 
         if (!measurementDone) return;
@@ -1250,7 +1298,7 @@
         return;
       }
       if (type === 'chunk') {
-        const clean = data.replace(/\p{Extended_Pictographic}/gu, '').replace(/\uFE0F/g, '').replace(/[":]/g, '').replace(/  +/g, ' ').trim();
+        const clean = data.replace(/\p{Extended_Pictographic}/gu, ' ').replace(/\uFE0F/g, '').replace(/[{}[\]";:\\,]/g, ' ').replace(/  +/g, ' ').trim();
         if (!clean) return;
         const span = document.createElement('span');
         span.textContent = clean;
@@ -1288,6 +1336,9 @@
       llmDone = false;
       chatHistory = [];
       autoRestartEnabled = false;
+      pipelineBusy = false;
+      updateRecordBtn();
+      sttRecordBtn.disabled = false;
 
       // Abort wllama if generating
       if (mobileMode && wllamaAbortSignal) {
@@ -1332,6 +1383,12 @@
     } else {
       loadBtn.addEventListener('click', loadAll);
     }
+
+    // Cleanup on page unload to free WASM workers and memory
+    window.addEventListener('pagehide', () => {
+      if (wllama) wllama.exit().catch(() => {});
+      if (sttClient) { try { sttClient.destroy?.(); } catch (_) {} }
+    });
   </script>
 </body>
 </html>
