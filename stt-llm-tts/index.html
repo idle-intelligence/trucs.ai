@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>stt + llm + tts — trucs.ai</title>
   <meta name="description" content="Speak, transcribe, generate, and listen — all running in your browser. No server, no API key.">
-  <!-- coi-serviceworker: enables SharedArrayBuffer on GitHub Pages (needed for Whisper pthreads + wllama multi-thread) -->
-  <!-- Use credentialless COEP so cross-origin TTS WASM imports aren't blocked -->
-  <script>window.coi = { coepCredentialless: () => true };</script>
-  <script src="coi-serviceworker.js"></script>
+  <script>navigator.serviceWorker?.getRegistrations().then(r => r.forEach(r => r.unregister()))</script>
   <link rel="stylesheet" href="../assets/style.css">
   <style>
     body { max-width: 1200px; }
