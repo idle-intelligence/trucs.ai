@@ -139,12 +139,13 @@
         status.textContent = 'Initializing WASM...';
         await init();
 
-        const modelBytes = await fetchWithProgress('/classifier/models/model.safetensors', 'model weights');
+        const HF_BASE = 'https://huggingface.co/idle-intelligence/inference-at-home/resolve/main/classifiers/intent';
+        const modelBytes = await fetchWithProgress(`${HF_BASE}/model.safetensors`, 'model weights');
 
         status.textContent = 'Loading tokenizer...';
         const [configResp, tokenizerResp] = await Promise.all([
-          fetch('/classifier/models/config.json'),
-          fetch('/classifier/models/tokenizer.json')
+          fetch(`${HF_BASE}/config.json`),
+          fetch(`${HF_BASE}/tokenizer.json`)
         ]);
         const configBytes = new Uint8Array(await configResp.arrayBuffer());
         const tokenizerBytes = new Uint8Array(await tokenizerResp.arrayBuffer());
