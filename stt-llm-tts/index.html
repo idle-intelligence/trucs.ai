@@ -559,10 +559,10 @@
     const MAX_RECORDING_MS = 30000;
 
     async function loadSttMobile() {
-      const { WhisperClient, WHISPER_TINY_Q5_1_URL } = await import('./stt-mobile/whisper-client.js');
+      const { WhisperClient, WHISPER_TINY_Q5_1_URL } = await import('../stt/stt-mobile/whisper-client.js');
       sttStatusText.textContent = 'loading...';
 
-      whisperClient = new WhisperClient('./stt-mobile/worker.js');
+      whisperClient = new WhisperClient('../stt/stt-mobile/worker.js');
 
       await whisperClient.load(WHISPER_TINY_Q5_1_URL, (progress) => {
         const pct = (progress * 100).toFixed(0);
@@ -588,7 +588,7 @@
       mobileAudioCtxStt = new AudioContext();
       const source = mobileAudioCtxStt.createMediaStreamSource(micStream);
 
-      await mobileAudioCtxStt.audioWorklet.addModule('./stt-mobile/audio-processor.js');
+      await mobileAudioCtxStt.audioWorklet.addModule('../stt/stt-mobile/audio-processor.js');
       mobileWorkletNode = new AudioWorkletNode(mobileAudioCtxStt, 'mobile-audio');
 
       mobileWorkletNode.port.onmessage = (e) => {
