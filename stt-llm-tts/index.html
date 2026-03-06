@@ -188,11 +188,17 @@
 
     const modeParam = new URLSearchParams(location.search).get('mode');
 
+    const isMobile = navigator.userAgentData?.mobile
+      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
+
     let mobileMode = false;
     if (modeParam === 'mobile') {
       mobileMode = true;
     } else if (modeParam === 'full') {
       mobileMode = false;
+    } else if (isMobile) {
+      // Always use WASM fallbacks on mobile — WebGPU models are too slow
+      mobileMode = true;
     } else {
       // auto-detect
       if (!navigator.gpu) {
