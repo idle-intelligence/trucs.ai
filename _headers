@@ -2,8 +2,9 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless
 
-/tts/*
+/stt/*
+  Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless
 
-/stt/*
+/tts/*
   Cross-Origin-Embedder-Policy: credentialless
