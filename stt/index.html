@@ -67,6 +67,7 @@
       Rust → WebAssembly + WebGPU. No server, no API key.<br>
       Your audio never leaves your machine.
     </p>
+    <p id="mobile-warning" class="panel-desc" hidden>Mobile mode: using a smaller, non-streaming model. Record your speech, then wait for transcription. For real-time streaming transcription, use a desktop browser with WebGPU.</p>
 
     <div id="model-status">
       <button id="load-btn">download</button>
@@ -127,6 +128,7 @@
     if (mobileMode) {
       descFull.hidden = true;
       descMobile.hidden = false;
+      document.getElementById('mobile-warning').hidden = false;
     }
 
     // ── Shared state ──
@@ -361,49 +363,86 @@
         }
       }
 
-      async function toggleRecording() {
-        if (!isRecording) {
-          recordBtn.disabled = true;
-          recordBtn.textContent = 'requesting mic...';
-          try {
-            mobileAudioBuf = [];
-            transcript.textContent = '';
-            metrics.textContent = '';
+      // ── Push-to-talk (hold to record) ──
 
-            micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            mobileAudioCtx = new AudioContext();
-            const source = mobileAudioCtx.createMediaStreamSource(micStream);
+      let micReady = false;
 
-            await mobileAudioCtx.audioWorklet.addModule('./stt-mobile/audio-processor.js');
-            mobileWorkletNode = new AudioWorkletNode(mobileAudioCtx, 'mobile-audio');
-            mobileWorkletNode.port.onmessage = (e) => {
-              if (isRecording) mobileAudioBuf.push(new Float32Array(e.data.samples));
-            };
-            source.connect(mobileWorkletNode);
+      async function ensureMic() {
+        if (micReady) return true;
+        try {
+          mobileAudioBuf = [];
+          transcript.textContent = '';
+          metrics.textContent = '';
 
-            isRecording = true;
-            recordBtn.textContent = 'stop & transcribe';
-            recordBtn.classList.add('recording');
-          } catch (err) {
-            statusText.textContent = 'microphone error: ' + err.message;
-            console.error(err);
-            recordBtn.textContent = 'start recording';
-          }
-          recordBtn.disabled = false;
-        } else {
-          stopMobileRecording();
-          recordBtn.textContent = 'start recording';
-          recordBtn.classList.remove('recording');
-          await transcribeBuffer();
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          mobileAudioCtx = new AudioContext();
+          const source = mobileAudioCtx.createMediaStreamSource(micStream);
+
+          await mobileAudioCtx.audioWorklet.addModule('./stt-mobile/audio-processor.js');
+          mobileWorkletNode = new AudioWorkletNode(mobileAudioCtx, 'mobile-audio');
+          mobileWorkletNode.port.onmessage = (e) => {
+            if (isRecording) mobileAudioBuf.push(new Float32Array(e.data.samples));
+          };
+          source.connect(mobileWorkletNode);
+
+          micReady = true;
+          return true;
+        } catch (err) {
+          statusText.textContent = 'microphone error: ' + err.message;
+          console.error(err);
+          return false;
         }
       }
+
+      async function startRecording() {
+        if (isRecording || recordBtn.disabled) return;
+        recordBtn.textContent = 'requesting mic...';
+        const ok = await ensureMic();
+        if (!ok) {
+          recordBtn.textContent = 'hold to talk';
+          return;
+        }
+        mobileAudioBuf = [];
+        transcript.textContent = '';
+        metrics.textContent = '';
+        isRecording = true;
+        recordBtn.textContent = 'recording...';
+        recordBtn.classList.add('recording');
+      }
+
+      async function stopRecordingAndTranscribe() {
+        if (!isRecording) return;
+        stopMobileRecording();
+        micReady = false;
+        recordBtn.textContent = 'hold to talk';
+        recordBtn.classList.remove('recording');
+        await transcribeBuffer();
+      }
+
+      recordBtn.textContent = 'hold to talk';
+
+      recordBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        startRecording();
+      });
+      recordBtn.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        stopRecordingAndTranscribe();
+      });
+      recordBtn.addEventListener('pointercancel', (e) => {
+        e.preventDefault();
+        stopRecordingAndTranscribe();
+      });
+      // Prevent long-press context menu on mobile
+      recordBtn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+      });
 
       if (isCached) {
         loadModel();
       } else {
         loadBtn.addEventListener('click', loadModel);
       }
-      recordBtn.addEventListener('click', toggleRecording);
     }
   </script>
 </body>
