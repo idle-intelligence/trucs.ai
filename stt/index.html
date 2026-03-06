@@ -417,23 +417,36 @@
       }
 
       recordBtn.textContent = 'hold to talk';
+      recordBtn.style.touchAction = 'none';
+      recordBtn.style.userSelect = 'none';
+      recordBtn.style.webkitUserSelect = 'none';
 
-      recordBtn.addEventListener('pointerdown', (e) => {
+      recordBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        pointerIsDown = true;
+        startRecording();
+      }, { passive: false });
+      recordBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        pointerIsDown = false;
+        stopRecordingAndTranscribe();
+      }, { passive: false });
+      recordBtn.addEventListener('touchcancel', (e) => {
+        e.preventDefault();
+        pointerIsDown = false;
+        stopRecordingAndTranscribe();
+      }, { passive: false });
+      // Mouse fallback for desktop ?mode=mobile testing
+      recordBtn.addEventListener('mousedown', (e) => {
         e.preventDefault();
         pointerIsDown = true;
         startRecording();
       });
-      recordBtn.addEventListener('pointerup', (e) => {
+      recordBtn.addEventListener('mouseup', (e) => {
         e.preventDefault();
         pointerIsDown = false;
         stopRecordingAndTranscribe();
       });
-      recordBtn.addEventListener('pointercancel', (e) => {
-        e.preventDefault();
-        pointerIsDown = false;
-        stopRecordingAndTranscribe();
-      });
-      // Prevent long-press context menu on mobile
       recordBtn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
       });
