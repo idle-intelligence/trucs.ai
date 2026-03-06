@@ -1,3 +1,9 @@
 /stt-llm-tts/*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: credentialless
+
+/tts/*
+  Cross-Origin-Embedder-Policy: credentialless
+
+/stt/*
+  Cross-Origin-Embedder-Policy: credentialless

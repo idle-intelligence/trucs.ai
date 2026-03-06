@@ -6,6 +6,9 @@ markdown: kramdown
 kramdown:
   input: GFM
 
+include:
+  - _headers
+
 exclude:
   - README.md
   - CLAUDE.md
