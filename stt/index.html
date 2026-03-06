@@ -82,150 +82,323 @@
 
     <hr>
 
-    <p class="panel-desc"><a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.</p>
+    <p id="desc-full" class="panel-desc"><a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.</p>
+    <p id="desc-mobile" class="panel-desc" hidden><a href="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin">Whisper Tiny Q5</a> via <a href="https://github.com/ggerganov/whisper.cpp">whisper.cpp</a> compiled to WebAssembly. Record then transcribe (no streaming).</p>
 
     <hr>
     <p><a href="/">← trucs.ai</a></p>
   </main>
 
   <script type="module">
-    import { SttClient } from './stt-client.js';
-
     const recordBtn = document.getElementById('record-btn');
     const loadBtn = document.getElementById('load-btn');
     const statusText = document.getElementById('status-text');
     const transcript = document.getElementById('transcript');
     const metrics = document.getElementById('metrics');
+    const descFull = document.getElementById('desc-full');
+    const descMobile = document.getElementById('desc-mobile');
 
-    let client = null;
-    let isRecording = false;
-    let isCached = false;
-    let transcriptText = '';
-    let speechStartTime = null;
-    let vadTtfb = null;
+    // ── Mode detection ──
 
-    // Check if model is cached
-    const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
-    try {
-      const cache = await caches.open('stt-model-v1');
-      const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
-      if (cached) {
-        isCached = true;
-        loadBtn.textContent = 'load';
+    const modeParam = new URLSearchParams(location.search).get('mode');
+    let mobileMode = false;
+    if (modeParam === 'mobile') {
+      mobileMode = true;
+    } else if (modeParam === 'full') {
+      mobileMode = false;
+    } else {
+      if (!navigator.gpu) {
+        mobileMode = true;
+      } else {
+        try {
+          const adapter = await navigator.gpu.requestAdapter();
+          if (!adapter) mobileMode = true;
+          else if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) mobileMode = true;
+        } catch (_) { mobileMode = true; }
       }
-    } catch (_) {}
-    statusText.textContent = isCached
-      ? 'model cached locally: ~600MB'
-      : 'model will be stored locally: ~600MB';
-
-    if (!navigator.gpu) {
-      statusText.textContent = 'WebGPU is not supported in this browser.';
-      loadBtn.disabled = true;
     }
 
-    async function loadModel() {
-      loadBtn.disabled = true;
-      statusText.textContent = 'loading...';
+    if (mobileMode) {
+      descFull.hidden = true;
+      descMobile.hidden = false;
+    }
 
-      client = new SttClient({
-        baseUrl: 'https://idle-intelligence.github.io/stt-web',
-        workerUrl: './worker.js',
-        audioProcessorUrl: './audio-processor.js',
+    // ── Shared state ──
 
-        onStatus: (text, ready, progress) => {
-          if (ready) {
-            statusText.textContent = 'ready';
-            recordBtn.disabled = false;
-            return;
-          }
+    let isRecording = false;
+    let transcriptText = '';
 
-          if (progress && progress.total > 0) {
-            const mb = (progress.loaded / 1024 / 1024).toFixed(0);
-            const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
-            const verb = isCached ? 'Loading' : 'Downloading';
-            statusText.textContent = `${verb}: ${mb}MB loaded, ${pct}%`;
-          } else {
-            statusText.textContent = text;
-          }
-        },
+    // ════════════════════════════════════════════
+    // Full mode (WebGPU streaming STT)
+    // ════════════════════════════════════════════
 
-        onTranscript: (text, isFinal) => {
-          if (text) {
-            transcriptText += text;
-            transcript.textContent = transcriptText;
-            if (speechStartTime != null && vadTtfb == null) {
-              vadTtfb = performance.now() - speechStartTime;
+    if (!mobileMode) {
+      const { SttClient } = await import('./stt-client.js');
+
+      let client = null;
+      let isCached = false;
+      let speechStartTime = null;
+      let vadTtfb = null;
+
+      const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
+      try {
+        const cache = await caches.open('stt-model-v1');
+        const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
+        if (cached) {
+          isCached = true;
+          loadBtn.textContent = 'load';
+        }
+      } catch (_) {}
+      statusText.textContent = isCached
+        ? 'model cached locally: ~600MB'
+        : 'model will be stored locally: ~600MB';
+
+      if (!navigator.gpu) {
+        statusText.textContent = 'WebGPU is not supported in this browser.';
+        loadBtn.disabled = true;
+      }
+
+      async function loadModel() {
+        loadBtn.disabled = true;
+        statusText.textContent = 'loading...';
+
+        client = new SttClient({
+          baseUrl: 'https://idle-intelligence.github.io/stt-web',
+          workerUrl: './worker.js',
+          audioProcessorUrl: './audio-processor.js',
+
+          onStatus: (text, ready, progress) => {
+            if (ready) {
+              statusText.textContent = 'ready';
+              recordBtn.disabled = false;
+              return;
             }
-          }
-          if (isFinal && transcriptText) {
-            transcriptText += ' ';
-          }
-        },
+            if (progress && progress.total > 0) {
+              const mb = (progress.loaded / 1024 / 1024).toFixed(0);
+              const pct = ((progress.loaded / progress.total) * 100).toFixed(0);
+              const verb = isCached ? 'Loading' : 'Downloading';
+              statusText.textContent = `${verb}: ${mb}MB loaded, ${pct}%`;
+            } else {
+              statusText.textContent = text;
+            }
+          },
 
-        onMetrics: (data) => {
-          const parts = [];
-          if (data.avgFrameMs != null) parts.push(`RTF ${(data.avgFrameMs / 80).toFixed(2)}x`);
-          if (data.avgFrameMs != null) parts.push(`${data.avgFrameMs.toFixed(0)} ms/frame`);
-          if (vadTtfb != null) parts.push(`TTFB ${vadTtfb.toFixed(0)} ms`);
-          if (parts.length) metrics.textContent = parts.join(' · ');
-        },
+          onTranscript: (text, isFinal) => {
+            if (text) {
+              transcriptText += text;
+              transcript.textContent = transcriptText;
+              if (speechStartTime != null && vadTtfb == null) {
+                vadTtfb = performance.now() - speechStartTime;
+              }
+            }
+            if (isFinal && transcriptText) {
+              transcriptText += ' ';
+            }
+          },
 
-        onError: (err) => {
-          statusText.textContent = 'error: ' + err.message;
-          console.error(err);
+          onMetrics: (data) => {
+            const parts = [];
+            if (data.avgFrameMs != null) parts.push(`RTF ${(data.avgFrameMs / 80).toFixed(2)}x`);
+            if (data.avgFrameMs != null) parts.push(`${data.avgFrameMs.toFixed(0)} ms/frame`);
+            if (vadTtfb != null) parts.push(`TTFB ${vadTtfb.toFixed(0)} ms`);
+            if (parts.length) metrics.textContent = parts.join(' · ');
+          },
+
+          onError: (err) => {
+            statusText.textContent = 'error: ' + err.message;
+            console.error(err);
+            loadBtn.disabled = false;
+          },
+        });
+
+        try {
+          await client.init();
+          client.worker.addEventListener('message', (e) => {
+            if (e.data.type === 'vad') {
+              console.log(`[vad] ${e.data.event === 'speech_start' ? 'Beginning of Speech' : 'End of Speech'}`);
+              if (e.data.event === 'speech_start') speechStartTime = performance.now();
+            }
+          });
+        } catch (err) {
+          statusText.textContent = 'failed to load: ' + err.message;
           loadBtn.disabled = false;
-        },
-      });
+          console.error(err);
+        }
+      }
+
+      async function toggleRecording() {
+        if (!isRecording) {
+          recordBtn.disabled = true;
+          recordBtn.textContent = 'requesting mic...';
+          try {
+            transcriptText = '';
+            transcript.textContent = '';
+            metrics.textContent = '';
+            speechStartTime = null;
+            vadTtfb = null;
+            await client.startRecording();
+            isRecording = true;
+            recordBtn.textContent = 'stop recording';
+            recordBtn.classList.add('recording');
+          } catch (err) {
+            statusText.textContent = 'microphone error: ' + err.message;
+            console.error(err);
+            recordBtn.textContent = 'start recording';
+          }
+          recordBtn.disabled = false;
+        } else {
+          client.stopRecording();
+          isRecording = false;
+          recordBtn.textContent = 'start recording';
+          recordBtn.classList.remove('recording');
+        }
+      }
+
+      if (isCached) {
+        loadModel();
+      } else {
+        loadBtn.addEventListener('click', loadModel);
+      }
+      recordBtn.addEventListener('click', toggleRecording);
+    }
+
+    // ════════════════════════════════════════════
+    // Mobile mode (whisper.cpp WASM, batch transcribe)
+    // ════════════════════════════════════════════
+
+    if (mobileMode) {
+      const { WhisperClient, WHISPER_TINY_Q5_1_URL } = await import('./stt-mobile/whisper-client.js');
+
+      let whisperClient = null;
+      let isCached = false;
+      let mobileAudioBuf = [];
+      let mobileAudioCtx = null;
+      let mobileWorkletNode = null;
+      let micStream = null;
 
       try {
-        await client.init();
-        client.worker.addEventListener('message', (e) => {
-          if (e.data.type === 'vad') {
-            console.log(`[vad] ${e.data.event === 'speech_start' ? 'Beginning of Speech' : 'End of Speech'}`);
-            if (e.data.event === 'speech_start') speechStartTime = performance.now();
-          }
-        });
-      } catch (err) {
-        statusText.textContent = 'failed to load: ' + err.message;
-        loadBtn.disabled = false;
-        console.error(err);
-      }
-    }
-
-    async function toggleRecording() {
-      if (!isRecording) {
-        recordBtn.disabled = true;
-        recordBtn.textContent = 'requesting mic...';
-        try {
-          transcriptText = '';
-          transcript.textContent = '';
-          metrics.textContent = '';
-          speechStartTime = null;
-          vadTtfb = null;
-          await client.startRecording();
-          isRecording = true;
-          recordBtn.textContent = 'stop recording';
-          recordBtn.classList.add('recording');
-        } catch (err) {
-          statusText.textContent = 'microphone error: ' + err.message;
-          console.error(err);
-          recordBtn.textContent = 'start recording';
+        const cache = await caches.open('whisper-model-v1');
+        const cached = await cache.match(WHISPER_TINY_Q5_1_URL);
+        if (cached) {
+          isCached = true;
+          loadBtn.textContent = 'load';
         }
-        recordBtn.disabled = false;
-      } else {
-        client.stopRecording();
-        isRecording = false;
-        recordBtn.textContent = 'start recording';
-        recordBtn.classList.remove('recording');
-      }
-    }
+      } catch (_) {}
+      statusText.textContent = isCached
+        ? 'model cached locally: ~31MB'
+        : 'model will be stored locally: ~31MB';
 
-    if (isCached) {
-      loadModel();
-    } else {
-      loadBtn.addEventListener('click', loadModel);
+      async function loadModel() {
+        loadBtn.disabled = true;
+        statusText.textContent = 'loading...';
+
+        whisperClient = new WhisperClient('./stt-mobile/worker.js');
+
+        try {
+          await whisperClient.load(WHISPER_TINY_Q5_1_URL, (progress) => {
+            const pct = (progress * 100).toFixed(0);
+            const verb = isCached ? 'Loading' : 'Downloading';
+            statusText.textContent = `${verb}: ${pct}%`;
+          });
+
+          console.log('[stt] whisper-tiny-q5_1 loaded');
+          statusText.textContent = 'ready';
+          recordBtn.disabled = false;
+        } catch (err) {
+          statusText.textContent = 'failed to load: ' + err.message;
+          loadBtn.disabled = false;
+          console.error(err);
+        }
+      }
+
+      function stopMobileRecording() {
+        isRecording = false;
+        if (mobileWorkletNode) {
+          mobileWorkletNode.port.postMessage({ type: 'stop' });
+          mobileWorkletNode.disconnect();
+          mobileWorkletNode = null;
+        }
+        if (micStream) {
+          micStream.getTracks().forEach(t => t.stop());
+          micStream = null;
+        }
+        if (mobileAudioCtx) {
+          mobileAudioCtx.close().catch(() => {});
+          mobileAudioCtx = null;
+        }
+      }
+
+      async function transcribeBuffer() {
+        if (mobileAudioBuf.length === 0) return;
+
+        const totalSamples = mobileAudioBuf.reduce((s, c) => s + c.length, 0);
+        const pcm = new Float32Array(totalSamples);
+        let offset = 0;
+        for (const chunk of mobileAudioBuf) {
+          pcm.set(chunk, offset);
+          offset += chunk.length;
+        }
+        mobileAudioBuf = [];
+
+        statusText.textContent = 'transcribing...';
+        const t0 = performance.now();
+
+        try {
+          const text = await whisperClient.transcribe(pcm);
+          const ms = (performance.now() - t0).toFixed(0);
+          metrics.textContent = `transcribed in ${ms}ms`;
+          transcript.textContent = text;
+          statusText.textContent = 'ready';
+        } catch (err) {
+          statusText.textContent = 'transcription error: ' + err.message;
+          console.error(err);
+        }
+      }
+
+      async function toggleRecording() {
+        if (!isRecording) {
+          recordBtn.disabled = true;
+          recordBtn.textContent = 'requesting mic...';
+          try {
+            mobileAudioBuf = [];
+            transcript.textContent = '';
+            metrics.textContent = '';
+
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            mobileAudioCtx = new AudioContext();
+            const source = mobileAudioCtx.createMediaStreamSource(micStream);
+
+            await mobileAudioCtx.audioWorklet.addModule('./stt-mobile/audio-processor.js');
+            mobileWorkletNode = new AudioWorkletNode(mobileAudioCtx, 'mobile-audio');
+            mobileWorkletNode.port.onmessage = (e) => {
+              if (isRecording) mobileAudioBuf.push(new Float32Array(e.data.samples));
+            };
+            source.connect(mobileWorkletNode);
+
+            isRecording = true;
+            recordBtn.textContent = 'stop & transcribe';
+            recordBtn.classList.add('recording');
+          } catch (err) {
+            statusText.textContent = 'microphone error: ' + err.message;
+            console.error(err);
+            recordBtn.textContent = 'start recording';
+          }
+          recordBtn.disabled = false;
+        } else {
+          stopMobileRecording();
+          recordBtn.textContent = 'start recording';
+          recordBtn.classList.remove('recording');
+          await transcribeBuffer();
+        }
+      }
+
+      if (isCached) {
+        loadModel();
+      } else {
+        loadBtn.addEventListener('click', loadModel);
+      }
+      recordBtn.addEventListener('click', toggleRecording);
     }
-    recordBtn.addEventListener('click', toggleRecording);
   </script>
 </body>
 </html>
