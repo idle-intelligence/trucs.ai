@@ -407,6 +407,8 @@
             'bartowski/SmolLM2-360M-Instruct-GGUF',
             'SmolLM2-360M-Instruct-Q4_K_M.gguf',
             {
+              n_ctx: 2048,
+              n_batch: 128,
               progressCallback: ({ loaded, total }) => {
                 if (total > 0) {
                   const mb = (loaded / 1024 / 1024).toFixed(0);
@@ -438,7 +440,7 @@
         statusText.textContent = 'thinking...';
         if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
 
-        const systemPrompt = 'You are a helpful assistant running entirely in the browser via WebAssembly — no server, no API. This is a trucs.ai demo. The user types, you reply. Keep answers concise and clear.';
+        const systemPrompt = 'You are a helpful, concise assistant. Keep answers short and clear.';
         const prompt = `<|im_start|>system\n${systemPrompt}<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
 
         const start = performance.now();

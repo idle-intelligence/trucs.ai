@@ -265,7 +265,7 @@
     let llmDone = false;
     let autoRestartEnabled = false;
 
-    const SYSTEM_PROMPT = 'You are a voice assistant running entirely in the browser — no server, no API. This is a trucs.ai demo. The user speaks, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.';
+    const SYSTEM_PROMPT = 'You are a helpful, concise voice assistant. Your text is read aloud. Keep answers to one to three sentences.';
     const MAX_TURNS = 5;
     let chatHistory = [];
 
@@ -853,6 +853,8 @@
           'bartowski/SmolLM2-360M-Instruct-GGUF',
           'SmolLM2-360M-Instruct-Q4_K_M.gguf',
           {
+            n_ctx: 2048,
+            n_batch: 128,
             progressCallback: ({ loaded, total }) => {
               if (total > 0) {
                 const mb = (loaded / 1024 / 1024).toFixed(0);

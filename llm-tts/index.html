@@ -726,6 +726,8 @@
             'bartowski/SmolLM2-360M-Instruct-GGUF',
             'SmolLM2-360M-Instruct-Q4_K_M.gguf',
             {
+              n_ctx: 2048,
+              n_batch: 128,
               progressCallback: ({ loaded, total }) => {
                 if (total > 0) {
                   const mb = (loaded / 1024 / 1024).toFixed(0);
@@ -757,7 +759,7 @@
         llmStatusText.textContent = 'thinking...';
         sendToTts('clear');
 
-        const systemPrompt = 'You are a helpful assistant running entirely in the browser via WebAssembly — no server, no API. This is a trucs.ai demo. The user types, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.';
+        const systemPrompt = 'You are a helpful, concise assistant. Your text is read aloud. Keep answers to one to three sentences.';
         const prompt = `<|im_start|>system\n${systemPrompt}<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
 
         const start = performance.now();
