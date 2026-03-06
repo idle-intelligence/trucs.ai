@@ -383,11 +383,15 @@
       let isCached = false;
 
       try {
-        const cache = await caches.open('wllama-model-v1');
-        const cached = await cache.match('__loaded__');
-        if (cached) {
-          isCached = true;
-          loadBtn.textContent = 'load';
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          const entries = await cache.keys();
+          if (entries.some(r => r.url.includes('SmolLM2-360M-Instruct-Q4_K_M'))) {
+            isCached = true;
+            loadBtn.textContent = 'load';
+            break;
+          }
         }
       } catch (_) {}
       statusText.textContent = isCached
@@ -422,7 +426,6 @@
 
           statusText.textContent = 'ready';
           sendBtn.disabled = false;
-          try { const c = await caches.open('wllama-model-v1'); await c.put('__loaded__', new Response('1')); } catch (_) {}
         } catch (err) {
           statusText.textContent = 'failed to load: ' + (err.message || String(err));
           loadBtn.disabled = false;

@@ -223,7 +223,7 @@
     // Mode info text
     const modeInfo = document.getElementById('mode-info');
     if (mobileMode) {
-      modeInfo.textContent = 'Turn-by-turn mode — press Start to record, Stop & send to transcribe. No WebGPU required.';
+      modeInfo.textContent = 'Mobile mode: smaller models running on CPU via WebAssembly. For streaming and near-realtime experience, try a desktop browser.';
     } else {
       modeInfo.textContent = 'Turn-by-turn with streaming STT — speech is transcribed in real-time. Silence triggers the response automatically.';
     }
@@ -297,10 +297,17 @@
         if (await cache.match('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin')) sttCached = true;
       } catch (_) {}
 
-      // LLM: check Cache API marker (written after successful wllama load)
+      // LLM: check if wllama model is cached
       try {
-        const cache = await caches.open('wllama-model-v1');
-        if (await cache.match('__loaded__')) llmCached = true;
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          const entries = await cache.keys();
+          if (entries.some(r => r.url.includes('SmolLM2-360M-Instruct-Q4_K_M'))) {
+            llmCached = true;
+            break;
+          }
+        }
       } catch (_) {}
     } else {
       // Full mode: Kyutai STT cache
@@ -868,8 +875,6 @@
         console.log('[llm] SmolLM2-360M-Instruct-Q4_K_M loaded (wllama)');
         llmStatusText.textContent = 'ready';
         llmReady = true;
-        // Write cache marker for next visit
-        try { const c = await caches.open('wllama-model-v1'); await c.put('__loaded__', new Response('1')); } catch (_) {}
       } catch (err) {
         llmStatusText.textContent = 'failed: ' + (err.message || String(err));
         console.error(err);

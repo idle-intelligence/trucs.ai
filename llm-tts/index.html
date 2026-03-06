@@ -153,7 +153,7 @@
 
     <!-- ── Mobile: single-column layout ── -->
     <div id="mobile-layout">
-      <p class="panel-desc">Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try the desktop version for a much better experience with WebGPU acceleration.</p>
+      <p class="panel-desc">Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try a desktop browser for a much better experience with WebGPU acceleration.</p>
 
       <div class="model-status">
         <button id="m-llm-load-btn">download</button>
@@ -166,6 +166,10 @@
 
       <hr>
 
+      <div class="voice-grid" id="m-tts-voice-grid"></div>
+
+      <hr>
+
       <textarea id="m-llm-input" placeholder="Say something..." maxlength="2000"></textarea>
       <div class="controls">
         <button id="m-llm-send-btn" disabled>send</button>
@@ -173,10 +177,6 @@
 
       <div id="m-llm-output"></div>
       <div id="m-llm-stats"></div>
-
-      <hr>
-
-      <div class="voice-grid" id="m-tts-voice-grid"></div>
 
       <hr>
 
@@ -702,11 +702,15 @@
       let llmCached = false;
 
       try {
-        const cache = await caches.open('wllama-model-v1');
-        const cached = await cache.match('__loaded__');
-        if (cached) {
-          llmCached = true;
-          llmLoadBtn.textContent = 'load';
+        const keys = await caches.keys();
+        for (const key of keys) {
+          const cache = await caches.open(key);
+          const entries = await cache.keys();
+          if (entries.some(r => r.url.includes('SmolLM2-360M-Instruct-Q4_K_M'))) {
+            llmCached = true;
+            llmLoadBtn.textContent = 'load';
+            break;
+          }
         }
       } catch (_) {}
       llmStatusText.textContent = llmCached
@@ -741,7 +745,6 @@
 
           llmStatusText.textContent = 'ready';
           llmSendBtn.disabled = false;
-          try { const c = await caches.open('wllama-model-v1'); await c.put('__loaded__', new Response('1')); } catch (_) {}
         } catch (err) {
           llmStatusText.textContent = 'failed to load: ' + (err.message || String(err));
           llmLoadBtn.disabled = false;
