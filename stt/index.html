@@ -102,10 +102,16 @@
 
     const modeParam = new URLSearchParams(location.search).get('mode');
     let mobileMode = false;
+    const isMobile = navigator.userAgentData?.mobile
+      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
+
     if (modeParam === 'mobile') {
       mobileMode = true;
     } else if (modeParam === 'full') {
       mobileMode = false;
+    } else if (isMobile) {
+      // Always use whisper WASM on mobile — the 1B WebGPU model is too slow
+      mobileMode = true;
     } else {
       if (!navigator.gpu) {
         mobileMode = true;

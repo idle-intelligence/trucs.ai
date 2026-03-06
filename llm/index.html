@@ -188,11 +188,17 @@
     // ── Mode detection ──
 
     const modeParam = new URLSearchParams(location.search).get('mode');
+    const isMobile = navigator.userAgentData?.mobile
+      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
+
     let mobileMode = false;
     if (modeParam === 'mobile') {
       mobileMode = true;
     } else if (modeParam === 'full') {
       mobileMode = false;
+    } else if (isMobile) {
+      // Always use wllama on mobile — smaller model, better experience
+      mobileMode = true;
     } else {
       if (!navigator.gpu) {
         mobileMode = true;
