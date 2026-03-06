@@ -574,10 +574,10 @@
 
           if (!measurementDone && pendingSamples >= BATCH_SAMPLES) {
             measurementDone = true;
-            if (rtf >= 1.0) {
+            if (rtf >= 1.08) {
               dynamicPrebuffer = 0;
             } else {
-              const needed = (1.13 - rtf) * TARGET_DURATION * tts.sampleRate;
+              const needed = (1.08 - rtf) * TARGET_DURATION * tts.sampleRate;
               dynamicPrebuffer = Math.min(needed, MAX_PREBUFFER_S * tts.sampleRate);
             }
             console.log(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);
@@ -1006,10 +1006,10 @@
 
           if (!measurementDone && pendingSamples >= BATCH_SAMPLES) {
             measurementDone = true;
-            if (rtf >= 1.0) {
+            if (rtf >= 1.08) {
               dynamicPrebuffer = 0;
             } else {
-              const needed = (1.13 - rtf) * TARGET_DURATION * tts.sampleRate;
+              const needed = (1.08 - rtf) * TARGET_DURATION * tts.sampleRate;
               dynamicPrebuffer = Math.min(needed, MAX_PREBUFFER_S * tts.sampleRate);
             }
             console.log(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);
