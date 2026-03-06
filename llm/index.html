@@ -96,6 +96,7 @@
       No server, no API key. Your prompt never leaves your machine.<br>
       <span id="model-name">SmolLM2-1.7B</span>, single-turn chat.
     </p>
+    <p id="mobile-warning" class="panel-desc" hidden>Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try the desktop version for a much better experience with WebGPU acceleration.</p>
 
     <div id="model-status">
       <button id="load-btn">download</button>
@@ -215,6 +216,8 @@
       descFull.hidden = true;
       descMobile.hidden = false;
       document.getElementById('model-name').textContent = 'SmolLM2-360M';
+      document.getElementById('mobile-warning').hidden = false;
+      document.getElementById('voice-link').hidden = true;
     }
 
     // ── Voice helper ──
