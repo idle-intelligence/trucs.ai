@@ -188,11 +188,17 @@
 
     const modeParam = new URLSearchParams(location.search).get('mode');
 
+    const isMobile = navigator.userAgentData?.mobile
+      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
+
     let mobileMode = false;
     if (modeParam === 'mobile') {
       mobileMode = true;
     } else if (modeParam === 'full') {
       mobileMode = false;
+    } else if (isMobile) {
+      // Always use WASM fallbacks on mobile — WebGPU models are too slow
+      mobileMode = true;
     } else {
       // auto-detect
       if (!navigator.gpu) {
@@ -217,7 +223,7 @@
     // Mode info text
     const modeInfo = document.getElementById('mode-info');
     if (mobileMode) {
-      modeInfo.textContent = 'Turn-by-turn mode — press Start to record, Stop & send to transcribe. No WebGPU required.';
+      modeInfo.textContent = 'Mobile mode: smaller models running on CPU via WebAssembly. For streaming and near-realtime experience, try a desktop browser.';
     } else {
       modeInfo.textContent = 'Turn-by-turn with streaming STT — speech is transcribed in real-time. Silence triggers the response automatically.';
     }
@@ -259,7 +265,7 @@
     let llmDone = false;
     let autoRestartEnabled = false;
 
-    const SYSTEM_PROMPT = 'You are a voice assistant running entirely in the browser — no server, no API. This is a trucs.ai demo. The user speaks, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.';
+    const SYSTEM_PROMPT = 'You are a helpful, concise voice assistant. Your text is read aloud. Keep answers to one to three sentences.';
     const MAX_TURNS = 5;
     let chatHistory = [];
 
@@ -291,10 +297,16 @@
         if (await cache.match('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin')) sttCached = true;
       } catch (_) {}
 
-      // LLM: check Cache API marker (written after successful wllama load)
+      // LLM: check if wllama model is cached (wllama uses OPFS, not Cache API)
       try {
-        const cache = await caches.open('wllama-model-v1');
-        if (await cache.match('__loaded__')) llmCached = true;
+        const opfsRoot = await navigator.storage.getDirectory();
+        const cacheDir = await opfsRoot.getDirectoryHandle('cache');
+        for await (const [name] of cacheDir.entries()) {
+          if (name.includes('SmolLM2-360M-Instruct-Q4_K_M')) {
+            llmCached = true;
+            break;
+          }
+        }
       } catch (_) {}
     } else {
       // Full mode: Kyutai STT cache
@@ -559,10 +571,10 @@
     const MAX_RECORDING_MS = 30000;
 
     async function loadSttMobile() {
-      const { WhisperClient, WHISPER_TINY_Q5_1_URL } = await import('./stt-mobile/whisper-client.js');
+      const { WhisperClient, WHISPER_TINY_Q5_1_URL } = await import('../stt/stt-mobile/whisper-client.js');
       sttStatusText.textContent = 'loading...';
 
-      whisperClient = new WhisperClient('./stt-mobile/worker.js');
+      whisperClient = new WhisperClient('../stt/stt-mobile/worker.js');
 
       await whisperClient.load(WHISPER_TINY_Q5_1_URL, (progress) => {
         const pct = (progress * 100).toFixed(0);
@@ -588,7 +600,7 @@
       mobileAudioCtxStt = new AudioContext();
       const source = mobileAudioCtxStt.createMediaStreamSource(micStream);
 
-      await mobileAudioCtxStt.audioWorklet.addModule('./stt-mobile/audio-processor.js');
+      await mobileAudioCtxStt.audioWorklet.addModule('../stt/stt-mobile/audio-processor.js');
       mobileWorkletNode = new AudioWorkletNode(mobileAudioCtxStt, 'mobile-audio');
 
       mobileWorkletNode.port.onmessage = (e) => {
@@ -847,6 +859,8 @@
           'bartowski/SmolLM2-360M-Instruct-GGUF',
           'SmolLM2-360M-Instruct-Q4_K_M.gguf',
           {
+            n_ctx: 2048,
+            n_batch: 128,
             progressCallback: ({ loaded, total }) => {
               if (total > 0) {
                 const mb = (loaded / 1024 / 1024).toFixed(0);
@@ -860,8 +874,6 @@
         console.log('[llm] SmolLM2-360M-Instruct-Q4_K_M loaded (wllama)');
         llmStatusText.textContent = 'ready';
         llmReady = true;
-        // Write cache marker for next visit
-        try { const c = await caches.open('wllama-model-v1'); await c.put('__loaded__', new Response('1')); } catch (_) {}
       } catch (err) {
         llmStatusText.textContent = 'failed: ' + (err.message || String(err));
         console.error(err);
@@ -1218,7 +1230,7 @@
           if (rtf >= 1.0) {
             dynamicPrebuffer = 0;
           } else {
-            const needed = (1.1 - rtf) * TARGET_DURATION * tts.sampleRate;
+            const needed = (1.13 - rtf) * TARGET_DURATION * tts.sampleRate;
             dynamicPrebuffer = Math.min(needed, MAX_PREBUFFER_S * tts.sampleRate);
           }
           console.debug(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);

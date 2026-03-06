@@ -133,6 +133,7 @@
       Rust → WebAssembly. No server, no API key.<br>
       Your text never leaves your machine.
     </p>
+    <p id="mobile-warning" class="panel-desc" hidden>Mobile: speech generation may be slower than real-time depending on your device. For faster results, try a desktop browser.</p>
 
     <div id="model-status">
       <button id="load-btn">download</button>
@@ -215,6 +216,9 @@
     let allChunks = [];
     let isCached = false;
     let discardGeneration = false;
+
+    const isMobile = navigator.userAgentData?.mobile ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
+    if (isMobile) document.getElementById('mobile-warning').removeAttribute('hidden');
 
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
@@ -459,7 +463,7 @@
             if (rtf >= 1.0) {
               dynamicPrebuffer = 0;
             } else {
-              const needed = (1.1 - rtf) * TARGET_DURATION * tts.sampleRate;
+              const needed = (1.13 - rtf) * TARGET_DURATION * tts.sampleRate;
               dynamicPrebuffer = Math.min(needed, MAX_PREBUFFER_S * tts.sampleRate);
             }
             console.log(`[prebuffer] rtf=${rtf.toFixed(2)} prebuffer=${(dynamicPrebuffer / tts.sampleRate).toFixed(2)}s`);
