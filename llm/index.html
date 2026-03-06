@@ -383,11 +383,10 @@
       let isCached = false;
 
       try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          if (entries.some(r => r.url.includes('SmolLM2-360M-Instruct-Q4_K_M'))) {
+        const opfsRoot = await navigator.storage.getDirectory();
+        const cacheDir = await opfsRoot.getDirectoryHandle('cache');
+        for await (const [name] of cacheDir.entries()) {
+          if (name.includes('SmolLM2-360M-Instruct-Q4_K_M')) {
             isCached = true;
             loadBtn.textContent = 'load';
             break;

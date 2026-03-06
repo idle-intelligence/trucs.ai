@@ -297,13 +297,12 @@
         if (await cache.match('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin')) sttCached = true;
       } catch (_) {}
 
-      // LLM: check if wllama model is cached
+      // LLM: check if wllama model is cached (wllama uses OPFS, not Cache API)
       try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          if (entries.some(r => r.url.includes('SmolLM2-360M-Instruct-Q4_K_M'))) {
+        const opfsRoot = await navigator.storage.getDirectory();
+        const cacheDir = await opfsRoot.getDirectoryHandle('cache');
+        for await (const [name] of cacheDir.entries()) {
+          if (name.includes('SmolLM2-360M-Instruct-Q4_K_M')) {
             llmCached = true;
             break;
           }
