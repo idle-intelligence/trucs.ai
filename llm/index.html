@@ -435,6 +435,7 @@
         sendBtn.disabled = true;
         output.textContent = '';
         stats.textContent = '';
+        statusText.textContent = 'thinking...';
         if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
 
         const systemPrompt = 'You are a helpful assistant running entirely in the browser via WebAssembly — no server, no API. This is a trucs.ai demo. The user types, you reply. Keep answers concise and clear.';
@@ -442,6 +443,7 @@
 
         const start = performance.now();
         let tokens = 0;
+        let firstTokenTime = null;
         let sentenceBuffer = '';
 
         try {
@@ -449,6 +451,10 @@
             nPredict: 512,
             sampling: { temp: 0.7, top_k: 40, top_p: 0.9 },
             onNewToken: (token, piece, currentText, { abortSignal }) => {
+              if (firstTokenTime === null) {
+                firstTokenTime = performance.now();
+                statusText.textContent = 'ready';
+              }
               tokens++;
               const pieceStr = typeof piece === 'string' ? piece : new TextDecoder().decode(piece);
 
@@ -481,11 +487,17 @@
           if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
           if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
 
-          const elapsed = (performance.now() - start) / 1000;
-          const tokSec = (tokens / elapsed).toFixed(1);
-          stats.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+          if (firstTokenTime !== null) {
+            const ttfb = ((firstTokenTime - start) / 1000).toFixed(1);
+            const decodeTime = (performance.now() - firstTokenTime) / 1000;
+            const tokSec = decodeTime > 0 ? (tokens / decodeTime).toFixed(1) : '—';
+            stats.textContent = `TTFB ${ttfb}s · ${tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
+          } else {
+            stats.textContent = 'no tokens generated';
+          }
         } catch (err) {
           output.textContent = 'error: ' + err.message;
+          statusText.textContent = 'ready';
           console.error(err);
         }
 
