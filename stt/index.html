@@ -366,14 +366,11 @@
       // ── Push-to-talk (hold to record) ──
 
       let micReady = false;
+      let pointerIsDown = false;
 
       async function ensureMic() {
         if (micReady) return true;
         try {
-          mobileAudioBuf = [];
-          transcript.textContent = '';
-          metrics.textContent = '';
-
           micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           mobileAudioCtx = new AudioContext();
           const source = mobileAudioCtx.createMediaStreamSource(micStream);
@@ -396,11 +393,12 @@
 
       async function startRecording() {
         if (isRecording || recordBtn.disabled) return;
-        recordBtn.textContent = 'requesting mic...';
-        const ok = await ensureMic();
-        if (!ok) {
-          recordBtn.textContent = 'hold to talk';
-          return;
+        if (!micReady) {
+          recordBtn.textContent = 'requesting mic...';
+          const ok = await ensureMic();
+          if (!ok) { recordBtn.textContent = 'hold to talk'; return; }
+          // User may have released during permission dialog
+          if (!pointerIsDown) { recordBtn.textContent = 'hold to talk'; return; }
         }
         mobileAudioBuf = [];
         transcript.textContent = '';
@@ -410,27 +408,29 @@
         recordBtn.classList.add('recording');
       }
 
-      async function stopRecordingAndTranscribe() {
+      function stopRecordingAndTranscribe() {
         if (!isRecording) return;
-        stopMobileRecording();
-        micReady = false;
+        isRecording = false;
         recordBtn.textContent = 'hold to talk';
         recordBtn.classList.remove('recording');
-        await transcribeBuffer();
+        transcribeBuffer();
       }
 
       recordBtn.textContent = 'hold to talk';
 
       recordBtn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
+        pointerIsDown = true;
         startRecording();
       });
       recordBtn.addEventListener('pointerup', (e) => {
         e.preventDefault();
+        pointerIsDown = false;
         stopRecordingAndTranscribe();
       });
       recordBtn.addEventListener('pointercancel', (e) => {
         e.preventDefault();
+        pointerIsDown = false;
         stopRecordingAndTranscribe();
       });
       // Prevent long-press context menu on mobile
