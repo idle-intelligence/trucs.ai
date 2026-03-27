@@ -1,3 +1,8 @@
+---
+layout: default
+title: "Claude and the Swarm: more doc than code"
+---
+
 # Claude and the Swarm: more doc than code
 
 *Part 4, last in a series. Start with [the ML team](/blog/claude-and-the-swarm-1-ml-team).*

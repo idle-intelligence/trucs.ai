@@ -1,3 +1,8 @@
+---
+layout: default
+title: "Claude and the Swarm: the review team"
+---
+
 # Claude and the Swarm: the review team
 
 *Part 3 of a series. [Part 2](/blog/claude-and-the-swarm-2-hive-team) was about shipping the feature.*
