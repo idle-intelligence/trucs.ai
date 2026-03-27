@@ -1,3 +1,8 @@
+---
+layout: default
+title: "Claude and the Swarm: the hive team"
+---
+
 # Claude and the Swarm: the hive team
 
 *Part 2 of a series. [Part 1](/blog/claude-and-the-swarm-1-ml-team) was about training the classifier.*
