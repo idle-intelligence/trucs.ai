@@ -1,8 +1,3 @@
----
-layout: default
-title: "Claude and the Swarm: the ML team"
----
-
 # Claude and the Swarm: the ML team
 
 *Part 1 of a series about using Claude Code agent teams on a side project.*
