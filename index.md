@@ -6,11 +6,14 @@ title: trucs.ai
 # trucs.ai
   
 Welcome to trucs.ai.  
-This is a collection of experiments and ideas, mainly around running AI in the browser.  
+This is a collection of experiments and ideas, mainly around running <s>AI</s> stuff in the browser.  
   
 ---
 
 <dl>
+  <dt>astres (ridgeline solar system)</dt>
+  <dd>An <a href="/astres/">Unknown Pleasures</a> visualisation</dd>
+
   <dt>Ruche (inference at home)</dt>
   <dd>A <a href="/swarm/">swarm</a> of LLMs running on users idle compute</dd>
   <dd>A small <a href="/classifier/">BERT Classifier</a></dd>

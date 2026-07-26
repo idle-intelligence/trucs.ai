@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>astres — trucs.ai</title>
+  <meta name="description" content="The solar system drawn as stacked ridgeline graphs from real elevation data. Rust + WebAssembly + WebGPU, running in your browser.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    body { max-width: 1100px; }
+
+    p { margin-bottom: 1.2rem; }
+
+    .note {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+      margin-top: 0.9rem;
+    }
+    .panel-desc a { color: #999; }
+
+    /* ── The window ───────────────────────────────────────────────────────────
+       The explorer is written to own a viewport. Here it owns this box instead:
+       everything the app positions is absolute within .viewport, and the canvas
+       sizes from the box (explore.js reads canvas.clientWidth/Height). */
+    .viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      background: #000;
+      border: 1px solid #111;
+      border-radius: 2px;
+      overflow: hidden;
+      margin: 1.5rem 0 0;
+    }
+    .viewport canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .viewport :is(#info, #timectl, #nowgpu, #loading, #fs-btn) {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    #info {
+      position: absolute; top: 14px; left: 14px;
+      font: 12px/1.7 monospace; color: #555;
+      pointer-events: none; white-space: pre;
+    }
+    #timectl {
+      position: absolute; bottom: 16px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 12px; align-items: center;
+    }
+    .tb {
+      background: #0a0a0a; border: 1px solid #2a2a2a; color: #666;
+      padding: 5px 11px; cursor: pointer; font: 11px monospace;
+      border-radius: 2px; position: relative;
+      touch-action: none; -webkit-tap-highlight-color: transparent;
+    }
+    .tb::before {
+      content: ''; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%; height: 100%; min-width: 44px; min-height: 44px;
+    }
+    @media (hover: hover) { .tb:hover { border-color: #555; color: #ccc; } }
+    .tb.on { border-color: #777; color: #ddd; }
+    #nowgpu {
+      display: none; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: #666; font: 14px monospace; text-align: center; line-height: 2;
+    }
+    #loading {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+      background: #000; color: #888; font: 13px monospace; z-index: 10;
+    }
+    #loading .title { color: #ccc; letter-spacing: 2px; }
+    #loadbar { width: 220px; height: 2px; background: #1a1a1a; overflow: hidden; }
+    #loadfill { height: 100%; width: 0%; background: #6aa3ff; transition: width .15s ease; }
+    #loadpct { color: #555; font-size: 11px; }
+
+    #fs-btn {
+      position: absolute; top: 14px; right: 14px; z-index: 20;
+      background: #0a0a0a; border: 1px solid #2a2a2a; color: #666;
+      padding: 5px 11px; cursor: pointer; font: 11px monospace;
+      border-radius: 2px; letter-spacing: 1px;
+      position: absolute;
+    }
+    /* Lift the tap target to >=44x44 without enlarging the drawn button, same
+       trick the time buttons use. */
+    #fs-btn::before {
+      content: ''; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%; height: 100%; min-width: 44px; min-height: 44px;
+    }
+    @media (hover: hover) { #fs-btn:hover { border-color: #555; color: #ccc; } }
+
+    /* In fullscreen the box IS the screen: drop the aspect ratio, or the app would
+       letterbox itself into a 16:10 window in the middle of the display. */
+    .viewport:fullscreen,
+    .viewport:-webkit-full-screen {
+      aspect-ratio: auto;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      border-radius: 0;
+      margin: 0;
+    }
+
+    @media (max-width: 640px) {
+      .viewport { aspect-ratio: 3 / 4; }
+      #info { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>astres</h1>
+    <p>
+      The solar system drawn as ridgeline graphs, in your browser.<br>
+      Ten solid worlds from real elevation data, the Sun from magnetic field measurements.<br>
+      Rust → WebAssembly + WebGPU. No server, no API key.<br>
+      <span class="note">(/!\ clicking and zooming in on all <em>bodies</em> will result in
+      downloading ~1&nbsp;GB of data.)</span>
+    </p>
+
+    <div class="viewport" id="viewport">
+      <canvas id="c"></canvas>
+      <div id="loading">
+        <div class="title">ASTRES</div>
+        <div id="loadbar"><div id="loadfill"></div></div>
+        <div id="loadpct">loading terrain…</div>
+      </div>
+      <div id="info"></div>
+      <div id="timectl">
+        <button class="tb" data-s="0">⏸</button>
+        <button class="tb" data-s="1">1×</button>
+        <button class="tb" data-s="100">100×</button>
+        <button class="tb on" data-s="1000">1k×</button>
+        <button class="tb" data-s="10000">10k×</button>
+      </div>
+      <div id="nowgpu">WebGPU required.<br>Try Chrome 113+ or Safari 18+.</div>
+      <button id="fs-btn" type="button">full screen</button>
+    </div>
+
+    <p class="panel-desc">
+      Drag to orbit · right-drag to pitch and turn · wheel to change altitude ·
+      click a sky marker to jump to that body · zoom all the way out to see the system.
+    </p>
+
+    <hr>
+
+    <p class="panel-desc">
+      Each body is a globe of stacked constant-latitude rings, every ring an elevation profile
+      sweeping longitude. Elevation data from NASA / USGS / NOAA / DLR, hosted as a
+      <a href="https://huggingface.co/datasets/idle-intelligence/ridgeline-terrain">Hugging Face dataset</a>
+      and streamed coarse-to-fine. Geometry is generated per frame in a WebGPU compute pass,
+      <a href="https://github.com/idle-intelligence/ridgeline">source</a>.
+      More detail in <a href="/blog/about-ridgeline">About ridgeline</a>.
+    </p>
+
+    <hr>
+
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module" src="explore.js"></script>
+  <script>
+    // Fullscreen the window, not the page: the canvas sizes off its container, so the
+    // app's own ResizeObserver picks the new size up with no extra wiring.
+    const vp = document.getElementById('viewport');
+    const fsBtn = document.getElementById('fs-btn');
+    if (!document.fullscreenEnabled && !vp.webkitRequestFullscreen) {
+      fsBtn.hidden = true;
+    }
+    fsBtn.addEventListener('click', () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else if (vp.requestFullscreen) {
+        vp.requestFullscreen().catch(() => { fsBtn.hidden = true; });
+      } else if (vp.webkitRequestFullscreen) {
+        vp.webkitRequestFullscreen();
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      fsBtn.textContent = document.fullscreenElement ? 'exit' : 'full screen';
+    });
+  </script>
+</body>
+</html>
