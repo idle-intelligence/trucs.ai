@@ -1,13 +1,17 @@
 ---
 layout: default
-title: "About ridgeline"
+title: "About astres (ridgeline)"
 ---
 
-# About ridgeline
+# About astres (ridgeline)
 
-ridgeline draws the solar system as ridgeline graphs. Ten solid bodies for which we have real elevation data: Earth, the Moon, Mars, Venus, Mercury, Ceres, Vesta, Enceladus, Pluto, Charon. For the Sun, we render magnetic field measurements. Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
+ridgeline draws the solar system as ridgeline graphs.  
+Ten solid bodies for which we have real elevation data: Earth, the Moon, Mars, Venus, Mercury, Ceres, Vesta, Enceladus, Pluto, Charon.  
+For the Sun, we render magnetic field measurements.  
+Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
 
-[github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
+Try the demo: [astres](/astres/)  
+Read the code: [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
 
 ![Vesta seen from orbit, its ridgelines lit against the starfield, with the Sun, Mars, Venus, Mercury, Earth and the Moon marked in the sky](/blog/images/vesta-orbit.png)
 
@@ -25,7 +29,7 @@ ridgeline wraps that same stacked-profile idea around planets: each latitude rin
 
 ## Data sources
 
-Every ridge is measured elevation, or for the Sun measured magnetic field. All sources are public domain or freely redistributable. Grids run from 2880×1440 (Sun) to 12288×6144 (Earth), stored as raw `int16`.
+Every ridge is measured elevation, or for the Sun measured magnetic field. Grids run from 2880×1440 (Sun) to 12288×6144 (Earth), stored as raw `int16`.
 
 - **Earth** NOAA ETOPO 2022 · [doc](https://www.ncei.noaa.gov/products/etopo-global-relief-model) · [data](https://www.ngdc.noaa.gov/mgg/global/)
 - **Moon** NASA LRO / LOLA · [doc + data](https://pds-geosciences.wustl.edu/missions/lro/lola.htm)
@@ -36,6 +40,8 @@ Every ridge is measured elevation, or for the Sun measured magnetic field. All s
 - **Enceladus** NASA Cassini (Schenk & McKinnon, 2024) · [doc](https://science.nasa.gov/mission/cassini/) · [data (130 MB)](https://asc-astropedia.s3.us-west-2.amazonaws.com/Enceladus/Cassini/Enceladus_Cassini_DEM_global_200m_schenk2024.tif)
 - **Pluto & Charon** NASA New Horizons · [doc](https://pds-smallbodies.astro.umd.edu/data_sb/missions/newhorizons/) · [Pluto (620 MB)](https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif), [Charon (161 MB)](https://planetarymaps.usgs.gov/mosaic/Charon_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif)
 - **Sun** NASA SDO / HMI · [doc](https://sdo.gsfc.nasa.gov/) · [data](https://jsoc1.stanford.edu/data/hmi/synoptic/)
+
+All sources are public domain or freely redistributable.
 
 ## The Sun Magnetic Field
 
@@ -78,13 +84,17 @@ Past deep space the view keeps zooming out into the system view. From 120,000 wu
 
 At true scale there would be nothing to see: Everest is 8.8 km on a 6371 km planet, about 8 world units on a 6000-unit sphere. Relief is therefore exaggerated, by an amount that depends on altitude: ×2.75 near the ground, easing to ×14 at distance, which keeps continents readable from orbit without turning low passes into spikes.
 
-Each body then applies its own factor. Mars is damped to 0.45: Olympus Mons rises 21 km, the tallest relief in the system, and at full exaggeration it swallows the globe. Mercury sits at 0.9, Pluto at 1.4, the Sun at 1.5; the rest are 1.0.
+Each body then applies its own factor. Mars is damped to 0.45: Olympus Mons rises 21 km, the tallest relief in the system, and at full exaggeration it overtakes the globe. Mercury sits at 0.9, Pluto at 1.4, the Sun at 1.5; the rest are 1.0.
 
-Ceres, Vesta, Enceladus and Charon opt out. They are small enough that their real relief is already a visible fraction of their radius (±1.1% for Enceladus, ±2.3% for Charon), so they are drawn at a fixed exaggeration preserving the true ratio. Vesta is that lumpy: its semi-axes differ by about 60 km.
+Ceres, Vesta, Enceladus and Charon are left unscaled. They are small enough that their real relief is already a visible fraction of their radius (±1.1% for Enceladus, ±2.3% for Charon), so they are drawn at a fixed exaggeration preserving the true ratio. Vesta is that lumpy: its semi-axes differ by about 60 km.
 
 ## Logarithmic system
 
-Drawn to scale an orrery is mostly empty: fit Pluto on screen and the inner planets collapse into the Sun. Only radial distance is compressed, logarithmically:
+Drawn to scale an orrery (_planétaire_) is mostly empty: fit Pluto on screen and the inner planets collapse into the Sun.
+
+(Josh Worth's [If the Moon Were Only 1 Pixel](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html) is the linear version, and it is almost entirely scrolling through nothing.)
+
+Only radial distance is compressed, logarithmically:
 
 ```
 display radius = log₁₀(1 + AU) ÷ log₁₀(1 + 40)
@@ -95,7 +105,7 @@ Zero at the Sun, 1.0 at 40 AU, roughly Pluto's orbit. Everything else is unmodif
 ## Architecture
 
 - Everything runs client-side. No server, no build step, no framework. Vanilla JavaScript static files.
-- Terrain is processed offline in Python into raw `int16` heightfields and hosted as a Hugging Face dataset. Each body ships three tiers (full resolution, ÷4 and ÷16) and loads coarse-to-fine, so the globe paints from the ÷16 tier and sharpens as you descend. Files are fetched once and kept in the browser's Cache API.
+- Terrain is processed offline in Python into raw `int16` heightfields and hosted as a [Hugging Face dataset](https://huggingface.co/datasets/idle-intelligence/ridgeline-terrain). Each body ships three tiers (full resolution, ÷4 and ÷16) and loads coarse-to-fine, so the globe paints from the ÷16 tier and sharpens as you descend. Files are fetched once and kept in the browser's Cache API.
 - A small WebAssembly module (Rust) decodes and owns the heightfield in memory for the GPU to read. It holds no geometry logic.
 - Every frame, WebGPU compute shaders map the grid onto the sphere, cull it against the horizon, select level of detail, and emit the ridgelines. The lines are computed per frame, never stored.
 - Camera, Kepler ephemeris and orrery are plain JavaScript. The ephemeris is approximate in absolute terms; relative geometry and motion are correct.
