@@ -102,7 +102,11 @@ Only radial distance is compressed, logarithmically:
 display radius = log₁₀(1 + AU) ÷ log₁₀(1 + 40)
 ```
 
-Zero at the Sun, 1.0 at 40 AU, roughly Pluto's orbit. Everything else is unmodified. Each body's direction is its true heliocentric position from a Kepler ephemeris (JPL/Standish approximate elements, 1800–2050, J2000 epoch), so ecliptic longitudes, spacing order, and the tilt of Pluto's 17°-inclined orbit are all correct. Spin and orbital periods come from the same elements.
+Zero at the Sun, 1.0 at 40 AU, roughly Pluto's orbit. Everything else is unmodified.
+
+![The SYSTEM view: every body on its true heliocentric bearing, orbits drawn with log-compressed radii, Pluto's inclined orbit sweeping well outside the rest](/blog/images/system-view.png)
+
+Each body's direction is its true heliocentric position from a Kepler ephemeris (JPL/Standish approximate elements, 1800–2050, J2000 epoch), so ecliptic longitudes, spacing order, and the tilt of Pluto's 17°-inclined orbit are all correct. Spin and orbital periods come from the same elements.
 
 ## Architecture
 
