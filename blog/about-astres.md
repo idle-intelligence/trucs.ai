@@ -5,7 +5,10 @@ title: "About astres (ridgeline)"
 
 # About astres (ridgeline)
 
-ridgeline draws the solar system as ridgeline graphs. Ten solid bodies for which we have real elevation data: Earth, the Moon, Mars, Venus, Mercury, Ceres, Vesta, Enceladus, Pluto, Charon. For the Sun, we render magnetic field measurements. Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
+ridgeline draws the solar system as ridgeline graphs.  
+Ten solid bodies for which we have real elevation data: Earth, the Moon, Mars, Venus, Mercury, Ceres, Vesta, Enceladus, Pluto, Charon.  
+For the Sun, we render magnetic field measurements.  
+Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
 
 Try the demo: [astres](/astres/)  
 Read the code: [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
@@ -26,7 +29,7 @@ ridgeline wraps that same stacked-profile idea around planets: each latitude rin
 
 ## Data sources
 
-Every ridge is measured elevation, or for the Sun measured magnetic field. All sources are public domain or freely redistributable. Grids run from 2880×1440 (Sun) to 12288×6144 (Earth), stored as raw `int16`.
+Every ridge is measured elevation, or for the Sun measured magnetic field. Grids run from 2880×1440 (Sun) to 12288×6144 (Earth), stored as raw `int16`.
 
 - **Earth** NOAA ETOPO 2022 · [doc](https://www.ncei.noaa.gov/products/etopo-global-relief-model) · [data](https://www.ngdc.noaa.gov/mgg/global/)
 - **Moon** NASA LRO / LOLA · [doc + data](https://pds-geosciences.wustl.edu/missions/lro/lola.htm)
@@ -37,6 +40,8 @@ Every ridge is measured elevation, or for the Sun measured magnetic field. All s
 - **Enceladus** NASA Cassini (Schenk & McKinnon, 2024) · [doc](https://science.nasa.gov/mission/cassini/) · [data (130 MB)](https://asc-astropedia.s3.us-west-2.amazonaws.com/Enceladus/Cassini/Enceladus_Cassini_DEM_global_200m_schenk2024.tif)
 - **Pluto & Charon** NASA New Horizons · [doc](https://pds-smallbodies.astro.umd.edu/data_sb/missions/newhorizons/) · [Pluto (620 MB)](https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif), [Charon (161 MB)](https://planetarymaps.usgs.gov/mosaic/Charon_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif)
 - **Sun** NASA SDO / HMI · [doc](https://sdo.gsfc.nasa.gov/) · [data](https://jsoc1.stanford.edu/data/hmi/synoptic/)
+
+All sources are public domain or freely redistributable.
 
 ## The Sun Magnetic Field
 
