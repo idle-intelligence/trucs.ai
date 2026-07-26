@@ -86,6 +86,8 @@ At true scale there would be nothing to see: Everest is 8.8 km on a 6371 km plan
 
 Each body then applies its own factor. Mars is damped to 0.45: Olympus Mons rises 21 km, the tallest relief in the system, and at full exaggeration it overtakes the globe. Mercury sits at 0.9, Pluto at 1.4, the Sun at 1.5; the rest are 1.0.
 
+![Olympus Mons above the horizon, Valles Marineris](/blog/images/mars-olympus.png)
+
 Ceres, Vesta, Enceladus and Charon are left unscaled. They are small enough that their real relief is already a visible fraction of their radius (±1.1% for Enceladus, ±2.3% for Charon), so they are drawn at a fixed exaggeration preserving the true ratio. Vesta is that lumpy: its semi-axes differ by about 60 km.
 
 ## Logarithmic system
