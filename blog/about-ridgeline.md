@@ -9,9 +9,15 @@ ridgeline draws the solar system as ridgeline graphs. Ten solid bodies for which
 
 [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
 
+![Vesta seen from orbit, its ridgelines lit against the starfield, with the Sun, Mars, Venus, Mercury, Earth and the Moon marked in the sky](/blog/images/vesta-orbit.png)
+
 ## Unknown Pleasures
 
 The stacked-ridgeline look is the cover of Joy Division's 1979 album [Unknown Pleasures](https://en.wikipedia.org/wiki/Unknown_Pleasures), designed by Peter Saville. That cover is a real scientific plot: about a hundred stacked radio pulses from the pulsar [PSR B1919+21](https://en.wikipedia.org/wiki/PSR_B1919%2B21) (now also known as CP 1919), the first pulsar ever discovered, by Jocelyn Bell Burnell and Antony Hewish in 1967.
+
+![The original stacked-pulse plot of PSR B1919+21, photographed by Scientific American](https://static.scientificamerican.com/blogs/cache/file/1258FC45-9A53-4188-9D9C7D4C9A5170FC_source.jpg?w=1200)
+
+*Image: [Scientific American](https://www.scientificamerican.com/blog/sa-visual/pop-culture-pulsar-the-science-behind-joy-division-s-unknown-pleasures-album-cover/).*
 
 The stacked-pulse figure was produced by Harold D. Craft Jr. for his 1970 Cornell PhD thesis (from Arecibo data), and reached print through the Cambridge Encyclopaedia of Astronomy (1977) and Scientific American, where Saville found it. Scientific American later [tracked down the original figure](https://www.scientificamerican.com/blog/sa-visual/pop-culture-pulsar-the-science-behind-joy-division-s-unknown-pleasures-album-cover/) and interviewed Craft about it.
 
@@ -44,6 +50,8 @@ The square root spreads the quiet Sun (\|B\| ≈ 5 G) into visible texture while
 Bright ridges are magnetic active regions. Because a synoptic map is stitched strip by strip from a fixed observation point (the Earth!), as the Sun turns, longitude is also time: flying across the map crosses about 27 days of observation.
 
 The representation doesn't necessarily mean much scientifically, but it looks cool :p
+
+![The Sun from the corona: magnetic active regions drawn as bright ridgelines over the photosphere, with Venus, Mars, Vesta, Ceres and Enceladus marked in the sky](/blog/images/sun-corona.png)
 
 ## World units and altitude bands
 
