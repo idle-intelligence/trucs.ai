@@ -7,8 +7,8 @@ title: "About astres (ridgeline)"
 
 ridgeline draws the solar system as ridgeline graphs. Ten solid bodies for which we have real elevation data: Earth, the Moon, Mars, Venus, Mercury, Ceres, Vesta, Enceladus, Pluto, Charon. For the Sun, we render magnetic field measurements. Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
 
-[**Try the demo →**](/astres/)  
-[github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
+Try the demo: [astres](/astres/)  
+Read the code: [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
 
 ![Vesta seen from orbit, its ridgelines lit against the starfield, with the Sun, Mars, Venus, Mercury, Earth and the Moon marked in the sky](/blog/images/vesta-orbit.png)
 
@@ -85,7 +85,11 @@ Ceres, Vesta, Enceladus and Charon are left unscaled. They are small enough that
 
 ## Logarithmic system
 
-Drawn to scale an orrery is mostly empty: fit Pluto on screen and the inner planets collapse into the Sun. (Josh Worth's [If the Moon Were Only 1 Pixel](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html) is the honest version, and it is almost entirely scrolling through nothing.) Only radial distance is compressed, logarithmically:
+Drawn to scale an orrery (_planétaire_) is mostly empty: fit Pluto on screen and the inner planets collapse into the Sun.
+
+(Josh Worth's [If the Moon Were Only 1 Pixel](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html) is the linear version, and it is almost entirely scrolling through nothing.)
+
+Only radial distance is compressed, logarithmically:
 
 ```
 display radius = log₁₀(1 + AU) ÷ log₁₀(1 + 40)
@@ -96,7 +100,7 @@ Zero at the Sun, 1.0 at 40 AU, roughly Pluto's orbit. Everything else is unmodif
 ## Architecture
 
 - Everything runs client-side. No server, no build step, no framework. Vanilla JavaScript static files.
-- Terrain is processed offline in Python into raw `int16` heightfields and hosted as a Hugging Face dataset. Each body ships three tiers (full resolution, ÷4 and ÷16) and loads coarse-to-fine, so the globe paints from the ÷16 tier and sharpens as you descend. Files are fetched once and kept in the browser's Cache API.
+- Terrain is processed offline in Python into raw `int16` heightfields and hosted as a [Hugging Face dataset](https://huggingface.co/datasets/idle-intelligence/ridgeline-terrain). Each body ships three tiers (full resolution, ÷4 and ÷16) and loads coarse-to-fine, so the globe paints from the ÷16 tier and sharpens as you descend. Files are fetched once and kept in the browser's Cache API.
 - A small WebAssembly module (Rust) decodes and owns the heightfield in memory for the GPU to read. It holds no geometry logic.
 - Every frame, WebGPU compute shaders map the grid onto the sphere, cull it against the horizon, select level of detail, and emit the ridgelines. The lines are computed per frame, never stored.
 - Camera, Kepler ephemeris and orrery are plain JavaScript. The ephemeris is approximate in absolute terms; relative geometry and motion are correct.
