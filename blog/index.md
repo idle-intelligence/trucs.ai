@@ -5,7 +5,7 @@ title: blog
 
 # blog
 
-[About astres (ridgeline)](/blog/about-ridgeline)
+[About astres (ridgeline)](/blog/about-astres)
 
 [Writing for a living](/blog/writing-for-a-living)
 
