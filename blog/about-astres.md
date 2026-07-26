@@ -13,7 +13,7 @@ Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
 Try the demo: [astres](/astres/)  
 Read the code: [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
 
-[![Vesta seen from orbit, its ridgelines lit against the starfield, with the Sun, Mars, Venus, Mercury, Earth and the Moon marked in the sky](/blog/images/vesta-orbit.png)](/blog/images/vesta-orbit.png)
+[![Vesta seen whole from orbit, its irregular shape drawn as stacked ridgelines, with Earth, the Moon, the Sun, Venus, Mercury, Enceladus and Ceres marked in the sky](/blog/images/vesta-orbit.png)](/blog/images/vesta-orbit.png)
 
 ## Unknown Pleasures
 
