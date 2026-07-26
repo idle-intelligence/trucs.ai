@@ -224,7 +224,7 @@ const DOLLY_NEAR = 0.045;   // scene units — camera sits right beside the body
  * @param {function} opts.onEnterBody — (bodyId: string) → void
  */
 export function createSystemView({ registry, helioPos, helioEcl, onEnterBody, host }) {
-  // trucs.ai delta: render into the windowed container, not the page viewport.
+  // Render into the host container (defaults to the page body).
   const _host = host || document.body;
   // ── Canvas setup ─────────────────────────────────────────────────────────────
   const canvas = document.createElement('canvas');
