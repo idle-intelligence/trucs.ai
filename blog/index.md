@@ -5,6 +5,8 @@ title: blog
 
 # blog
 
+[About ridgeline](/blog/about-ridgeline)
+
 [Writing for a living](/blog/writing-for-a-living)
 
 [AI Maximalist](/blog/are-you-an-ai-maximalist)
