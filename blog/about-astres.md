@@ -13,7 +13,7 @@ Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
 Try the demo: [astres](/astres/)  
 Read the code: [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
 
-![Vesta seen from orbit, its ridgelines lit against the starfield, with the Sun, Mars, Venus, Mercury, Earth and the Moon marked in the sky](/blog/images/vesta-orbit.png)
+[![Vesta seen whole from orbit, its irregular shape drawn as stacked ridgelines, with Earth, the Moon, the Sun, Venus, Mercury, Enceladus and Ceres marked in the sky](/blog/images/vesta-orbit.png)](/blog/images/vesta-orbit.png)
 
 ## Unknown Pleasures
 
@@ -57,7 +57,7 @@ Bright ridges are magnetic active regions. Because a synoptic map is stitched st
 
 The representation doesn't necessarily mean much scientifically, but it looks cool :p
 
-![The Sun from the corona: magnetic active regions drawn as bright ridgelines over the photosphere, with Venus, Mars, Vesta, Ceres and Enceladus marked in the sky](/blog/images/sun-corona.png)
+[![The Sun from the corona: magnetic active regions drawn as bright ridgelines over the photosphere, with Venus, Mars, Vesta, Ceres and Enceladus marked in the sky](/blog/images/sun-corona.png)](/blog/images/sun-corona.png)
 
 ## World units and altitude bands
 
@@ -86,6 +86,8 @@ At true scale there would be nothing to see: Everest is 8.8 km on a 6371 km plan
 
 Each body then applies its own factor. Mars is damped to 0.45: Olympus Mons rises 21 km, the tallest relief in the system, and at full exaggeration it overtakes the globe. Mercury sits at 0.9, Pluto at 1.4, the Sun at 1.5; the rest are 1.0.
 
+[![Olympus Mons above the horizon, Valles Marineris](/blog/images/mars-olympus.png)](/blog/images/mars-olympus.png)
+
 Ceres, Vesta, Enceladus and Charon are left unscaled. They are small enough that their real relief is already a visible fraction of their radius (±1.1% for Enceladus, ±2.3% for Charon), so they are drawn at a fixed exaggeration preserving the true ratio. Vesta is that lumpy: its semi-axes differ by about 60 km.
 
 ## Logarithmic system
@@ -100,7 +102,11 @@ Only radial distance is compressed, logarithmically:
 display radius = log₁₀(1 + AU) ÷ log₁₀(1 + 40)
 ```
 
-Zero at the Sun, 1.0 at 40 AU, roughly Pluto's orbit. Everything else is unmodified. Each body's direction is its true heliocentric position from a Kepler ephemeris (JPL/Standish approximate elements, 1800–2050, J2000 epoch), so ecliptic longitudes, spacing order, and the tilt of Pluto's 17°-inclined orbit are all correct. Spin and orbital periods come from the same elements.
+Zero at the Sun, 1.0 at 40 AU, roughly Pluto's orbit. Everything else is unmodified.
+
+[![The SYSTEM view: every body on its true heliocentric bearing, orbits drawn with log-compressed radii, Pluto's inclined orbit sweeping well outside the rest](/blog/images/system-view.png)](/blog/images/system-view.png)
+
+Each body's direction is its true heliocentric position from a Kepler ephemeris (JPL/Standish approximate elements, 1800–2050, J2000 epoch), so ecliptic longitudes, spacing order, and the tilt of Pluto's 17°-inclined orbit are all correct. Spin and orbital periods come from the same elements.
 
 ## Architecture
 
