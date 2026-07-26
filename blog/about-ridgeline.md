@@ -1,12 +1,13 @@
 ---
 layout: default
-title: "About ridgeline"
+title: "About astres (ridgeline)"
 ---
 
-# About ridgeline
+# About astres (ridgeline)
 
 ridgeline draws the solar system as ridgeline graphs. Ten solid bodies for which we have real elevation data: Earth, the Moon, Mars, Venus, Mercury, Ceres, Vesta, Enceladus, Pluto, Charon. For the Sun, we render magnetic field measurements. Each one is a globe of stacked Joy Division "Unknown Pleasures" ridgelines.
 
+[**Try the demo →**](/astres/)  
 [github.com/idle-intelligence/ridgeline](https://github.com/idle-intelligence/ridgeline)
 
 ![Vesta seen from orbit, its ridgelines lit against the starfield, with the Sun, Mars, Venus, Mercury, Earth and the Moon marked in the sky](/blog/images/vesta-orbit.png)
