@@ -126,7 +126,7 @@
     <p class="panel-desc" style="margin-top: 2em;">
       Station list: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP), ~8,100 METAR-reporting stations.<br>
       Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a> (global ASOS/METAR currents), <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a> (US stations), <a href="https://open-meteo.com/">Open-Meteo</a> (gridded forecast model, sampled at the point — not a station observation).<br>
-      kNN / IDW logic ported from TC's SenseAI <code>METAR.py</code> / <code>models.py</code> (BallTree(haversine) + sklearn KNeighborsRegressor).
+      kNN / IDW method from SenseAI's KelvinAnsys weather tools (<code>METAR.py</code> / <code>models.py</code>, Andrew Giessel, 2015; TC worked on the project): BallTree(haversine) + sklearn KNeighborsRegressor, re-implemented here in plain JS.
     </p>
   </main>
 
