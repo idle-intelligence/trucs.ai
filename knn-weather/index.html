@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nearest weather stations — trucs.ai</title>
+  <meta name="description" content="K-nearest-neighbour search over the NCAR METAR station list, running entirely in your browser.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    body {
+      max-width: 720px;
+    }
+    label {
+      display: inline-block;
+      width: 3.5em;
+      color: #555;
+    }
+    .field {
+      margin: 0.4em 0;
+    }
+    input[type="number"] {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.3em 0.5em;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      width: 10em;
+    }
+    button {
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 0.4em 1em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #controls {
+      margin: 1em 0;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+      margin-left: 0.5em;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 1em;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.35em 0.6em;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      color: #555;
+      font-weight: normal;
+      border-bottom: 1px solid #111;
+    }
+    td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    #metar-panel {
+      margin-top: 1.5em;
+      color: #555;
+      font-size: 0.85rem;
+    }
+    #metar-fields {
+      margin-top: 0.5em;
+      font-size: 0.9rem;
+    }
+    #metar-fields dt {
+      float: left;
+      width: 8em;
+      color: #555;
+    }
+    #metar-fields dd {
+      margin-left: 8em;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    #error {
+      color: #b00;
+      margin-top: 0.5em;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>nearest weather stations</h1>
+    <p>
+      K-nearest-neighbour search over the NCAR METAR/NEXRAD/upper-air station list.<br>
+      Runs entirely client-side: haversine distance over ~8,000 stations, no server round trip.
+    </p>
+
+    <div id="controls">
+      <div class="field">
+        <label for="lat">lat</label>
+        <input type="number" id="lat" step="any" value="48.8566">
+      </div>
+      <div class="field">
+        <label for="lon">lon</label>
+        <input type="number" id="lon" step="any" value="2.3522">
+      </div>
+      <div class="field">
+        <label for="k">k</label>
+        <input type="number" id="k" step="1" min="1" max="50" value="5" style="width: 5em;">
+      </div>
+      <div class="field">
+        <button id="search-btn">search</button>
+        <button id="geo-btn" title="Use my location (optional)">use my location</button>
+        <span id="status-text"></span>
+      </div>
+      <div id="error" hidden></div>
+    </div>
+
+    <table id="results" hidden>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>ICAO</th>
+          <th>name</th>
+          <th>country</th>
+          <th class="num">elev (m)</th>
+          <th class="num">distance (km)</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+
+    <div id="metar-panel"></div>
+
+    <p class="panel-desc" style="margin-top: 2em;">
+      Station list: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP), ~8,100 METAR-reporting stations.<br>
+      Search logic ported from a Python BallTree(haversine) reference; see <code>knn.js</code>.
+    </p>
+  </main>
+
+  <script type="module">
+    import { nearest, loadStations } from './knn.js';
+
+    const latInput = document.getElementById('lat');
+    const lonInput = document.getElementById('lon');
+    const kInput = document.getElementById('k');
+    const searchBtn = document.getElementById('search-btn');
+    const geoBtn = document.getElementById('geo-btn');
+    const statusText = document.getElementById('status-text');
+    const errorBox = document.getElementById('error');
+    const resultsTable = document.getElementById('results');
+    const resultsBody = document.getElementById('results-body');
+    const metarPanel = document.getElementById('metar-panel');
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.hidden = !msg;
+    }
+
+    function renderResults(rows) {
+      resultsBody.innerHTML = '';
+      rows.forEach((s, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td>${s.icao}</td>
+          <td>${s.name}</td>
+          <td>${s.country}</td>
+          <td class="num">${s.elev}</td>
+          <td class="num">${s.distance.toFixed(2)}</td>
+        `;
+        resultsBody.appendChild(tr);
+      });
+      resultsTable.hidden = rows.length === 0;
+    }
+
+    // METAR fetch is best-effort: aviationweather.gov's data API does not send
+    // Access-Control-Allow-Origin, so browser fetches are blocked by CORS.
+    // Verified with curl (no ACAO header on GET or OPTIONS) on 2026-09-19.
+    // Left here disabled with an explanation rather than silently failing.
+    function renderMetarNote(icao) {
+      metarPanel.innerHTML = `
+        <p>Live METAR for <code>${icao}</code> is not fetched here: aviationweather.gov's
+        data API does not send <code>Access-Control-Allow-Origin</code>, so a browser
+        fetch from this page is blocked by CORS. A server-side proxy would be needed
+        to show live altimeter / dew point / wind / temperature.</p>
+      `;
+    }
+
+    async function runSearch() {
+      const lat = parseFloat(latInput.value);
+      const lon = parseFloat(lonInput.value);
+      const k = Math.max(1, Math.min(50, parseInt(kInput.value, 10) || 5));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        showError('lat/lon must be numbers');
+        return;
+      }
+      showError('');
+      searchBtn.disabled = true;
+      statusText.textContent = 'searching…';
+      try {
+        const rows = await nearest(lat, lon, k);
+        renderResults(rows);
+        if (rows.length > 0) renderMetarNote(rows[0].icao);
+        statusText.textContent = `${rows.length} stations`;
+      } catch (err) {
+        showError(`search failed: ${err.message}`);
+        statusText.textContent = '';
+      } finally {
+        searchBtn.disabled = false;
+      }
+    }
+
+    geoBtn.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        showError('geolocation not supported by this browser');
+        return;
+      }
+      statusText.textContent = 'locating…';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          latInput.value = pos.coords.latitude.toFixed(4);
+          lonInput.value = pos.coords.longitude.toFixed(4);
+          statusText.textContent = '';
+          runSearch();
+        },
+        (err) => {
+          showError(`geolocation failed: ${err.message}`);
+          statusText.textContent = '';
+        },
+      );
+    });
+
+    searchBtn.addEventListener('click', runSearch);
+
+    statusText.textContent = 'loading station list…';
+    loadStations()
+      .then((stations) => {
+        statusText.textContent = `${stations.length} stations loaded`;
+        runSearch();
+      })
+      .catch((err) => {
+        showError(`failed to load station list: ${err.message}`);
+        statusText.textContent = '';
+      });
+
+    // Exposed for reuse (t0-web) and for headless verification.
+    window.__app = { nearest };
+  </script>
+</body>
+</html>
