@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>speech-to-speech — trucs.ai</title>
+  <meta name="description" content="Can you run speech-to-speech in the browser? Almost. Status of the sts-web experiment.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    .status-ok { color: #111; }
+    .status-broken { color: #999; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Can you run speech-to-speech in the browser? Almost.</h1>
+
+    <p>
+      Full-duplex voice-to-voice, entirely client-side: microphone in, model reasons over audio,
+      speech out, no server round-trip. This is where that experiment currently stands.
+    </p>
+
+    <h2>What runs today</h2>
+    <p>
+      A Q4_K-quantized <a href="https://huggingface.co/nvidia/personaplex-7b-v1">PersonaPlex-7B</a>
+      — a 24-layer pruned + QLoRA recovery variant — running on
+      <a href="https://github.com/tracel-ai/burn">Burn</a>'s wgpu backend, compiled to WebAssembly.
+      The pipeline runs end-to-end in Chrome/Edge with WebGPU:
+    </p>
+    <pre>Microphone → AudioWorklet (24kHz mono) → Mimi encoder (WASM)
+  → Temporal transformer (WASM/WebGPU) → Depth transformer (WASM/WebGPU)
+  → Mimi decoder (WASM) → AudioWorklet playback</pre>
+    <p>
+      Walkie-talkie mode is functional, with a handful of voice presets available.
+    </p>
+
+    <h2>What's broken</h2>
+    <p>
+      Audio quality is poor, and generation runs roughly 3x slower than realtime on consumer GPUs —
+      turn-based, not true full-duplex, for now. WebGPU is required, which means Chrome 113+ or
+      Edge 113+ over HTTPS; there is no fallback path for browsers or devices without it.
+    </p>
+
+    <h2>Coming soon</h2>
+    <p>
+      True duplex streaming, and further perf work once there's a smaller checkpoint to build on.
+    </p>
+
+    <hr>
+    <p class="panel-desc">
+      <a href="https://github.com/idle-intelligence/sts-web">Source</a> ·
+      Model weights on <a href="https://huggingface.co/idle-intelligence/personaplex-24L-q4_k-webgpu">Hugging Face</a> ·
+      Not affiliated with or endorsed by NVIDIA.
+    </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+</body>
+</html>

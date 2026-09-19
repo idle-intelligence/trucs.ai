@@ -24,6 +24,7 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>Browser <a href="/tts/">Text-to-Speech</a></dd>
   <dd><a href="/llm-tts/">LLM → TTS</a></dd>
   <dd><a href="/stt-llm-tts/">STT → LLM → TTS</a></dd>
+  <dd><a href="/sts/">Speech-to-speech</a> (almost)</dd>
 </dl>
   
 ---
