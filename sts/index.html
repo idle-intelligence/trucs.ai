@@ -79,10 +79,10 @@
 
     <!-- TC writes the status text here -->
     <div id="sts-notes" class="notes">
-      <p>A Q4_K-quantized PersonaPlex-7B, pruned to 24 layers with QLoRA recovery, running on Burn's wgpu backend compiled to WebAssembly. The pipeline is microphone → Mimi encoder → temporal and depth transformers → Mimi decoder → playback, end to end in Chrome or Edge with WebGPU.</p>
-      <p>Walkie-talkie mode works, with a handful of voice presets. Generation runs about 3× slower than realtime on consumer GPUs, so it is turn-based for now. Audio quality is poor.</p>
-      <p>Full duplex is not wired in yet. The model supports it; the streaming path does not exist in this build.</p>
-      <p>Next: true duplex streaming, then performance work, once there is a smaller checkpoint to build on.</p>
+      <p>A Q4_K-quantized PersonaPlex-7B, pruned to 24 layers with QLoRA recovery, running on Burn's wgpu backend compiled to WebAssembly. The pipeline is microphone → Mimi encoder → temporal and depth transformers → Mimi decoder → playback, end to end in your browser.</p>
+      <p>Walkie-talkie mode works, with a handful of voice presets. Generation runs about 3× slower than realtime, so it is turn-based for now. Audio quality is poor.</p>
+      <p>The model can listen and speak at the same time. This build does not use that yet: it records, then answers.</p>
+      <p>Next: true duplex streaming, then performance work.</p>
     </div>
 
     <hr>
