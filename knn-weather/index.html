@@ -23,12 +23,23 @@
     }
     button:hover { background: #111; color: #fff; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
-    #status-log {
-      height: 8em; overflow-y: auto; background: #f5f5f5; border-radius: 2px;
-      padding: 0.5em 0.75em; font-size: 0.8rem; color: #444; line-height: 1.5;
+    #status-fixed { height: 3em; overflow: hidden; }
+    #status-fixed div {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      line-height: 1.5; font-size: 0.9rem; color: #333;
     }
-    #status-log .line { white-space: pre-wrap; word-break: break-word; }
-    #status-log .line span.t { color: #999; }
+    #status-last { color: #666; font-size: 0.8rem !important; }
+    #status-last .t { color: #999; }
+    #log-toggle {
+      background: none; border: none; font: inherit; font-size: 0.8rem;
+      color: #666; padding: 0; margin-top: 0.3em; cursor: pointer;
+      text-decoration: underline;
+    }
+    #status-full {
+      background: #f5f5f5; border-radius: 2px; margin-top: 0.4em;
+      padding: 0.5em 0.75em; font-size: 0.8rem; color: #444;
+      white-space: pre-wrap; word-break: break-word; font-family: inherit;
+    }
     table { border-collapse: collapse; width: 100%; margin-top: 0.75em; font-size: 0.85rem; }
     th, td { text-align: left; padding: 0.3em 0.5em; border-bottom: 1px solid #eee; white-space: nowrap; }
     th { color: #555; font-weight: normal; border-bottom: 1px solid #111; }
@@ -57,7 +68,12 @@
     </p>
 
     <h2>STATUS</h2>
-    <div id="status-log"></div>
+    <div id="status-fixed">
+      <div id="status-state">idle</div>
+      <div id="status-last">—</div>
+    </div>
+    <button id="log-toggle" type="button">show log</button>
+    <pre id="status-full" hidden></pre>
 
     <h2>INPUT</h2>
     <div id="controls">
@@ -108,10 +124,8 @@
 
     <h3>calculation</h3>
     <p class="panel-desc">
-      For each variable: inverse-distance-weighted estimate over the neighbours
-      above that reported a value, weight = 1/distance (sklearn
-      <code>KNeighborsRegressor(weights='distance')</code> convention — not 1/d²;
-      see <code>idw.js</code>). Missing values are skipped, never zero-filled.
+      For each variable, the estimate is the inverse-distance-weighted average
+      of the neighbours that reported a value; missing values are left out.
     </p>
     <div id="calc-panel"></div>
 
@@ -126,7 +140,7 @@
     <p class="panel-desc" style="margin-top: 2em;">
       Station list: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP), ~8,100 METAR-reporting stations.<br>
       Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a> (global ASOS/METAR currents), <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a> (US stations), <a href="https://open-meteo.com/">Open-Meteo</a> (gridded forecast model, sampled at the point — not a station observation).<br>
-      kNN / IDW method from SenseAI's weather tools (2015), where TC was CTO: BallTree(haversine) + sklearn KNeighborsRegressor, re-implemented here in plain JS.
+      kNN / IDW method from SenseAI's weather tools (2015), where TC was CTO.
     </p>
   </main>
 
@@ -141,7 +155,10 @@
     const computeBtn = document.getElementById('compute-btn');
     const geoBtn = document.getElementById('geo-btn');
     const errorBox = document.getElementById('error');
-    const statusLog = document.getElementById('status-log');
+    const statusState = document.getElementById('status-state');
+    const statusLast = document.getElementById('status-last');
+    const logToggle = document.getElementById('log-toggle');
+    const statusFull = document.getElementById('status-full');
     const resultsTable = document.getElementById('results');
     const resultsBody = document.getElementById('results-body');
     const calcPanel = document.getElementById('calc-panel');
@@ -156,32 +173,39 @@
       { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
     ];
 
-    // ── STATUS log: fixed-height box, own scrollbar. Repeated events (e.g. one
-    // per neighbour fetch) each get their own line, appended in order; a given
-    // logical stage updates its own line in place via a key. ──
+    // ── STATUS: two fixed-height lines (current state, last event) plus a
+    // collapsed-by-default full log. A given logical stage updates its own
+    // log entry in place via a key, so re-running keeps the log length stable. ──
 
-    const logLines = new Map(); // key -> element
+    const logEntries = new Map(); // key -> text
     let logOrder = [];
 
+    function setState(text) {
+      statusState.textContent = text;
+    }
+
     function log(key, text) {
-      let el = logLines.get(key);
-      if (!el) {
-        el = document.createElement('div');
-        el.className = 'line';
-        statusLog.appendChild(el);
-        logLines.set(key, el);
-        logOrder.push(key);
-      }
       const t = new Date().toLocaleTimeString();
-      el.innerHTML = `<span class="t">${t}</span> ${text}`;
-      statusLog.scrollTop = statusLog.scrollHeight;
+      const line = `${t}  ${text}`;
+      statusLast.textContent = line;
+      if (!logEntries.has(key)) logOrder.push(key);
+      logEntries.set(key, line);
+      statusFull.textContent = logOrder.map((k) => logEntries.get(k)).join('\n');
     }
 
     function resetLog() {
-      statusLog.innerHTML = '';
-      logLines.clear();
+      logEntries.clear();
       logOrder = [];
+      statusFull.textContent = '';
+      statusLast.textContent = '—';
+      setState('idle');
     }
+
+    logToggle.addEventListener('click', () => {
+      const willShow = statusFull.hidden;
+      statusFull.hidden = !willShow;
+      logToggle.textContent = willShow ? 'hide log' : 'show log';
+    });
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -219,7 +243,7 @@
           <td class="num">${fmtNum(o.windDirDeg, 0)}</td>
           <td class="num">${fmtNum(o.pressureHpa, 1)}</td>
           <td>${o.obsTime ? fmtTime(o.obsTime) : '<span class="missing">—</span>'}</td>
-          <td>${o.source ?? '<span class="missing">—</span>'}</td>
+          <td>${o.source ?? '<span class="missing">no current observation</span>'}</td>
         `;
         resultsBody.appendChild(tr);
       });
@@ -338,6 +362,7 @@
       showError('');
       computeBtn.disabled = true;
       resetLog();
+      setState('computing…');
 
       const t0 = performance.now();
       let stations;
@@ -406,6 +431,7 @@
       final.sort((a, b) => a.distance - b.distance);
 
       log('select', `${final.length} neighbours selected (${withObs.length} of ${candidates.length} candidates had obs)`);
+      setState(`${final.length} neighbours, ${withObs.length} with observations`);
 
       let openMeteoMs = null;
       let modelPoint = null;
@@ -425,6 +451,7 @@
 
       const totalMs = performance.now() - t0;
       log('done', `calculation complete in ${totalMs.toFixed(0)} ms`);
+      setState(`${final.length} neighbours, ${withObs.length} with observations, calculation complete`);
 
       renderPerf({
         stationsScanned: stations.length,

@@ -28,16 +28,21 @@ async function main() {
   try {
     await page.goto(`http://localhost:${PORT}/knn-weather/`, { waitUntil: 'domcontentloaded' });
 
+    // Waits for a full compute cycle to finish. compute-btn is disabled
+    // synchronously at the start of runCompute and re-enabled at the very end,
+    // so this can't be fooled by a stale "results already visible" state left
+    // over from a previous run (table visibility alone isn't a safe sentinel
+    // once more than one compute happens on the same page).
+    async function waitForComputeDone() {
+      await page.waitForFunction(() => document.getElementById('compute-btn').disabled === true, { timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(() => document.getElementById('compute-btn').disabled === false, { timeout: 20000 });
+    }
+
     await page.fill('#lat', '48.8566');
     await page.fill('#lon', '2.3522');
     await page.fill('#k', '5');
     await page.click('#compute-btn');
-
-    // Wait for either a rendered result table or the error box.
-    await page.waitForFunction(() => {
-      const t = document.getElementById('results');
-      return !t.hidden || document.getElementById('error').textContent;
-    }, { timeout: 20000 });
+    await waitForComputeDone();
 
     const errText = await page.textContent('#error');
     const rows = await page.$$eval('#results-body tr', (trs) => trs.length);
@@ -109,23 +114,37 @@ async function main() {
       }
     }
 
+    // STATUS box height must stay constant regardless of event text length —
+    // it's exactly two fixed lines, not a scrolling log.
+    const statusHeight0 = await page.$eval('#status-fixed', (el) => el.getBoundingClientRect().height);
+    await page.click('#log-toggle'); // expand
+    const statusHeightExpanded = await page.$eval('#status-fixed', (el) => el.getBoundingClientRect().height);
+    await page.click('#log-toggle'); // collapse
+    const statusHeightCollapsed = await page.$eval('#status-fixed', (el) => el.getBoundingClientRect().height);
+    if (statusHeight0 !== statusHeightExpanded || statusHeight0 !== statusHeightCollapsed) {
+      fail(`STATUS height not constant: ${statusHeight0} (base) vs ${statusHeightExpanded} (log expanded) vs ${statusHeightCollapsed} (log collapsed)`);
+    } else {
+      console.log(`OK: STATUS height constant across events (${statusHeight0}px)`);
+    }
+
     // STATUS log line-count stability across repeated computes.
     await page.click('#compute-btn');
-    await page.waitForFunction(() => {
-      const t = document.getElementById('results');
-      return !t.hidden || document.getElementById('error').textContent;
-    }, { timeout: 20000 });
-    const lineCount1 = await page.$$eval('#status-log .line', (els) => els.length);
+    await waitForComputeDone();
+    const statusHeightAfterCompute1 = await page.$eval('#status-fixed', (el) => el.getBoundingClientRect().height);
+    const lineCount1 = await page.$eval('#status-full', (el) => el.textContent.split('\n').filter(Boolean).length);
     await page.click('#compute-btn');
-    await page.waitForFunction(() => {
-      const t = document.getElementById('results');
-      return !t.hidden || document.getElementById('error').textContent;
-    }, { timeout: 20000 });
-    const lineCount2 = await page.$$eval('#status-log .line', (els) => els.length);
+    await waitForComputeDone();
+    const statusHeightAfterCompute2 = await page.$eval('#status-fixed', (el) => el.getBoundingClientRect().height);
+    const lineCount2 = await page.$eval('#status-full', (el) => el.textContent.split('\n').filter(Boolean).length);
     if (lineCount1 !== lineCount2) {
       fail(`STATUS log line count not stable across repeated computes: ${lineCount1} vs ${lineCount2}`);
     } else {
       console.log(`OK: STATUS log line count stable across repeated computes (${lineCount1} lines)`);
+    }
+    if (statusHeightAfterCompute1 !== statusHeightAfterCompute2 || statusHeightAfterCompute1 !== statusHeight0) {
+      fail(`STATUS height changed across computes: ${statusHeight0} vs ${statusHeightAfterCompute1} vs ${statusHeightAfterCompute2}`);
+    } else {
+      console.log(`OK: STATUS height constant across computes (${statusHeightAfterCompute1}px)`);
     }
 
     await page.screenshot({ path: '/Users/tc/.claude/jobs/f13f376f/tmp/knn-page.png', fullPage: true });
