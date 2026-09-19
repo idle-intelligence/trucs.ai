@@ -55,6 +55,12 @@
     .calc-summary .nearest { color: #777; font-size: 0.85rem; }
     .note { color: #999; font-size: 0.8rem; margin: 0.3em 0; }
     #perf-table td, #perf-table th { white-space: normal; }
+    .history-row { margin: 0.6em 0; padding-bottom: 0.6em; border-bottom: 1px solid #eee; }
+    .history-row strong { font-size: 0.9rem; }
+    .hist-item { display: inline-block; vertical-align: top; margin: 0.3em 1.2em 0.3em 0; }
+    .hist-item canvas { display: block; background: #fafafa; border: 1px solid #eee; }
+    .hist-label { display: block; color: #777; font-size: 0.75rem; margin-top: 0.15em; }
+    .history-overlay { margin-top: 0.8em; }
   </style>
 </head>
 <body>
@@ -122,6 +128,9 @@
       </table>
     </div>
 
+    <h3>last 24 h</h3>
+    <div id="history-panel"></div>
+
     <h3>calculation</h3>
     <p class="panel-desc">
       For each variable, the estimate is the inverse-distance-weighted average
@@ -148,6 +157,8 @@
     import { nearest, loadStations } from './knn.js';
     import { fetchIem, fetchNws, fetchOpenMeteoPoint } from './sources.js';
     import { idw, idwCircularDeg } from './idw.js';
+    import { fetchStationHistories } from './history.js';
+    import { drawSparkline, drawOverlaySparkline } from './sparkline.js';
 
     const latInput = document.getElementById('lat');
     const lonInput = document.getElementById('lon');
@@ -164,6 +175,14 @@
     const calcPanel = document.getElementById('calc-panel');
     const modelPanel = document.getElementById('model-panel');
     const perfBody = document.getElementById('perf-body');
+    const historyPanel = document.getElementById('history-panel');
+
+    const HIST_VARS = [
+      { key: 'tempC', label: 'temperature', unit: '°C', digits: 1 },
+      { key: 'dewpointC', label: 'dew point', unit: '°C', digits: 1 },
+      { key: 'windMs', label: 'wind speed', unit: 'm/s', digits: 1 },
+      { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
+    ];
 
     const SPARE = 3;
     const VARS = [
@@ -252,6 +271,7 @@
 
     function renderCalc(rows) {
       calcPanel.innerHTML = '';
+      const estimates = {};
       for (const v of VARS) {
         const points = rows
           .map((s) => ({ station: s, value: s.obs?.[v.key], distance: s.distance, obsTime: s.obs?.obsTime }))
@@ -273,6 +293,7 @@
         }
 
         const result = v.key === 'windDirDeg' ? idwCircularDeg(points) : idw(points);
+        estimates[v.key] = result.value;
         const nearest = points[0]; // rows already sorted by distance
 
         const ages = points.map((p) => ageMinutes(p.obsTime)).filter((a) => a != null);
@@ -318,6 +339,68 @@
 
         calcPanel.appendChild(wrap);
       }
+      return estimates;
+    }
+
+    // rows: neighbours (already carrying s.obs), in distance order.
+    // histMap: icao -> { obs, error } from fetchStationHistories.
+    // calcEstimates: { key -> IDW estimate value } for the overlay marker.
+    function renderHistory(rows, histMap, calcEstimates) {
+      historyPanel.innerHTML = '';
+
+      for (const s of rows) {
+        const h = histMap.get(s.icao);
+        const div = document.createElement('div');
+        div.className = 'history-row';
+        if (!h || h.error) {
+          div.innerHTML = `<strong>${s.icao}</strong> — no history: ${h ? h.error : 'not fetched'}`;
+          historyPanel.appendChild(div);
+          continue;
+        }
+        let html = `<strong>${s.icao}</strong> — ${h.obs.length} observation${h.obs.length === 1 ? '' : 's'} in the last 24 h<br>`;
+        for (const v of HIST_VARS) {
+          const values = h.obs.map((o) => o[v.key]);
+          const finite = values.filter((x) => Number.isFinite(x));
+          const latest = [...values].reverse().find((x) => Number.isFinite(x));
+          const min = finite.length ? Math.min(...finite) : null;
+          const max = finite.length ? Math.max(...finite) : null;
+          const label = finite.length
+            ? `${v.label}: ${latest.toFixed(v.digits)} ${v.unit} (min ${min.toFixed(v.digits)}, max ${max.toFixed(v.digits)})`
+            : `${v.label}: no data`;
+          html += `<span class="hist-item"><canvas class="spark" data-icao="${s.icao}" data-var="${v.key}" width="140" height="30"></canvas><span class="hist-label">${label}</span></span>`;
+        }
+        div.innerHTML = html;
+        historyPanel.appendChild(div);
+      }
+
+      historyPanel.querySelectorAll('canvas.spark').forEach((canvas) => {
+        const h = histMap.get(canvas.dataset.icao);
+        if (!h) return;
+        drawSparkline(canvas, h.obs.map((o) => o[canvas.dataset.var]));
+      });
+
+      const overlayWrap = document.createElement('div');
+      overlayWrap.className = 'history-overlay';
+      overlayWrap.innerHTML = '<p class="panel-desc">all neighbours, last 24 h, with the estimate at the right edge</p>';
+      for (const v of HIST_VARS) {
+        const series = rows
+          .map((s) => histMap.get(s.icao))
+          .filter((h) => h && !h.error)
+          .map((h) => h.obs.map((o) => o[v.key]));
+        const div = document.createElement('div');
+        div.className = 'hist-item';
+        const canvas = document.createElement('canvas');
+        canvas.width = 300;
+        canvas.height = 50;
+        div.appendChild(canvas);
+        const label = document.createElement('span');
+        label.className = 'hist-label';
+        label.textContent = v.label;
+        div.appendChild(label);
+        overlayWrap.appendChild(div);
+        drawOverlaySparkline(canvas, series, calcEstimates?.[v.key]);
+      }
+      historyPanel.appendChild(overlayWrap);
     }
 
     function renderModel(model) {
@@ -342,6 +425,7 @@
         ['IEM fetch', perf.iemMs != null ? `${perf.iemMs.toFixed(0)} ms` : 'skipped'],
         ['NWS fetch', perf.nwsMs != null ? `${perf.nwsMs.toFixed(0)} ms (${perf.nwsCount} station${perf.nwsCount === 1 ? '' : 's'})` : 'skipped (no US stations in range)'],
         ['Open-Meteo fetch', perf.openMeteoMs != null ? `${perf.openMeteoMs.toFixed(0)} ms` : 'failed'],
+        ['history fetch (24 h)', `${perf.historyMs.toFixed(0)} ms`],
         ['total', `${perf.totalMs.toFixed(0)} ms`],
       ];
       for (const [label, val] of rows) {
@@ -436,22 +520,34 @@
       let openMeteoMs = null;
       let modelPoint = null;
       const tOm0 = performance.now();
-      try {
-        modelPoint = await fetchOpenMeteoPoint(lat, lon);
-        openMeteoMs = performance.now() - tOm0;
-        log('om', `Open-Meteo model at point fetched (${openMeteoMs.toFixed(0)} ms)`);
-      } catch (err) {
-        openMeteoMs = performance.now() - tOm0;
-        log('om', `Open-Meteo: fetch failed — ${err.message} (${openMeteoMs.toFixed(0)} ms)`);
-      }
+      const omPromise = fetchOpenMeteoPoint(lat, lon)
+        .then((v) => {
+          modelPoint = v;
+          openMeteoMs = performance.now() - tOm0;
+          log('om', `Open-Meteo model at point fetched (${openMeteoMs.toFixed(0)} ms)`);
+        })
+        .catch((err) => {
+          openMeteoMs = performance.now() - tOm0;
+          log('om', `Open-Meteo: fetch failed — ${err.message} (${openMeteoMs.toFixed(0)} ms)`);
+        });
+
+      const tHist0 = performance.now();
+      const histPromise = fetchStationHistories(final.map((c) => c.icao), (r) => {
+        log(`history-${r.icao}`, r.error ? `history: failed — ${r.error}` : `history: ${r.obs.length} observations (24 h)`);
+      });
+      const [, histMap] = await Promise.all([omPromise, histPromise]);
+      const historyMs = performance.now() - tHist0;
+      const historyOk = [...histMap.values()].filter((h) => !h.error).length;
+      log('history-total', `history: ${historyOk}/${final.length} stations, ${historyMs.toFixed(0)} ms`);
 
       renderNeighbours(final);
-      renderCalc(final);
+      const estimates = renderCalc(final);
+      renderHistory(final, histMap, estimates);
       renderModel(modelPoint);
 
       const totalMs = performance.now() - t0;
       log('done', `calculation complete in ${totalMs.toFixed(0)} ms`);
-      setState(`${final.length} neighbours, ${withObs.length} with observations, calculation complete`);
+      setState(`${final.length} neighbours, ${withObs.length} with observations, history loaded`);
 
       renderPerf({
         stationsScanned: stations.length,
@@ -460,6 +556,7 @@
         nwsMs,
         nwsCount: usStations.length,
         openMeteoMs,
+        historyMs,
         totalMs,
       });
 

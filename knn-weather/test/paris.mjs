@@ -147,6 +147,16 @@ async function main() {
       console.log(`OK: STATUS height constant across computes (${statusHeightAfterCompute1}px)`);
     }
 
+    // History rows for at least 3 of 5 stations.
+    const historyOk = await page.$$eval('.history-row', (rows) =>
+      rows.filter((r) => !r.textContent.includes('no history')).length
+    );
+    if (historyOk < 3) {
+      fail(`only ${historyOk} of 5 stations have 24h history rendered (need >=3)`);
+    } else {
+      console.log(`OK: ${historyOk} of 5 stations have 24h history rendered (>=3 required)`);
+    }
+
     await page.screenshot({ path: '/Users/tc/.claude/jobs/f13f376f/tmp/knn-page.png', fullPage: true });
     console.log('screenshot saved to /Users/tc/.claude/jobs/f13f376f/tmp/knn-page.png');
   } finally {
