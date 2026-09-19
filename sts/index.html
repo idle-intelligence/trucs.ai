@@ -71,7 +71,7 @@
       <button id="load-btn" disabled>download</button>
       <span id="status-text">model will be stored locally: ~3.8 GB</span>
     </div>
-    <p class="panel-desc">download is off for now. the demo is not ready for visitors.</p>
+    <p class="panel-desc">The download button is disabled until the demo is usable.</p>
 
     <hr>
 
@@ -79,10 +79,10 @@
 
     <!-- TC writes the status text here -->
     <div id="sts-notes" class="notes">
-      <p>what runs. PersonaPlex-7B pruned to 24 layers and recovered with QLoRA, Q4_K, on Burn's wgpu backend in WebAssembly. mic → Mimi encoder → temporal and depth transformers → Mimi decoder → speaker. all in the tab.</p>
-      <p>what it does. walkie-talkie turns, a few voice presets. it answers. slowly: about 3× slower than realtime on a consumer GPU, so you talk, wait, listen. audio quality is rough.</p>
-      <p>what it doesn't do yet. full duplex. the model is built for it; the streaming path isn't wired in.</p>
-      <p>next. wire the duplex path, then speed. a smaller checkpoint would help both.</p>
+      <p>A Q4_K-quantized PersonaPlex-7B, pruned to 24 layers with QLoRA recovery, running on Burn's wgpu backend compiled to WebAssembly. The pipeline is microphone → Mimi encoder → temporal and depth transformers → Mimi decoder → playback, end to end in Chrome or Edge with WebGPU.</p>
+      <p>Walkie-talkie mode works, with a handful of voice presets. Generation runs about 3× slower than realtime on consumer GPUs, so it is turn-based for now. Audio quality is poor.</p>
+      <p>Full duplex is not wired in yet. The model supports it; the streaming path does not exist in this build.</p>
+      <p>Next: true duplex streaming, then performance work, once there is a smaller checkpoint to build on.</p>
     </div>
 
     <hr>
