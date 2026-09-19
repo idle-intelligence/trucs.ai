@@ -69,17 +69,23 @@
       <button id="load-btn" disabled>download</button>
       <span id="status-text">model will be stored locally: ~3.8 GB</span>
     </div>
+    <p class="panel-desc">download is off for now. the demo is not ready for visitors.</p>
 
     <hr>
 
     <button id="record-btn" disabled>start recording</button>
 
     <!-- TC writes the status text here -->
-    <div id="sts-notes" class="notes"></div>
+    <div id="sts-notes" class="notes">
+      <p>what runs. PersonaPlex-7B pruned to 24 layers and recovered with QLoRA, Q4_K, on Burn's wgpu backend in WebAssembly. mic → Mimi encoder → temporal and depth transformers → Mimi decoder → speaker. all in the tab.</p>
+      <p>what it does. walkie-talkie turns, a few voice presets. it answers. slowly: about 3× slower than realtime on a consumer GPU, so you talk, wait, listen. audio quality is rough.</p>
+      <p>what it doesn't do yet. full duplex. the model is built for it; the streaming path isn't wired in.</p>
+      <p>next. wire the duplex path, then speed. a smaller checkpoint would help both.</p>
+    </div>
 
     <hr>
 
-    <p id="desc-full" class="panel-desc">Quantized <a href="https://huggingface.co/idle-intelligence/personaplex-24L-q4_k-webgpu">PersonaPlex-7B</a> model (Mimi audio codec + temporal/depth transformers), <a href="https://github.com/idle-intelligence/sts-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.</p>
+    <p id="desc-full" class="panel-desc">Quantized, pruned <a href="https://huggingface.co/idle-intelligence/personaplex-24L-q4_k-webgpu">PersonaPlex-7B</a> (24 layers, QLoRA-recovered) model (Mimi audio codec + temporal/depth transformers), <a href="https://github.com/idle-intelligence/sts-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.</p>
 
     <hr>
     <p><a href="/">← trucs.ai</a></p>
