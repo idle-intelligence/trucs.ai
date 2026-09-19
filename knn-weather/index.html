@@ -559,7 +559,8 @@
 
       const totalMs = performance.now() - t0;
       console.log(`stations found in ${totalMs.toFixed(0)} ms`);
-      setStatus(`${final.length} stations found, ${withObs.length} with observations`);
+      const finalWithObs = final.filter((c) => c.obs).length;
+      setStatus(`${final.length} stations found, ${finalWithObs} with observations`);
 
       renderPerf({
         stationsScanned: stations.length,
