@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>kNN weather — trucs.ai</title>
-  <meta name="description" content="Inverse-distance-weighted kNN estimate of live weather at any point, from k nearest METAR stations. Runs entirely in your browser.">
+  <meta name="description" content="Weather at any point on Earth, estimated from the nearest live METAR stations. Runs entirely in your browser.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../assets/style.css">
   <style>
     body { max-width: 1200px; }
-    label { display: inline-block; width: 3.5em; color: #555; }
+    label { display: inline-block; width: 5.5em; color: #555; }
     .field { margin: 0.4em 0; display: inline-block; margin-right: 1.5em; }
     input[type="number"] {
       font-family: inherit; font-size: 1rem; padding: 0.3em 0.5em;
@@ -21,25 +21,10 @@
       border: 1px solid #111; background: #fff; color: #111;
       cursor: pointer; border-radius: 2px;
     }
-    button:hover { background: #111; color: #fff; }
+    button:hover:not(:disabled) { background: #111; color: #fff; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
-    #status-fixed { height: 3em; overflow: hidden; }
-    #status-fixed div {
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      line-height: 1.5; font-size: 0.9rem; color: #333;
-    }
-    #status-last { color: #666; font-size: 0.8rem !important; }
-    #status-last .t { color: #999; }
-    #log-toggle {
-      background: none; border: none; font: inherit; font-size: 0.8rem;
-      color: #666; padding: 0; margin-top: 0.3em; cursor: pointer;
-      text-decoration: underline;
-    }
-    #status-full {
-      background: #f5f5f5; border-radius: 2px; margin-top: 0.4em;
-      padding: 0.5em 0.75em; font-size: 0.8rem; color: #444;
-      white-space: pre-wrap; word-break: break-word; font-family: inherit;
-    }
+    .input-row { margin: 0.5em 0; }
+    #status-text { color: #555; font-size: 0.9rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 0.75em; font-size: 0.85rem; }
     th, td { text-align: left; padding: 0.3em 0.5em; border-bottom: 1px solid #eee; white-space: nowrap; }
     th { color: #555; font-weight: normal; border-bottom: 1px solid #111; }
@@ -55,56 +40,67 @@
     .calc-summary .nearest { color: #777; font-size: 0.85rem; }
     .note { color: #999; font-size: 0.8rem; margin: 0.3em 0; }
     #perf-table td, #perf-table th { white-space: normal; }
-    .history-row { margin: 0.6em 0; padding-bottom: 0.6em; border-bottom: 1px solid #eee; }
-    .history-row strong { font-size: 0.9rem; }
-    .hist-item { display: inline-block; vertical-align: top; margin: 0.3em 1.2em 0.3em 0; }
-    .hist-item canvas { display: block; background: #fafafa; border: 1px solid #eee; }
-    .hist-label { display: block; color: #777; font-size: 0.75rem; margin-top: 0.15em; }
-    .history-overlay { margin-top: 0.8em; }
+    #output-panel { margin-top: 0.5em; }
+    .output-line { margin: 0.9em 0; }
+    .output-label { display: inline-block; width: 7.5em; color: #555; }
+    .output-value { font-size: 1.2rem; font-weight: bold; color: #111; }
+    .output-meta { color: #777; font-size: 0.85rem; margin-left: 0.6em; }
+    .output-model { color: #999; font-size: 0.85rem; margin-left: 7.5em; }
   </style>
 </head>
 <body>
   <main>
     <h1>kNN weather</h1>
     <p>
-      Inverse-distance-weighted kNN estimate of live weather at any point on Earth,<br>
-      computed from the k nearest METAR stations. Runs client-side: haversine
-      distance over ~8,100 stations, live observations fetched directly from
-      the source APIs.
+      Weather at any point on Earth, estimated from the nearest live METAR
+      stations. Runs client-side: distance search over ~8,100 stations, live
+      observations fetched directly from the source APIs.
     </p>
 
     <h2>STATUS</h2>
-    <div id="status-fixed">
-      <div id="status-state">idle</div>
-      <div id="status-last">—</div>
-    </div>
-    <button id="log-toggle" type="button">show log</button>
-    <pre id="status-full" hidden></pre>
+    <p id="status-text">idle</p>
 
     <h2>INPUT</h2>
     <div id="controls">
-      <div class="field">
-        <label for="lat">lat</label>
-        <input type="number" id="lat" step="any" value="48.8566">
+      <div class="input-row">
+        <div class="field">
+          <label for="lat">location</label>
+          <input type="number" id="lat" step="any" value="48.8566" aria-label="latitude" title="latitude">
+        </div>
+        <div class="field">
+          <input type="number" id="lon" step="any" value="2.3522" aria-label="longitude" title="longitude">
+        </div>
+        <button id="geo-btn" type="button" title="Use my location (optional)">use my location</button>
       </div>
-      <div class="field">
-        <label for="lon">lon</label>
-        <input type="number" id="lon" step="any" value="2.3522">
+      <div class="input-row">
+        <div class="field">
+          <label for="k">stations</label>
+          <input type="number" id="k" step="1" min="1" max="20" value="5" style="width: 5em;">
+        </div>
       </div>
-      <div class="field">
-        <label for="k">k</label>
-        <input type="number" id="k" step="1" min="1" max="20" value="5" style="width: 5em;">
-      </div>
-      <div class="field">
-        <button id="compute-btn">compute</button>
-        <button id="geo-btn" title="Use my location (optional)">use my location</button>
+      <div class="input-row">
+        <button id="find-btn" type="button">find stations</button>
+        <button id="compute-btn" type="button" disabled>compute</button>
       </div>
       <div id="error" hidden></div>
     </div>
 
     <h2>OUTPUT</h2>
+    <p class="panel-desc" id="output-model-note" hidden>
+      For comparison, each value is followed by the current-hour figure from a
+      numerical weather model (Open-Meteo), interpolated to this point. It is
+      a model output, not a measurement.
+    </p>
+    <div id="output-panel"></div>
 
-    <h3>neighbours</h3>
+    <h2>PERFORMANCE</h2>
+    <table id="perf-table">
+      <tbody id="perf-body"></tbody>
+    </table>
+
+    <h2>how</h2>
+
+    <h3>stations</h3>
     <div class="table-wrap">
       <table id="results" hidden>
         <thead>
@@ -128,28 +124,35 @@
       </table>
     </div>
 
-    <h3>last 24 h</h3>
-    <div id="history-panel"></div>
-
     <h3>calculation</h3>
     <p class="panel-desc">
-      For each variable, the estimate is the inverse-distance-weighted average
-      of the neighbours that reported a value; missing values are left out.
+      For each variable, the estimate is the distance-weighted average of the
+      neighbours that reported a value; missing values are left out.
     </p>
     <div id="calc-panel"></div>
 
-    <h3>model at point (not an observation)</h3>
-    <div id="model-panel" class="panel-desc"></div>
-
-    <h2>PERFORMANCE</h2>
-    <table id="perf-table">
-      <tbody id="perf-body"></tbody>
-    </table>
+    <h3>method</h3>
+    <p class="panel-desc">
+      Each value starts as the distance-weighted average of the neighbouring
+      stations that reported it (closer stations weigh more). Temperature is
+      then reduced to the target point's elevation with a lapse rate fitted
+      by least squares across the neighbours (falling back to the standard
+      atmosphere, −6.5 K/km, if there are fewer than three stations or the fit
+      is implausible). Dew point is averaged as vapour pressure and converted
+      back, since dew point is not linearly averageable. Pressure is averaged
+      as sea-level pressure (QNH), then reduced to station pressure at the
+      target elevation. Wind is averaged as vector components, not scalar
+      speed and direction. Observations older than 60 minutes are excluded
+      from these corrected averages.
+    </p>
+    <p class="panel-desc">
+      Station list: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP), ~8,100 METAR-reporting stations.<br>
+      Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a> (global ASOS/METAR currents), <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a> (US stations), <a href="https://open-meteo.com/">Open-Meteo</a> (numerical weather model, for comparison only).<br>
+      Source: <a href="https://github.com/idle-intelligence/trucs.ai/tree/main/knn-weather">github.com/idle-intelligence/trucs.ai/knn-weather</a>.
+    </p>
 
     <p class="panel-desc" style="margin-top: 2em;">
-      Station list: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP), ~8,100 METAR-reporting stations.<br>
-      Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a> (global ASOS/METAR currents), <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a> (US stations), <a href="https://open-meteo.com/">Open-Meteo</a> (gridded forecast model, sampled at the point — not a station observation).<br>
-      kNN / IDW method from SenseAI's weather tools (2015), where TC was CTO.
+      kNN / IDW method from SenseAI's weather tools (2015), where TC was CTO; elevation, vapour-pressure, QNH and vector-wind corrections after Nalder &amp; Wein (1998) and standard practice.
     </p>
   </main>
 
@@ -157,32 +160,27 @@
     import { nearest, loadStations } from './knn.js';
     import { fetchIem, fetchNws, fetchOpenMeteoPoint } from './sources.js';
     import { idw, idwCircularDeg } from './idw.js';
-    import { fetchStationHistories } from './history.js';
-    import { drawSparkline, drawOverlaySparkline } from './sparkline.js';
+    import { computeCorrections } from './corrections.js';
+
+    // Station-history sparklines (history.js/sparkline.js) are implemented but
+    // disabled for now — the underlying page design dropped them from OUTPUT.
+    // Flip this on to re-fetch and render 24h history under the stations table.
+    const HISTORY_ENABLED = false;
 
     const latInput = document.getElementById('lat');
     const lonInput = document.getElementById('lon');
     const kInput = document.getElementById('k');
+    const findBtn = document.getElementById('find-btn');
     const computeBtn = document.getElementById('compute-btn');
     const geoBtn = document.getElementById('geo-btn');
     const errorBox = document.getElementById('error');
-    const statusState = document.getElementById('status-state');
-    const statusLast = document.getElementById('status-last');
-    const logToggle = document.getElementById('log-toggle');
-    const statusFull = document.getElementById('status-full');
+    const statusText = document.getElementById('status-text');
     const resultsTable = document.getElementById('results');
     const resultsBody = document.getElementById('results-body');
     const calcPanel = document.getElementById('calc-panel');
-    const modelPanel = document.getElementById('model-panel');
+    const outputPanel = document.getElementById('output-panel');
+    const outputModelNote = document.getElementById('output-model-note');
     const perfBody = document.getElementById('perf-body');
-    const historyPanel = document.getElementById('history-panel');
-
-    const HIST_VARS = [
-      { key: 'tempC', label: 'temperature', unit: '°C', digits: 1 },
-      { key: 'dewpointC', label: 'dew point', unit: '°C', digits: 1 },
-      { key: 'windMs', label: 'wind speed', unit: 'm/s', digits: 1 },
-      { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
-    ];
 
     const SPARE = 3;
     const VARS = [
@@ -192,43 +190,17 @@
       { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
     ];
 
-    // ── STATUS: two fixed-height lines (current state, last event) plus a
-    // collapsed-by-default full log. A given logical stage updates its own
-    // log entry in place via a key, so re-running keeps the log length stable. ──
+    // ── STATUS: one line of text, replaced at each stage transition. Detailed
+    // per-source/per-station progress goes to the console, not the page. ──
 
-    const logEntries = new Map(); // key -> text
-    let logOrder = [];
-
-    function setState(text) {
-      statusState.textContent = text;
+    function setStatus(text) {
+      statusText.textContent = text;
     }
-
-    function log(key, text) {
-      const t = new Date().toLocaleTimeString();
-      const line = `${t}  ${text}`;
-      statusLast.textContent = line;
-      if (!logEntries.has(key)) logOrder.push(key);
-      logEntries.set(key, line);
-      statusFull.textContent = logOrder.map((k) => logEntries.get(k)).join('\n');
-    }
-
-    function resetLog() {
-      logEntries.clear();
-      logOrder = [];
-      statusFull.textContent = '';
-      statusLast.textContent = '—';
-      setState('idle');
-    }
-
-    logToggle.addEventListener('click', () => {
-      const willShow = statusFull.hidden;
-      statusFull.hidden = !willShow;
-      logToggle.textContent = willShow ? 'hide log' : 'show log';
-    });
 
     function showError(msg) {
       errorBox.textContent = msg;
       errorBox.hidden = !msg;
+      if (msg) setStatus(msg);
     }
 
     function fmtNum(v, digits) {
@@ -269,9 +241,11 @@
       resultsTable.hidden = rows.length === 0;
     }
 
-    function renderCalc(rows) {
+    // rows: final neighbours. corr: computeCorrections() result. Renders the
+    // per-variable calculation tables (distance-weighted average + corrected
+    // value, per neighbour) under "how".
+    function renderCalc(rows, corr) {
       calcPanel.innerHTML = '';
-      const estimates = {};
       for (const v of VARS) {
         const points = rows
           .map((s) => ({ station: s, value: s.obs?.[v.key], distance: s.distance, obsTime: s.obs?.obsTime }))
@@ -292,8 +266,7 @@
           continue;
         }
 
-        const result = v.key === 'windDirDeg' ? idwCircularDeg(points) : idw(points);
-        estimates[v.key] = result.value;
+        const result = idw(points);
         const nearest = points[0]; // rows already sorted by distance
 
         const ages = points.map((p) => ageMinutes(p.obsTime)).filter((a) => a != null);
@@ -301,29 +274,35 @@
           ? `obs age ${Math.min(...ages).toFixed(0)}–${Math.max(...ages).toFixed(0)} min`
           : 'obs age unknown';
 
+        const corrValue = correctedValueFor(v.key, corr);
         const summary = document.createElement('div');
         summary.className = 'calc-summary';
         summary.innerHTML = `
-          IDW estimate: <span class="value">${result.value.toFixed(v.digits)} ${v.unit}</span>
+          distance-weighted average: <span class="value">${result.value.toFixed(v.digits)} ${v.unit}</span>
+          ${corrValue != null ? ` · with elevation, pressure and wind corrections: <span class="value">${corrValue.toFixed(v.digits)} ${v.unit}</span>` : ''}
           (${points.length} neighbour${points.length === 1 ? '' : 's'}, ${ageNote})<br>
           <span class="nearest">nearest-station value: ${nearest.value.toFixed(v.digits)} ${v.unit} (${nearest.station.icao}, ${nearest.distance.toFixed(1)} km)</span>
         `;
         wrap.appendChild(summary);
 
+        const correctedPoints = correctedPointsFor(v.key, corr);
         const table = document.createElement('table');
         table.innerHTML = `
-          <thead><tr><th>ICAO</th><th class="num">value</th><th class="num">dist (km)</th><th class="num">weight (1/d)</th><th class="num">weight (norm.)</th></tr></thead>
+          <thead><tr><th>ICAO</th><th class="num">dist (km)</th><th class="num">weight (norm.)</th><th class="num">value</th><th class="num">corrected</th></tr></thead>
           <tbody></tbody>
         `;
         const tbody = table.querySelector('tbody');
         result.terms.forEach((term, i) => {
+          const icao = points[i].station.icao;
+          const cp = correctedPoints.find((p) => p.icao === icao);
+          const cVal = cp ? correctedPointValue(v.key, cp) : null;
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td>${points[i].station.icao}</td>
-            <td class="num">${term.value.toFixed(v.digits)}</td>
+            <td>${icao}</td>
             <td class="num">${term.distance.toFixed(2)}</td>
-            <td class="num">${term.distance === 0 ? '∞ (exact)' : term.weight.toFixed(4)}</td>
             <td class="num">${term.weightNorm.toFixed(3)}</td>
+            <td class="num">${term.value.toFixed(v.digits)}</td>
+            <td class="num">${cVal != null ? cVal.toFixed(v.digits) : (cp && !cp.included ? 'excluded (age)' : '—')}</td>
           `;
           tbody.appendChild(tr);
         });
@@ -337,84 +316,125 @@
           wrap.appendChild(note);
         }
 
+        if (v.key === 'tempC' && corr) {
+          const note = document.createElement('p');
+          note.className = 'note';
+          note.textContent = corr.lapse.fallback
+            ? `lapse rate: standard atmosphere (−6.5 K/km) — ${corr.lapse.reason}`
+            : `lapse rate fitted across neighbours: ${corr.lapse.lapseKPerKm.toFixed(1)} K/km`;
+          wrap.appendChild(note);
+        }
+        if (v.key === 'pressureHpa' && corr && corr.pressure.correctedQnh != null) {
+          const note = document.createElement('p');
+          note.className = 'note';
+          note.textContent = `sea-level pressure (QNH): ${corr.pressure.correctedQnh.toFixed(1)} hPa, reduced to station pressure at ${corr.targetElevM != null ? corr.targetElevM.toFixed(0) : '?'} m.`;
+          wrap.appendChild(note);
+        }
+        if (v.key === 'windMs' && corr && corr.wind.correctedDir != null) {
+          const note = document.createElement('p');
+          note.className = 'note';
+          note.textContent = `corrected direction (vector average): ${corr.wind.correctedDir.toFixed(0)}°.`;
+          wrap.appendChild(note);
+        }
+
         calcPanel.appendChild(wrap);
       }
-      return estimates;
     }
 
-    // rows: neighbours (already carrying s.obs), in distance order.
-    // histMap: icao -> { obs, error } from fetchStationHistories.
-    // calcEstimates: { key -> IDW estimate value } for the overlay marker.
-    function renderHistory(rows, histMap, calcEstimates) {
-      historyPanel.innerHTML = '';
-
-      for (const s of rows) {
-        const h = histMap.get(s.icao);
-        const div = document.createElement('div');
-        div.className = 'history-row';
-        if (!h || h.error) {
-          div.innerHTML = `<strong>${s.icao}</strong> — no history: ${h ? h.error : 'not fetched'}`;
-          historyPanel.appendChild(div);
-          continue;
-        }
-        let html = `<strong>${s.icao}</strong> — ${h.obs.length} observation${h.obs.length === 1 ? '' : 's'} in the last 24 h<br>`;
-        for (const v of HIST_VARS) {
-          const values = h.obs.map((o) => o[v.key]);
-          const finite = values.filter((x) => Number.isFinite(x));
-          const latest = [...values].reverse().find((x) => Number.isFinite(x));
-          const min = finite.length ? Math.min(...finite) : null;
-          const max = finite.length ? Math.max(...finite) : null;
-          const label = finite.length
-            ? `${v.label}: ${latest.toFixed(v.digits)} ${v.unit} (min ${min.toFixed(v.digits)}, max ${max.toFixed(v.digits)})`
-            : `${v.label}: no data`;
-          html += `<span class="hist-item"><canvas class="spark" data-icao="${s.icao}" data-var="${v.key}" width="140" height="30"></canvas><span class="hist-label">${label}</span></span>`;
-        }
-        div.innerHTML = html;
-        historyPanel.appendChild(div);
-      }
-
-      historyPanel.querySelectorAll('canvas.spark').forEach((canvas) => {
-        const h = histMap.get(canvas.dataset.icao);
-        if (!h) return;
-        drawSparkline(canvas, h.obs.map((o) => o[canvas.dataset.var]));
-      });
-
-      const overlayWrap = document.createElement('div');
-      overlayWrap.className = 'history-overlay';
-      overlayWrap.innerHTML = '<p class="panel-desc">all neighbours, last 24 h, with the estimate at the right edge</p>';
-      for (const v of HIST_VARS) {
-        const series = rows
-          .map((s) => histMap.get(s.icao))
-          .filter((h) => h && !h.error)
-          .map((h) => h.obs.map((o) => o[v.key]));
-        const div = document.createElement('div');
-        div.className = 'hist-item';
-        const canvas = document.createElement('canvas');
-        canvas.width = 300;
-        canvas.height = 50;
-        div.appendChild(canvas);
-        const label = document.createElement('span');
-        label.className = 'hist-label';
-        label.textContent = v.label;
-        div.appendChild(label);
-        overlayWrap.appendChild(div);
-        drawOverlaySparkline(canvas, series, calcEstimates?.[v.key]);
-      }
-      historyPanel.appendChild(overlayWrap);
+    function correctedPointsFor(key, corr) {
+      if (!corr) return [];
+      if (key === 'tempC') return corr.temperature.points;
+      if (key === 'dewpointC') return corr.dewpoint.points;
+      if (key === 'windMs') return corr.wind.points;
+      if (key === 'pressureHpa') return corr.pressure.points;
+      return [];
     }
 
-    function renderModel(model) {
-      if (!model) {
-        modelPanel.textContent = 'Open-Meteo model fetch failed or unavailable.';
-        return;
-      }
-      modelPanel.innerHTML = `
-        temperature ${fmtNum(model.tempC, 1)} °C ·
-        dew point ${fmtNum(model.dewpointC, 1)} °C ·
-        wind ${fmtNum(model.windMs, 1)} m/s @ ${fmtNum(model.windDirDeg, 0)}° ·
-        pressure ${fmtNum(model.pressureHpa, 1)} hPa
-        (${model.obsTime ? fmtTime(model.obsTime) : 'time unknown'}, gridded forecast model — not a station observation)
-      `;
+    function correctedPointValue(key, cp) {
+      if (key === 'tempC') return cp.correctedValue;
+      if (key === 'pressureHpa') return null; // per-station corrected pressure isn't meaningful; see QNH note
+      if (key === 'windMs') return cp.included ? cp.speed : null; // vector correction shown at summary level only
+      return null;
+    }
+
+    function correctedValueFor(key, corr) {
+      if (!corr) return null;
+      if (key === 'tempC') return corr.temperature.corrected;
+      if (key === 'dewpointC') return corr.dewpoint.corrected;
+      if (key === 'windMs') return corr.wind.correctedSpeed;
+      if (key === 'pressureHpa') return corr.pressure.correctedStation;
+      return null;
+    }
+
+    const CONF_THRESHOLDS = {
+      tempC: { dist: 25, age: 30, spread: 2, elev: 200 },
+      dewpointC: { dist: 25, age: 30, spread: 2.5, elev: Infinity },
+      windMs: { dist: 25, age: 30, spread: 2, elev: Infinity },
+      pressureHpa: { dist: 25, age: 30, spread: 1.5, elev: Infinity },
+    };
+
+    // One-word confidence from spread, distance to nearest, elevation spread
+    // (temperature only) and worst-case observation age.
+    function confidenceWord(stats, t) {
+      let score = 0;
+      if (stats.nearestDist != null && stats.nearestDist > t.dist) score++;
+      if (stats.maxAge != null && stats.maxAge > t.age) score++;
+      if (stats.spread != null && stats.spread > t.spread) score++;
+      if (stats.elevSpread != null && stats.elevSpread > t.elev) score++;
+      if (score === 0) return 'high';
+      if (score === 1) return 'medium';
+      return 'low';
+    }
+
+    // corr: computeCorrections() result. model: fetchOpenMeteoPoint() result (or null).
+    function renderOutput(corr, model) {
+      outputModelNote.hidden = false;
+
+      const tVal = correctedValueFor('tempC', corr) ?? corr.temperature.plain;
+      const dVal = correctedValueFor('dewpointC', corr) ?? corr.dewpoint.plain;
+      const wSpeed = corr.wind.correctedSpeed ?? corr.wind.plainScalarSpeed;
+      const wDir = corr.wind.correctedDir;
+      const pVal = correctedValueFor('pressureHpa', corr) ?? corr.pressure.plain;
+
+      const lines = [
+        {
+          label: 'temperature',
+          value: tVal != null ? `${tVal.toFixed(1)} °C` : '—',
+          age: corr.temperature.maxAge,
+          confidence: confidenceWord(corr.temperature, CONF_THRESHOLDS.tempC),
+          model: model ? fmtNum(model.tempC, 1) + ' °C' : null,
+        },
+        {
+          label: 'dew point',
+          value: dVal != null ? `${dVal.toFixed(1)} °C` : '—',
+          age: corr.dewpoint.maxAge,
+          confidence: confidenceWord(corr.dewpoint, CONF_THRESHOLDS.dewpointC),
+          model: model ? fmtNum(model.dewpointC, 1) + ' °C' : null,
+        },
+        {
+          label: 'wind',
+          value: wSpeed != null ? `${wSpeed.toFixed(1)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}` : '—',
+          age: corr.wind.maxAge,
+          confidence: confidenceWord(corr.wind, CONF_THRESHOLDS.windMs),
+          model: model ? `${fmtNum(model.windMs, 1)} m/s from ${fmtNum(model.windDirDeg, 0)}°` : null,
+        },
+        {
+          label: 'pressure',
+          value: pVal != null ? `${pVal.toFixed(1)} hPa` : '—',
+          age: corr.pressure.maxAge,
+          confidence: confidenceWord(corr.pressure, CONF_THRESHOLDS.pressureHpa),
+          model: model ? fmtNum(model.pressureHpa, 1) + ' hPa' : null,
+        },
+      ];
+
+      outputPanel.innerHTML = lines.map((l) => `
+        <div class="output-line">
+          <span class="output-label">${l.label}</span>
+          <span class="output-value">${l.value}</span>
+          <span class="output-meta">obs age ${l.age != null ? `≤ ${l.age.toFixed(0)} min` : 'unknown'} · confidence: ${l.confidence}</span>
+          ${l.model != null ? `<div class="output-model">weather model: ${l.model}</div>` : ''}
+        </div>
+      `).join('');
     }
 
     function renderPerf(perf) {
@@ -425,8 +445,7 @@
         ['IEM fetch', perf.iemMs != null ? `${perf.iemMs.toFixed(0)} ms` : 'skipped'],
         ['NWS fetch', perf.nwsMs != null ? `${perf.nwsMs.toFixed(0)} ms (${perf.nwsCount} station${perf.nwsCount === 1 ? '' : 's'})` : 'skipped (no US stations in range)'],
         ['Open-Meteo fetch', perf.openMeteoMs != null ? `${perf.openMeteoMs.toFixed(0)} ms` : 'failed'],
-        ['history fetch (24 h)', `${perf.historyMs.toFixed(0)} ms`],
-        ['total', `${perf.totalMs.toFixed(0)} ms`],
+        ['total (find stations)', `${perf.totalMs.toFixed(0)} ms`],
       ];
       for (const [label, val] of rows) {
         const tr = document.createElement('tr');
@@ -435,7 +454,12 @@
       }
     }
 
-    async function runCompute() {
+    // ── Stage 1: find stations + fetch observations ──
+
+    let currentFinal = null;
+    let currentModel = null;
+
+    async function findStations() {
       const lat = parseFloat(latInput.value);
       const lon = parseFloat(lonInput.value);
       const k = Math.max(1, Math.min(20, parseInt(kInput.value, 10) || 5));
@@ -444,28 +468,27 @@
         return;
       }
       showError('');
+      findBtn.disabled = true;
       computeBtn.disabled = true;
-      resetLog();
-      setState('computing…');
+      currentFinal = null;
+      currentModel = null;
+      setStatus('fetching stations…');
 
       const t0 = performance.now();
       let stations;
       try {
         stations = await loadStations();
-        log('load', `station list loaded (${stations.length})`);
+        console.log(`station list loaded (${stations.length})`);
       } catch (err) {
         showError(`failed to load station list: ${err.message}`);
-        computeBtn.disabled = false;
+        findBtn.disabled = false;
         return;
       }
 
       const tKnn0 = performance.now();
       const candidates = await nearest(lat, lon, k + SPARE);
       const knnMs = performance.now() - tKnn0;
-      log('knn', `kNN search: ${candidates.length} candidates (k=${k} + ${SPARE} spare) in ${knnMs.toFixed(1)} ms`);
-
-      // ── Fetch observations for all candidates ──
-      log('query', `querying sources for ${candidates.length} candidate stations…`);
+      console.log(`kNN search: ${candidates.length} candidates (k=${k} + ${SPARE} spare) in ${knnMs.toFixed(1)} ms`);
 
       let iemMs = null;
       let iemMap = new Map();
@@ -473,10 +496,10 @@
       try {
         iemMap = await fetchIem(candidates.map((c) => c.icao));
         iemMs = performance.now() - tIem0;
-        log('iem', `IEM: ${iemMap.size}/${candidates.length} stations returned current obs (${iemMs.toFixed(0)} ms)`);
+        console.log(`IEM: ${iemMap.size}/${candidates.length} stations returned current obs (${iemMs.toFixed(0)} ms)`);
       } catch (err) {
         iemMs = performance.now() - tIem0;
-        log('iem', `IEM: fetch failed — ${err.message} (${iemMs.toFixed(0)} ms)`);
+        console.log(`IEM: fetch failed — ${err.message} (${iemMs.toFixed(0)} ms)`);
       }
 
       const usStations = candidates.filter((c) => c.country === 'US');
@@ -493,14 +516,14 @@
             ok++;
           }
         });
-        log('nws', `NWS: ${ok}/${usStations.length} US stations returned current obs (${nwsMs.toFixed(0)} ms)`);
+        console.log(`NWS: ${ok}/${usStations.length} US stations returned current obs (${nwsMs.toFixed(0)} ms)`);
       } else {
-        log('nws', 'NWS: no US stations among candidates — skipped');
+        console.log('NWS: no US stations among candidates — skipped');
       }
 
       for (const c of candidates) {
         const has = nwsMap.has(c.icao) ? 'NWS' : iemMap.has(c.icao) ? 'IEM' : 'none';
-        log(`fetch-${c.icao}`, `${c.icao} (${c.distance.toFixed(1)} km): ${has === 'none' ? 'no current obs available' : `obs from ${has}`}`);
+        console.log(`${c.icao} (${c.distance.toFixed(1)} km): ${has === 'none' ? 'no current obs available' : `obs from ${has}`}`);
       }
 
       // Prefer NWS (fresher, direct) then IEM.
@@ -514,40 +537,29 @@
       if (final.length < k) final = final.concat(withoutObs.slice(0, k - final.length));
       final.sort((a, b) => a.distance - b.distance);
 
-      log('select', `${final.length} neighbours selected (${withObs.length} of ${candidates.length} candidates had obs)`);
-      setState(`${final.length} neighbours, ${withObs.length} with observations`);
+      console.log(`${final.length} stations selected (${withObs.length} of ${candidates.length} candidates had obs)`);
 
       let openMeteoMs = null;
       let modelPoint = null;
       const tOm0 = performance.now();
-      const omPromise = fetchOpenMeteoPoint(lat, lon)
-        .then((v) => {
-          modelPoint = v;
-          openMeteoMs = performance.now() - tOm0;
-          log('om', `Open-Meteo model at point fetched (${openMeteoMs.toFixed(0)} ms)`);
-        })
-        .catch((err) => {
-          openMeteoMs = performance.now() - tOm0;
-          log('om', `Open-Meteo: fetch failed — ${err.message} (${openMeteoMs.toFixed(0)} ms)`);
-        });
+      try {
+        modelPoint = await fetchOpenMeteoPoint(lat, lon);
+        openMeteoMs = performance.now() - tOm0;
+        console.log(`Open-Meteo model fetched, elevation ${modelPoint.elevationM ?? '?'} m (${openMeteoMs.toFixed(0)} ms)`);
+      } catch (err) {
+        openMeteoMs = performance.now() - tOm0;
+        console.log(`Open-Meteo: fetch failed — ${err.message} (${openMeteoMs.toFixed(0)} ms)`);
+      }
 
-      const tHist0 = performance.now();
-      const histPromise = fetchStationHistories(final.map((c) => c.icao), (r) => {
-        log(`history-${r.icao}`, r.error ? `history: failed — ${r.error}` : `history: ${r.obs.length} observations (24 h)`);
-      });
-      const [, histMap] = await Promise.all([omPromise, histPromise]);
-      const historyMs = performance.now() - tHist0;
-      const historyOk = [...histMap.values()].filter((h) => !h.error).length;
-      log('history-total', `history: ${historyOk}/${final.length} stations, ${historyMs.toFixed(0)} ms`);
+      if (HISTORY_ENABLED) {
+        // Intentionally not wired up — see the HISTORY_ENABLED comment above.
+      }
 
       renderNeighbours(final);
-      const estimates = renderCalc(final);
-      renderHistory(final, histMap, estimates);
-      renderModel(modelPoint);
 
       const totalMs = performance.now() - t0;
-      log('done', `calculation complete in ${totalMs.toFixed(0)} ms`);
-      setState(`${final.length} neighbours, ${withObs.length} with observations, history loaded`);
+      console.log(`stations found in ${totalMs.toFixed(0)} ms`);
+      setStatus(`${final.length} stations found, ${withObs.length} with observations`);
 
       renderPerf({
         stationsScanned: stations.length,
@@ -556,11 +568,31 @@
         nwsMs,
         nwsCount: usStations.length,
         openMeteoMs,
-        historyMs,
         totalMs,
       });
 
-      computeBtn.disabled = false;
+      currentFinal = final;
+      currentModel = modelPoint;
+      findBtn.disabled = false;
+      computeBtn.disabled = final.length === 0;
+    }
+
+    // ── Stage 2: compute the corrected estimate ──
+
+    function computeEstimate() {
+      if (!currentFinal) return;
+      setStatus('computing…');
+      const corr = computeCorrections(currentFinal, currentModel?.elevationM ?? null);
+      renderCalc(currentFinal, corr);
+      renderOutput(corr, currentModel);
+      const ages = currentFinal
+        .map((c) => ageMinutes(c.obs?.obsTime))
+        .filter((a) => a != null);
+      const ageRange = ages.length
+        ? `${Math.min(...ages).toFixed(0)}–${Math.max(...ages).toFixed(0)} min`
+        : 'unknown';
+      setStatus(`estimate ready (obs age ${ageRange})`);
+      console.log('estimate computed from the found stations');
     }
 
     geoBtn.addEventListener('click', () => {
@@ -572,20 +604,21 @@
         (pos) => {
           latInput.value = pos.coords.latitude.toFixed(4);
           lonInput.value = pos.coords.longitude.toFixed(4);
-          runCompute();
+          findStations();
         },
         (err) => showError(`geolocation failed: ${err.message}`),
       );
     });
 
-    computeBtn.addEventListener('click', runCompute);
+    findBtn.addEventListener('click', findStations);
+    computeBtn.addEventListener('click', computeEstimate);
 
     loadStations()
-      .then(() => runCompute())
+      .then(() => findStations())
       .catch((err) => showError(`failed to load station list: ${err.message}`));
 
     // Exposed for reuse (t0-web) and for headless verification.
-    window.__app = { nearest, idw, idwCircularDeg, runCompute };
+    window.__app = { nearest, idw, idwCircularDeg, findStations, computeEstimate };
   </script>
 </body>
 </html>
