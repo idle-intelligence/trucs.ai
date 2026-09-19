@@ -73,6 +73,7 @@ export async function fetchOpenMeteoPoint(lat, lon) {
     windMs: c.wind_speed_10m,
     windDirDeg: c.wind_direction_10m,
     obsTime: c.time ? new Date(c.time + 'Z') : undefined,
+    elevationM: typeof body.elevation === 'number' ? body.elevation : undefined,
     source: 'Open-Meteo (model)',
   };
 }
