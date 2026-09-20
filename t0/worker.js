@@ -8,12 +8,14 @@
  *
  * Protocol:
  *   Main -> Worker:
+ *     { type: 'loadIndex' }                              -- fetch data/index.json alone, no WASM/model
  *     { type: 'load' }                                  -- fetch WASM + model, init
  *     { type: 'loadSeries', index }                      -- fetch/parse the series at data/index.json[index]
  *     { type: 'forecast', origin: number, horizon: number, requestId: number }
  *
  *   Worker -> Main:
  *     { type: 'status', text, key? }
+ *     { type: 'indexReady', seriesIndex }
  *     { type: 'modelReady', modelBytes, loadMs, nQuantiles, backend, seriesIndex }
  *     { type: 'seriesReady', index, series, dates, name, unit, frequency, defaultOriginIndex, naive, live }
  *     { type: 'seriesOffline', index, name, reason }
@@ -52,7 +54,9 @@ const PKG_DIR = HAS_WEBGPU ? './pkg-fast' : './pkg';
 self.onmessage = async (e) => {
     const { type, ...data } = e.data;
     try {
-        if (type === 'load') {
+        if (type === 'loadIndex') {
+            await handleLoadIndex();
+        } else if (type === 'load') {
             await handleLoad();
         } else if (type === 'loadSeries') {
             await handleLoadSeries(data.index);
@@ -100,6 +104,19 @@ async function cachedFetch(url, label) {
     return buf.buffer;
 }
 
+async function fetchSeriesIndex() {
+    if (seriesIndex) return seriesIndex;
+    seriesIndex = await fetch(INDEX_URL).then((r) => r.json());
+    return seriesIndex;
+}
+
+// Fetches only data/index.json -- no WASM, no model -- so the page can show
+// the series picker and drawn data before the model is downloaded.
+async function handleLoadIndex() {
+    const idx = await fetchSeriesIndex();
+    self.postMessage({ type: 'indexReady', seriesIndex: idx });
+}
+
 async function handleLoad() {
     self.postMessage({ type: 'status', text: `Loading WASM module (${BACKEND})...` });
     const wasmJsUrl = new URL(`${PKG_DIR}/t0_wasm.js`, import.meta.url).href;
@@ -118,8 +135,9 @@ async function handleLoad() {
 
     // Only data/index.json itself -- not any live source (IEM/NOAA/USGS/
     // OpenAQ) -- is fetched here; a live series' own data is fetched on
-    // first click, in handleLoadSeries below.
-    seriesIndex = await fetch(INDEX_URL).then((r) => r.json());
+    // first click, in handleLoadSeries below. Reuses the index if
+    // 'loadIndex' already fetched it before this download started.
+    await fetchSeriesIndex();
 
     self.postMessage({
         type: 'modelReady',

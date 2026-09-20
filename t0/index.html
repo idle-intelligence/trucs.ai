@@ -122,9 +122,9 @@
   <main>
     <h1>forecast</h1>
     <p>
-      t0-alpha, The Forecasting Company's open time-series model, quantized by us to 8 bit.<br>
-      Forecasting in your browser on WebGPU. No server.<br>
-      Pick a series below, drag the origin, and watch it forecast everything after it.
+      t0-alpha, The Forecasting Company's time-series model, quantized by us, forecasting in your browser.<br>
+      Rust → WebAssembly + WebGPU. No server, no API key.<br>
+      Your data never leaves your machine.
     </p>
 
     <div id="model-status">
@@ -161,19 +161,19 @@
 
     <hr>
 
-    <p class="panel-desc">
-      Model: <a href="https://huggingface.co/theforecastingcompany/t0-alpha">t0-alpha</a>
-      by <a href="https://www.theforecastingcompany.ai">The Forecasting Company</a>, Apache-2.0.
-      Custom Rust inference compiled to WebAssembly.
-    </p>
+    <p class="panel-desc"><a id="quantLink" href="#">Quantized</a> <a href="https://huggingface.co/theforecastingcompany/t0-alpha">t0-alpha</a> model by The Forecasting Company, <a href="https://github.com/idle-intelligence/t0-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.</p>
     <p class="panel-desc" id="dataCredit">Data sources and licences: see <a href="./data/README.md">data/README.md</a>.</p>
-    <p class="panel-desc"><a href="https://github.com/idle-intelligence/t0-web">github.com/idle-intelligence/t0-web</a></p>
 
     <hr>
     <p><a href="/">← trucs.ai</a></p>
   </main>
 
   <script type="module">
+    // Not published yet -- see t0/worker.js TODO for the q8_0 model file
+    // itself. One constant so a later q4_0 swap is a one-line change.
+    const QUANTIZED_MODEL_URL = 'https://huggingface.co/idle-intelligence/t0-alpha-q8_0-webgpu';
+    document.getElementById('quantLink').href = QUANTIZED_MODEL_URL;
+
     const loadBtn = document.getElementById('load-btn');
     const statusText = document.getElementById('status-text');
     const seriesGrid = document.getElementById('seriesGrid');
@@ -245,6 +245,7 @@
     }
 
     const worker = new Worker('./worker.js', { type: 'module' });
+    worker.postMessage({ type: 'loadIndex' });
 
     let seriesIndex = null;
     let activeIndex = null;
@@ -414,10 +415,45 @@
       drawOriginMarker(inputCtx, xAt(o), h);
     }
 
+    // Shown before a forecast exists for the current origin -- no model
+    // downloaded yet, or one just downloaded and hasn't run yet. Draws the
+    // actual data across the input window so OUTPUT is never blank.
+    function drawOutputEmpty(w, h) {
+      const { start, end } = INPUT_WINDOW;
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (i) => PAD_L + ((i - start) / (end - start)) * plotW;
+      let lo = Infinity, hi = -Infinity;
+      for (let i = start; i <= end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
+      const pad = (hi - lo) * 0.1 || 1;
+      const domain = { lo: lo - pad, hi: hi + pad };
+      const yAt = drawGridlines(outputCtx, w, h, domain);
+      drawXTicks(outputCtx, w, h, xAt, start, end);
+      outputCtx.strokeStyle = '#999';
+      outputCtx.lineWidth = 1.5;
+      outputCtx.beginPath();
+      for (let i = start; i <= end; i++) {
+        const x = xAt(i), y = yAt(series[i]);
+        if (i === start) outputCtx.moveTo(x, y); else outputCtx.lineTo(x, y);
+      }
+      outputCtx.stroke();
+      if (!modelReady) {
+        outputCtx.fillStyle = '#999';
+        outputCtx.font = '12px ui-monospace, monospace';
+        outputCtx.textAlign = 'center';
+        outputCtx.fillText('download the model to start forecasting', w / 2, h / 2);
+        outputCtx.textAlign = 'left';
+      }
+    }
+
     function drawOutputChart() {
       const { w, h } = fitCanvas(outputCanvas, outputCtx);
       outputCtx.clearRect(0, 0, w, h);
-      if (!series || !lastForecast || lastForecast.origin !== ORIGIN) { bandNote.style.display = 'none'; return; }
+      if (!series || !INPUT_WINDOW) { bandNote.style.display = 'none'; return; }
+      if (!lastForecast || lastForecast.origin !== ORIGIN) {
+        drawOutputEmpty(w, h);
+        bandNote.style.display = 'none';
+        return;
+      }
       const { quantiles, horizon: hZ, nQuantiles: nq } = lastForecast;
       const q = (t, qi) => quantiles[t * nq + qi];
       const plotW = w - PAD_L - PAD_R;
@@ -650,7 +686,7 @@
           btn.textContent = entry.name;
         }
         btn.dataset.index = i;
-        btn.disabled = !modelReady || (entry.live && st === 'offline');
+        btn.disabled = entry.live && st === 'offline';
         btn.classList.toggle('active', i === activeIndex);
         btn.addEventListener('click', () => selectSeries(i));
         seriesGrid.appendChild(btn);
@@ -670,6 +706,15 @@
         case 'status':
           setStatus(msg.text);
           break;
+        case 'indexReady': {
+          seriesIndex = msg.seriesIndex;
+          renderSeriesGrid();
+          // load the first bundled series by default, before any model
+          // download, so INPUT/OUTPUT are never blank on arrival
+          const firstIdx = seriesIndex.findIndex((e) => !e.live);
+          selectSeries(firstIdx >= 0 ? firstIdx : 0);
+          break;
+        }
         case 'modelReady': {
           modelReady = true;
           nQuantiles = msg.nQuantiles;
@@ -681,9 +726,13 @@
           metricBackend.textContent = formatBackend(msg.backend);
           setStatus(`model loaded (${formatBytes(msg.modelBytes)}), ${formatBackend(msg.backend)}`);
           window.__app.ready = true;
-          // load the first bundled series by default
-          const firstIdx = seriesIndex.findIndex((e) => !e.live);
-          selectSeries(firstIdx >= 0 ? firstIdx : 0);
+          if (activeIndex === null) {
+            const firstIdx = seriesIndex.findIndex((e) => !e.live);
+            selectSeries(firstIdx >= 0 ? firstIdx : 0);
+          } else {
+            drawAll();
+            if (series) runForecast();
+          }
           break;
         }
         case 'seriesReady': {
