@@ -183,8 +183,40 @@
     const metricsLine = document.getElementById('metricsLine');
 
     const PAD_L = 48, PAD_R = 8, PAD_T = 10, PAD_B = 20;
-    const MIN_PRECEDING = 20;
+    const MIN_PRECEDING = 60;
+    const MAX_LIVE_WINDOW = 190;
     const QLEVELS = [0.1, 0.25, 0.5, 0.75, 0.9];
+
+    // Loose date parsing shared by window/origin lookups -- dates strings
+    // are either "YYYY-MM-DD" or "YYYY-MM-DD HH:MM" (see worker.js
+    // isoDateOrDatetime); index.json window bounds may be coarser
+    // ("1996-01" for a monthly series), so comparisons use getTime(), not
+    // string equality.
+    function looseTime(s) {
+      const t = s.trim();
+      return new Date(t.replace(' ', 'T') + (t.endsWith('Z') ? '' : 'Z')).getTime();
+    }
+
+    // The declared index.json window for a bundled series maps to a slice
+    // of the full loaded `dates` array (only us_births' bundled file is
+    // wider than its window; the others already match 1:1). Live series
+    // have no fixed window -- show at most the last MAX_LIVE_WINDOW points.
+    function computeInputWindow(entry, dates) {
+      const n = dates.length;
+      if (entry.window && entry.window.start && entry.window.end) {
+        const lo = looseTime(entry.window.start);
+        const hi = looseTime(entry.window.end);
+        let start = dates.findIndex((d) => looseTime(d) >= lo);
+        if (start < 0) start = 0;
+        let end = n - 1;
+        for (let i = n - 1; i >= 0; i--) {
+          if (looseTime(dates[i]) <= hi) { end = i; break; }
+        }
+        if (end <= start) end = n - 1;
+        return { start, end };
+      }
+      return { start: Math.max(0, n - MAX_LIVE_WINDOW), end: n - 1 };
+    }
 
     function setStatus(text) {
       statusText.textContent = text;
@@ -225,6 +257,7 @@
       runForecast() { runForecast(); },
       origin() { return ORIGIN; },
       activeIndex() { return activeIndex; },
+      inputWindowPoints() { return INPUT_WINDOW ? INPUT_WINDOW.end - INPUT_WINDOW.start + 1 : null; },
     };
 
     function fitCanvas(canvas, ctx) {
@@ -471,7 +504,7 @@
     function clampOrigin(o) {
       if (!INPUT_WINDOW) return Math.round(o);
       const lo = INPUT_WINDOW.start + MIN_PRECEDING;
-      const hi = series.length - 1 - horizon + 1;
+      const hi = Math.min(INPUT_WINDOW.end, series.length - 1 - horizon + 1);
       return Math.min(hi, Math.max(lo, Math.round(o)));
     }
 
@@ -577,7 +610,7 @@
           horizon = msg.horizon;
           naive = msg.naive;
           unit = msg.unit;
-          INPUT_WINDOW = { start: 0, end: series.length - 1 };
+          INPUT_WINDOW = computeInputWindow(seriesIndex[msg.index], dates);
           ORIGIN = clampOrigin(msg.defaultOriginIndex);
           markerOrigin = ORIGIN;
           worker.postMessage({ type: 'setActiveSeries', series });
@@ -625,6 +658,8 @@
           console.warn('[main] unknown message type:', msg.type);
       }
     };
+
+    window.addEventListener('resize', () => drawAll());
   </script>
 </body>
 </html>

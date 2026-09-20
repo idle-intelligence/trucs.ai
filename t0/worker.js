@@ -153,6 +153,23 @@ function naiveDescriptor(freq) {
     }
 }
 
+// entry.defaultOrigin may be coarser than the dates array's own format
+// (e.g. "2008-09" against monthly dates "2008-09-01"), so this matches by
+// nearest timestamp rather than exact string equality.
+function looseTimeWorker(s) {
+    const t = s.trim();
+    return new Date(t.replace(' ', 'T') + (t.endsWith('Z') ? '' : 'Z')).getTime();
+}
+function findNearestDateIndex(dates, target) {
+    const targetT = looseTimeWorker(target);
+    let best = 0, bestDiff = Infinity;
+    for (let i = 0; i < dates.length; i++) {
+        const diff = Math.abs(looseTimeWorker(dates[i]) - targetT);
+        if (diff < bestDiff) { bestDiff = diff; best = i; }
+    }
+    return best;
+}
+
 async function loadBundled(entry) {
     const base = new URL(`./data/${entry.file}`, import.meta.url).href;
     const metaUrl = new URL(`./data/${entry.meta}`, import.meta.url).href;
@@ -245,9 +262,7 @@ async function handleLoadSeries(index) {
             ({ values, dates, freq } = await loadBundled(entry));
         }
         const n = values.length;
-        const defaultOriginIndex = entry.live
-            ? n - HORIZON
-            : dates.indexOf(entry.defaultOrigin) >= 0 ? dates.indexOf(entry.defaultOrigin) : Math.max(0, n - HORIZON);
+        const defaultOriginIndex = entry.live ? n - HORIZON : findNearestDateIndex(dates, entry.defaultOrigin);
         self.postMessage({
             type: 'seriesReady',
             index,
