@@ -226,7 +226,7 @@
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
     function formatBackend(b) {
-      return b === 'webgpu' ? 'WebGPU' : b;
+      return b;
     }
 
     const worker = new Worker('./worker.js', { type: 'module' });
@@ -596,7 +596,7 @@
           metricsCard.style.display = 'grid';
           metricSize.textContent = formatBytes(msg.modelBytes);
           metricBackend.textContent = formatBackend(msg.backend);
-          setStatus(`model loaded, ${formatBackend(msg.backend)}`);
+          setStatus(`model loaded (${formatBytes(msg.modelBytes)}), ${formatBackend(msg.backend)}`);
           window.__app.ready = true;
           // load the first bundled series by default
           const firstIdx = seriesIndex.findIndex((e) => !e.live);

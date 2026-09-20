@@ -32,9 +32,13 @@ let t0wasm = null;
 let model = null;
 let seriesIndex = null; // parsed data/index.json
 
+// WebGPU: t0-fast (crates/t0-fast, no Burn at inference, GGUF Q8_0/Q4_0
+// weights kept resident on the GPU, no F32-expansion round trip -- see
+// t0-web's docs/BENCHMARKS.md head-to-head table, ~34ms warm vs Burn's
+// ~169ms). No WebGPU: Burn/burn-ndarray on CPU, same as t0-web's own page.
 const HAS_WEBGPU = typeof navigator !== 'undefined' && !!navigator.gpu;
-const BACKEND = HAS_WEBGPU ? 'webgpu' : 'wasm/ndarray';
-const PKG_DIR = HAS_WEBGPU ? './pkg-wgpu' : './pkg';
+const BACKEND = HAS_WEBGPU ? 'WebGPU · t0-fast' : 'CPU';
+const PKG_DIR = HAS_WEBGPU ? './pkg-fast' : './pkg';
 
 self.onmessage = async (e) => {
     const { type, ...data } = e.data;
