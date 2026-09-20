@@ -1,5 +1,5 @@
 // knn.js — nearest-METAR-station search over a fixed station list.
-// Port of a BallTree(haversine) nearest-neighbour search (see KelvinAnsys/weather/METAR.py).
+// A BallTree(haversine) nearest-neighbour search restated for the browser.
 // No BallTree here: the station list (~8k entries) is small enough that a linear
 // haversine scan + partial sort is plenty fast in a browser tab.
 

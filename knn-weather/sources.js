@@ -6,8 +6,8 @@
 // IEM currents.json           -> Access-Control-Allow-Origin: *
 // api.weather.gov observations -> access-control-allow-origin: *
 // api.open-meteo.com forecast  -> access-control-allow-origin: *
-// aviationweather.gov (used in TC's original METAR.py) sends no ACAO header and
-// is therefore not used here; see report.
+// aviationweather.gov sends no Access-Control-Allow-Origin header, so it is
+// not used here.
 
 const F_TO_C = (f) => ((f - 32) * 5) / 9;
 const KT_TO_MS = (kt) => kt * 0.514444;
