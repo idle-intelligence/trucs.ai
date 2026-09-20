@@ -5,10 +5,9 @@ title: "Claude and stt-web"
 
 # Claude and stt-web
 
-As I [wrote somewhere else](/blog/are-you-an-ai-maximalist),
-"how you use a coding agent" is a spectrum,
+"How you use a coding agent" is a spectrum,
 from having copilot review a single PR,
-to blindly vibe coding 100k loc AI Slop products.  
+to vibe-coding entire products nobody ever reads.  
 
 I tend to steer clear of that last type,
 and if I am "vibe coding",
@@ -85,8 +84,6 @@ When I had something actually working, I spun another team of Claude Code to pol
 review, cleanup, find issues with the code, the architecture, profile, improve performance.  
 
 You can test the result at [trucs.ai/stt](/stt/).  
-
-Did _I_ fail? Not sure if AI Slop or not, haven't read [the code](https://github.com/idle-intelligence/stt-web) yet.  
 
 ---
 
