@@ -1,7 +1,7 @@
 {
   "name": "eco2mix_national",
   "source": "RTE via ODRE (Open Data Reseaux Energies), dataset eco2mix-national-cons-def, Licence Ouverte / Open Licence",
-  "start_date": "2023-12-20 00:00:00",
+  "start_date": "2023-12-09 08:00:00",
   "freq": "30T",
-  "n_points": 384
+  "n_points": 896
 }
