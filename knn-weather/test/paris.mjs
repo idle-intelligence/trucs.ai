@@ -18,9 +18,7 @@ async function main() {
   const server = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: root, stdio: 'ignore' });
   await new Promise((r) => setTimeout(r, 500));
 
-  const browser = await chromium.launch({
-    executablePath: '/Users/tc/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell',
-  });
+  const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   const consoleErrors = [];
   page.on('pageerror', (e) => consoleErrors.push(String(e)));
