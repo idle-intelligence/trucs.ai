@@ -23,13 +23,24 @@
     }
     button:hover:not(:disabled) { background: #111; color: #fff; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #geo-btn, #find-btn, #compute-btn {
+      font-size: 1rem; padding: 0.5em 1.5em;
+    }
     .input-row { margin: 0.5em 0; }
     #status-text { color: #555; font-size: 0.9rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 0.75em; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 0.3em 0.5em; border-bottom: 1px solid #eee; white-space: nowrap; }
+    th, td { text-align: left; padding: 0.3em 0.4em; border-bottom: 1px solid #eee; white-space: nowrap; }
     th { color: #555; font-weight: normal; border-bottom: 1px solid #111; }
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .table-wrap { overflow-x: auto; }
+    .table-wrap { overflow-x: auto; max-width: 100%; }
+    #results td:nth-child(3) {
+      max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    @media (max-width: 480px) {
+      #results .col-country, #results .col-elev, #results .col-source { display: none; }
+      #results th, #results td { padding: 0.3em 0.3em; }
+      #results td:nth-child(3) { max-width: 6em; }
+    }
     .missing { color: #bbb; }
     #error { color: #b00; margin-top: 0.5em; }
     .panel-desc { color: #999; font-size: 0.8rem; }
@@ -108,8 +119,8 @@
             <th>#</th>
             <th>ICAO</th>
             <th>name</th>
-            <th>country</th>
-            <th class="num">elev (m)</th>
+            <th class="col-country">country</th>
+            <th class="num col-elev">elev (m)</th>
             <th class="num">dist (km)</th>
             <th class="num">temp (°C)</th>
             <th class="num">dewpoint (°C)</th>
@@ -117,7 +128,7 @@
             <th class="num">dir (°)</th>
             <th class="num">pres (hPa)</th>
             <th>obs (UTC)</th>
-            <th>source</th>
+            <th class="col-source">source</th>
           </tr>
         </thead>
         <tbody id="results-body"></tbody>
@@ -225,8 +236,8 @@
           <td>${i + 1}</td>
           <td>${s.icao}</td>
           <td>${s.name}</td>
-          <td>${s.country}</td>
-          <td class="num">${s.elev}</td>
+          <td class="col-country">${s.country}</td>
+          <td class="num col-elev">${s.elev}</td>
           <td class="num">${s.distance.toFixed(2)}</td>
           <td class="num">${fmtNum(o.tempC, 1)}</td>
           <td class="num">${fmtNum(o.dewpointC, 1)}</td>
@@ -234,7 +245,7 @@
           <td class="num">${fmtNum(o.windDirDeg, 0)}</td>
           <td class="num">${fmtNum(o.pressureHpa, 1)}</td>
           <td>${o.obsTime ? fmtTime(o.obsTime) : '<span class="missing">—</span>'}</td>
-          <td>${o.source ?? '<span class="missing">no current observation</span>'}</td>
+          <td class="col-source">${o.source ?? '<span class="missing">no current observation</span>'}</td>
         `;
         resultsBody.appendChild(tr);
       });
