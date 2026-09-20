@@ -210,8 +210,12 @@ async function loadBundled(entry) {
 
 // ---- live sources ----
 async function fetchLiveNoaaTide(entry) {
+    // Drawn window stays the last ~8 days (MAX_LIVE_WINDOW points in
+    // index.html); fetch enough extra hourly history before it -- 512h
+    // (~21.3 days) of context, same rule as the METAR fetch below -- so the
+    // model isn't starved of context at the default (or an early) origin.
     const end = new Date();
-    const begin = new Date(end.getTime() - 8 * 86400000);
+    const begin = new Date(end.getTime() - 30 * 86400000);
     const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
     const url = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?begin_date=${fmt(begin)}&end_date=${fmt(end)}&station=8443970&product=water_level&datum=MLLW&units=metric&time_zone=gmt&format=json`;
     const resp = await fetch(url);
@@ -226,7 +230,9 @@ async function fetchLiveNoaaTide(entry) {
 }
 
 async function fetchLiveUsgsDischarge(entry) {
-    const url = 'https://waterservices.usgs.gov/nwis/iv/?sites=01646500&parameterCd=00060&period=P3D&format=json';
+    // Drawn window stays ~3 days; fetch 512 x 15min (~5.3 days) of extra
+    // context before it -- P9D total.
+    const url = 'https://waterservices.usgs.gov/nwis/iv/?sites=01646500&parameterCd=00060&period=P9D&format=json';
     const resp = await fetch(url);
     if (!resp.ok) { const err = new Error(`USGS fetch failed: ${resp.status}`); err.status = resp.status; throw err; }
     const json = await resp.json();
@@ -238,8 +244,10 @@ async function fetchLiveUsgsDischarge(entry) {
 }
 
 async function fetchLiveMetar(entry) {
+    // Drawn window stays ~7 days; fetch 512h (~21.3 days) of extra context
+    // before it, ~29 days total.
     const end = new Date();
-    const begin = new Date(end.getTime() - 7 * 86400000);
+    const begin = new Date(end.getTime() - 29 * 86400000);
     const fmt = (d) => [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
     const [y1, m1, d1] = fmt(begin);
     const [y2, m2, d2] = fmt(end);

@@ -143,6 +143,7 @@
       <span class="right" id="metricsLine">inside band — · CRPS — · vs naive —</span>
     </div>
     <p class="panel-desc" id="naiveNote">Naive baseline: —.</p>
+    <p class="panel-desc" id="bandNote" style="display:none"></p>
 
     <h2 id="perfHeading" style="display:none">PERFORMANCE</h2>
     <div class="metrics-grid" id="metricsCard" style="display:none">
@@ -175,6 +176,7 @@
     const outputCtx = outputCanvas.getContext('2d');
     const inputDesc = document.getElementById('inputDesc');
     const naiveNote = document.getElementById('naiveNote');
+    const bandNote = document.getElementById('bandNote');
     const perfHeading = document.getElementById('perfHeading');
     const metricsCard = document.getElementById('metricsCard');
     const metricMs = document.getElementById('metricMs');
@@ -409,20 +411,41 @@
     function drawOutputChart() {
       const { w, h } = fitCanvas(outputCanvas, outputCtx);
       outputCtx.clearRect(0, 0, w, h);
-      if (!series || !lastForecast || lastForecast.origin !== ORIGIN) return;
+      if (!series || !lastForecast || lastForecast.origin !== ORIGIN) { bandNote.style.display = 'none'; return; }
       const { quantiles, horizon: hZ, nQuantiles: nq } = lastForecast;
       const q = (t, qi) => quantiles[t * nq + qi];
       const plotW = w - PAD_L - PAD_R;
       const xAt = (t) => PAD_L + (t / (hZ - 1)) * plotW;
 
+      // Y-range is [min,max] of the drawn INPUT window, the actual
+      // continuation, and the forecast median only -- NOT the full
+      // quantile band, which can run far wider than the data (e.g. a
+      // long-horizon Q10 dipping well below anything in view) and flatten
+      // everything else to a line. Bands are clipped to this frame below;
+      // a note is printed if they extend past it.
+      const mid = Math.floor(nq / 2);
       let lo = Infinity, hi = -Infinity;
-      for (const v of quantiles) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      for (let i = INPUT_WINDOW.start; i <= INPUT_WINDOW.end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
       for (let t = 0; t < hZ; t++) {
+        lo = Math.min(lo, q(t, mid)); hi = Math.max(hi, q(t, mid));
         if (ORIGIN + t < series.length) { lo = Math.min(lo, series[ORIGIN + t]); hi = Math.max(hi, series[ORIGIN + t]); }
       }
       const pad = (hi - lo) * 0.1 || 1;
       const domain = { lo: lo - pad, hi: hi + pad };
       const yAt = drawGridlines(outputCtx, w, h, domain);
+      const yAtClamped = (v) => yAt(Math.min(domain.hi, Math.max(domain.lo, v)));
+
+      let bandLo = Infinity, bandHi = -Infinity;
+      for (let t = 0; t < hZ; t++) { bandLo = Math.min(bandLo, q(t, 0)); bandHi = Math.max(bandHi, q(t, nq - 1)); }
+      const noteParts = [];
+      if (bandLo < domain.lo) noteParts.push(`Q${Math.round(QLEVELS[0] * 100)} down to ${bandLo.toFixed(0)}`);
+      if (bandHi > domain.hi) noteParts.push(`Q${Math.round(QLEVELS[nq - 1] * 100)} up to ${bandHi.toFixed(0)}`);
+      if (noteParts.length) {
+        bandNote.textContent = `band extends beyond the frame (${noteParts.join(', ')})`;
+        bandNote.style.display = '';
+      } else {
+        bandNote.style.display = 'none';
+      }
 
       outputCtx.strokeStyle = '#eee';
       outputCtx.fillStyle = '#999';
@@ -442,21 +465,20 @@
 
       outputCtx.fillStyle = 'rgba(0, 0, 0, 0.09)';
       outputCtx.beginPath();
-      for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAt(q(t, 0)));
-      for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAt(q(t, nq - 1)));
+      for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAtClamped(q(t, 0)));
+      for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAtClamped(q(t, nq - 1)));
       outputCtx.closePath();
       outputCtx.fill();
 
       if (nq >= 5) {
         outputCtx.fillStyle = 'rgba(0, 0, 0, 0.09)';
         outputCtx.beginPath();
-        for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAt(q(t, 1)));
-        for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAt(q(t, nq - 2)));
+        for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAtClamped(q(t, 1)));
+        for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAtClamped(q(t, nq - 2)));
         outputCtx.closePath();
         outputCtx.fill();
       }
 
-      const mid = Math.floor(nq / 2);
       outputCtx.strokeStyle = '#555';
       outputCtx.lineWidth = 2;
       outputCtx.beginPath();
