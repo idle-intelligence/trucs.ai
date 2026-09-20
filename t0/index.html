@@ -149,7 +149,6 @@
       </span>
       <span class="right" id="metricsLine">inside band — · CRPS — · vs naive —</span>
     </div>
-    <p class="panel-desc" id="naiveNote">Naive baseline: —.</p>
     <p class="panel-desc" id="bandNote" style="display:none"></p>
 
     <h2 id="perfHeading" style="display:none">PERFORMANCE</h2>
@@ -181,7 +180,7 @@
     const outputCanvas = document.getElementById('outputChart');
     const outputCtx = outputCanvas.getContext('2d');
     const inputDesc = document.getElementById('inputDesc');
-    const naiveNote = document.getElementById('naiveNote');
+    let naiveLabel = 'naive';
     const bandNote = document.getElementById('bandNote');
     const perfHeading = document.getElementById('perfHeading');
     const metricsCard = document.getElementById('metricsCard');
@@ -578,7 +577,7 @@
       const crps = 2 * (pinballSum / Math.max(1, pinballCount));
       const naiveRatio = n > 0 ? (saeMedian / n) / (saeNaive / n) : NaN;
       const hUnit = FREQ_UNIT[freqLabel] || 'steps';
-      metricsLine.textContent = `horizon ${hZ} ${hUnit} · inside band ${inside}/${hZ} · CRPS ${crps.toFixed(1)} · vs naive ${naiveRatio.toFixed(2)}`;
+      metricsLine.textContent = `horizon ${hZ} ${hUnit} · inside band ${inside}/${hZ} · CRPS ${crps.toFixed(1)} · vs ${naiveLabel} ${naiveRatio.toFixed(2)}`;
       metricMs.textContent = ms.toFixed(1);
     }
 
@@ -739,7 +738,7 @@
           markerOrigin = ORIGIN;
           worker.postMessage({ type: 'setActiveSeries', series });
           inputDesc.textContent = `${msg.name} (${unit}), ${msg.live ? 'live' : 'bundled'} data. Drag the origin. The model forecasts everything after it, to the end of the window.`;
-          naiveNote.textContent = `Naive baseline: ${msg.naive.label}.`;
+          naiveLabel = msg.naive.label.replace(/^repeat-/, '').replace(/-/g, ' ');
           setStatus(`${msg.name} loaded (${series.length} points)`);
           drawAll();
           runForecast();
