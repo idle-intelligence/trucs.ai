@@ -9,39 +9,88 @@
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../assets/style.css">
   <style>
-    body { max-width: 1200px; }
-    h3 { margin-top: 1.5em; }
     button {
-      font-family: inherit; font-size: 1rem; padding: 0.5em 1.5em;
-      border: 1px solid #111; background: #fff; color: #111;
-      cursor: pointer; border-radius: 2px;
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
     }
-    button:hover:not(:disabled) { background: #111; color: #fff; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .section-label { color: #555; font-size: 0.85rem; margin: 1.2em 0 0.5em; }
-    .section-label:first-child { margin-top: 0; }
-    .btn-grid {
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .voice-grid {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 0.5em;
     }
-    .pick-btn {
-      font-family: inherit; font-size: 0.85rem; padding: 0.4em 0;
-      cursor: pointer; border: 1px solid #ddd; background: #fff; color: #111;
-      border-radius: 2px; text-align: center;
+    .voice-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.4em 0;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
     }
-    .pick-btn:hover:not(:disabled) { border-color: #111; }
-    .pick-btn.active { background: #111; color: #fff; border-color: #111; }
-    .k-grid { grid-template-columns: repeat(4, 3.5em); justify-content: start; }
-    .input-row { margin: 0.6em 0; display: flex; align-items: center; gap: 0.75em; flex-wrap: wrap; }
-    input[type="text"], input[type="number"] {
-      font-family: inherit; font-size: 1rem; padding: 0.3em 0.5em;
-      border: 1px solid #ccc; border-radius: 2px;
+    .voice-btn:hover:not(:disabled) {
+      border-color: #111;
     }
-    input[type="text"] { width: 22em; max-width: 100%; }
-    input[type="number"] { width: 4.5em; }
-    #compute-btn { font-size: 1rem; padding: 0.5em 1.5em; margin-top: 0.6em; }
-    #status-text { color: #555; font-size: 0.9rem; }
+    .voice-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .voice-btn.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    .voice-btn.loading {
+      border-color: #999;
+      color: #999;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+
+    /* kNN-specific additions below — nothing above this line redefines tts/index.html rules. */
+
+    body { max-width: 1200px; }
+    h3 { margin-top: 1.5em; }
+    .section-label { color: #555; font-size: 0.85rem; margin: 1.2em 0 0.5em; }
+    .k-grid { grid-template-columns: repeat(4, 5.5em); justify-content: start; }
+    .input-row { margin: 0.75em 0; display: flex; align-items: center; gap: 0.75em; flex-wrap: wrap; }
+    input[type="text"] {
+      font-family: inherit; font-size: 1rem; padding: 0.4em 0.5em;
+      border: 1px solid #ddd; background: #fff; color: #111; border-radius: 2px;
+      width: 22em; max-width: 100%;
+    }
+    input[type="text"]:focus { outline: none; border-color: #111; }
+    #compute-btn { margin-top: 0.75em; }
     table { border-collapse: collapse; width: 100%; margin-top: 0.75em; font-size: 0.85rem; }
     th, td { text-align: left; padding: 0.3em 0.4em; border-bottom: 1px solid #eee; white-space: nowrap; }
     th { color: #555; font-weight: normal; border-bottom: 1px solid #111; }
@@ -51,15 +100,14 @@
       max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     @media (max-width: 480px) {
-      .btn-grid { grid-template-columns: repeat(3, 1fr); }
-      .k-grid { grid-template-columns: repeat(4, 1fr); }
+      .voice-grid { grid-template-columns: repeat(2, 1fr); }
+      .k-grid { grid-template-columns: repeat(2, 1fr); }
       #results .col-country, #results .col-elev, #results .col-source { display: none; }
       #results th, #results td { padding: 0.3em 0.3em; }
       #results td:nth-child(3) { max-width: 6em; }
     }
     .missing { color: #bbb; }
     #error { color: #b00; margin-top: 0.5em; }
-    .panel-desc { color: #999; font-size: 0.8rem; }
     .calc-var { margin-top: 1.5em; }
     .calc-var h3 { margin-bottom: 0.3em; }
     .calc-summary { margin: 0.3em 0 0.5em; }
@@ -84,27 +132,25 @@
       observations fetched directly from the source APIs.
     </p>
 
-    <h2>STATUS</h2>
-    <p id="status-text">choose a location</p>
+    <div id="model-status">
+      <span id="status-text">choose a location</span>
+    </div>
+
+    <hr>
 
     <h2>INPUT</h2>
-    <div id="controls">
-      <p class="section-label">location</p>
-      <div class="btn-grid" id="city-grid"></div>
-      <div class="input-row">
-        <button id="geo-btn" type="button" title="Use my location">use my location</button>
-        <input type="text" id="loc-input" placeholder='or type "lat, lon" or a city name' aria-label="location">
-      </div>
-
-      <p class="section-label">stations</p>
-      <div class="input-row">
-        <div class="btn-grid k-grid" id="k-grid"></div>
-        <input type="number" id="k-input" step="1" min="1" max="23" value="7" aria-label="number of stations">
-      </div>
-
-      <button id="compute-btn" type="button" disabled>compute</button>
-      <div id="error" hidden></div>
+    <p class="section-label">location</p>
+    <div class="voice-grid" id="city-grid"></div>
+    <div class="input-row">
+      <button id="geo-btn" type="button" title="Use my location">use my location</button>
+      <input type="text" id="loc-input" placeholder='or type "lat, lon" or a city name' aria-label="location">
     </div>
+
+    <p class="section-label">stations</p>
+    <div class="voice-grid k-grid" id="k-grid"></div>
+
+    <button id="compute-btn" type="button" disabled>compute</button>
+    <p id="error" class="panel-desc" hidden></p>
 
     <h2>OUTPUT</h2>
     <p class="panel-desc" id="output-model-note" hidden>
@@ -112,16 +158,17 @@
       numerical weather model (Open-Meteo), interpolated to this point. It is
       a model output, not a measurement.
     </p>
-    <div id="output-panel"></div>
+    <div id="output-panel"><p class="note">choose a location, then compute</p></div>
 
     <h2>PERFORMANCE</h2>
     <table id="perf-table">
-      <tbody id="perf-body"></tbody>
+      <tbody id="perf-body"><tr><td class="note" colspan="2">—</td></tr></tbody>
     </table>
+
+    <hr>
 
     <h2>how</h2>
 
-    <h3>stations</h3>
     <div class="table-wrap">
       <table id="results" hidden>
         <thead>
@@ -172,9 +219,12 @@
       Source: <a href="https://github.com/idle-intelligence/trucs.ai/tree/main/knn-weather">github.com/idle-intelligence/trucs.ai/tree/main/knn-weather</a>.
     </p>
 
-    <p class="panel-desc" style="margin-top: 2em;">
+    <p class="panel-desc">
       kNN / IDW method from SenseAI's weather tools (2015), where I was CTO; elevation, vapour-pressure, QNH and vector-wind corrections after Nalder &amp; Wein (1998) and standard practice.
     </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
   </main>
 
   <script type="module">
@@ -185,7 +235,6 @@
 
     const cityGrid = document.getElementById('city-grid');
     const kGrid = document.getElementById('k-grid');
-    const kInput = document.getElementById('k-input');
     const locInput = document.getElementById('loc-input');
     const geoBtn = document.getElementById('geo-btn');
     const computeBtn = document.getElementById('compute-btn');
@@ -249,7 +298,7 @@
     // ── Location + station-count pickers ──
 
     let currentLocation = null; // { lat, lon, label }
-    let currentK = 7;
+    let currentK = 5;
 
     function normalize(s) {
       return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -260,7 +309,7 @@
       for (const c of CITIES) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'pick-btn';
+        btn.className = 'voice-btn';
         btn.textContent = c.name;
         btn.addEventListener('click', () => setLocation(c.lat, c.lon, c.name));
         cityGrid.appendChild(btn);
@@ -272,7 +321,7 @@
       for (const k of K_CHOICES) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'pick-btn';
+        btn.className = 'voice-btn';
         btn.textContent = String(k);
         btn.addEventListener('click', () => setK(k));
         kGrid.appendChild(btn);
@@ -280,13 +329,13 @@
     }
 
     function markActiveCity(label) {
-      cityGrid.querySelectorAll('.pick-btn').forEach((btn) => {
+      cityGrid.querySelectorAll('.voice-btn').forEach((btn) => {
         btn.classList.toggle('active', btn.textContent === label);
       });
     }
 
     function markActiveK(k) {
-      kGrid.querySelectorAll('.pick-btn').forEach((btn) => {
+      kGrid.querySelectorAll('.voice-btn').forEach((btn) => {
         btn.classList.toggle('active', Number(btn.textContent) === k);
       });
     }
@@ -302,7 +351,6 @@
 
     function setK(k) {
       currentK = Math.max(1, Math.min(23, k));
-      kInput.value = currentK;
       markActiveK(currentK);
     }
 
@@ -336,10 +384,6 @@
     renderKButtons();
     markActiveK(currentK);
 
-    kInput.addEventListener('change', () => {
-      const v = Math.max(1, Math.min(23, parseInt(kInput.value, 10) || 7));
-      setK(v);
-    });
     locInput.addEventListener('change', applyLocationInput);
     locInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') applyLocationInput();
@@ -382,6 +426,17 @@
         resultsBody.appendChild(tr);
       });
       resultsTable.hidden = rows.length === 0;
+      let heading = document.getElementById('stations-heading');
+      if (rows.length > 0) {
+        if (!heading) {
+          heading = document.createElement('h3');
+          heading.id = 'stations-heading';
+          heading.textContent = 'stations';
+          resultsTable.closest('.table-wrap').before(heading);
+        }
+      } else if (heading) {
+        heading.remove();
+      }
     }
 
     // rows: final neighbours. corr: computeCorrections() result. Renders the
@@ -606,7 +661,7 @@
         return;
       }
       const { lat, lon } = currentLocation;
-      const k = Math.max(1, Math.min(23, parseInt(kInput.value, 10) || 7));
+      const k = currentK;
 
       showError('');
       computeBtn.disabled = true;
