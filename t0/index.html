@@ -50,6 +50,13 @@
     }
     .series-btn:hover:not(:disabled) { border-color: #111; }
     .series-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .series-btn .hint {
+      display: block;
+      font-size: 0.7rem;
+      color: #999;
+      margin-top: 0.15em;
+    }
+    .series-btn.active .hint { color: #ccc; }
     .series-btn.active {
       background: #111;
       color: #fff;
@@ -227,7 +234,6 @@
     }
 
     function setStatus(text) {
-      lastStatus = text;
       statusText.textContent = text;
       console.log(`[t0] ${text}`);
     }
@@ -259,10 +265,10 @@
     let requestIdCounter = 0;
     let debounceTimer = null;
 
-    // Series index + per-series live-fetch state, both available before the
-    // model itself is loaded (the worker prefetches live series immediately).
-    let liveState = {}; // index -> 'loading' | 'ready' | 'offline'
-    let lastStatus = statusText.textContent;
+    // Per-series live-fetch state. Nothing is fetched until a live series
+    // is actually clicked; a live button shows a "click to load live data"
+    // hint until then, or "(offline)" if the fetch failed.
+    let liveState = {}; // index -> 'ready' | 'offline' (absent = not yet fetched)
 
     window.__app = {
       ready: false,
@@ -626,7 +632,6 @@
       lastForecast = null;
       drawAll();
       updateMetrics();
-      setStatus(`Loading ${seriesIndex[index].name}...`);
       worker.postMessage({ type: 'loadSeries', index });
     }
 
@@ -637,11 +642,15 @@
         btn.className = 'series-btn';
         btn.type = 'button';
         const st = liveState[i];
-        if (entry.live && st === 'offline') btn.textContent = `${entry.name} (offline)`;
-        else if (entry.live && st !== 'ready') btn.textContent = `${entry.name}…`;
-        else btn.textContent = entry.name;
+        if (entry.live && st === 'offline') {
+          btn.textContent = `${entry.name} (offline)`;
+        } else if (entry.live && st !== 'ready') {
+          btn.innerHTML = `${entry.name}<br><span class="hint">click to load live data</span>`;
+        } else {
+          btn.textContent = entry.name;
+        }
         btn.dataset.index = i;
-        btn.disabled = !modelReady || (entry.live && st !== 'ready');
+        btn.disabled = !modelReady || (entry.live && st === 'offline');
         btn.classList.toggle('active', i === activeIndex);
         btn.addEventListener('click', () => selectSeries(i));
         seriesGrid.appendChild(btn);
@@ -661,22 +670,6 @@
         case 'status':
           setStatus(msg.text);
           break;
-        case 'seriesIndexReady':
-          seriesIndex = msg.seriesIndex;
-          renderSeriesGrid();
-          break;
-        case 'liveStatus':
-          liveState[msg.index] = msg.status;
-          if (msg.status === 'offline') console.warn(`[t0] ${msg.name} offline: ${msg.reason}`);
-          if (seriesIndex) renderSeriesGrid();
-          break;
-        case 'liveProgress':
-          statusText.textContent = msg.text;
-          console.log(`[t0] ${msg.text}`);
-          break;
-        case 'liveProgressDone':
-          statusText.textContent = lastStatus;
-          break;
         case 'modelReady': {
           modelReady = true;
           nQuantiles = msg.nQuantiles;
@@ -694,6 +687,7 @@
           break;
         }
         case 'seriesReady': {
+          if (msg.live) { liveState[msg.index] = 'ready'; renderSeriesGrid(); }
           if (msg.index !== activeIndex) break; // stale response, user switched again
           series = msg.series;
           dates = msg.dates;

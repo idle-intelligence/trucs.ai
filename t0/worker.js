@@ -1,9 +1,10 @@
 /**
  * Web Worker: loads the t0-wasm module + model once, then loads whichever
  * series the page picks (bundled file or a live HTTP fetch) and runs
- * forecasts against it. Live series are prefetched in parallel, in the
- * background, starting the moment the worker is created (independent of
- * the model download), so a click on a live series button is instant.
+ * forecasts against it. Nothing live is fetched until a live series is
+ * actually clicked -- the model download runs first and alone. A live
+ * fetch's result is cached in memory for the session, so a second click on
+ * the same series is instant.
  *
  * Protocol:
  *   Main -> Worker:
@@ -13,12 +14,8 @@
  *
  *   Worker -> Main:
  *     { type: 'status', text, key? }
- *     { type: 'seriesIndexReady', seriesIndex }
- *     { type: 'liveStatus', index, name, status: 'loading' | 'ready' | 'offline', reason? }
- *     { type: 'liveProgress', text }                     -- "fetching live series N/M..."
- *     { type: 'liveProgressDone' }                       -- restore the caller's own status line
  *     { type: 'modelReady', modelBytes, loadMs, nQuantiles, backend, seriesIndex }
- *     { type: 'seriesReady', index, series, dates, name, unit, frequency, defaultOriginIndex, naive }
+ *     { type: 'seriesReady', index, series, dates, name, unit, frequency, defaultOriginIndex, naive, live }
  *     { type: 'seriesOffline', index, name, reason }
  *     { type: 'forecast', origin, requestId, quantiles, nQuantiles, horizon, ms }
  *     { type: 'error', message }
@@ -36,7 +33,9 @@ const CONTEXT_CAP = 512;
 // live series with no fixed window, used to place the 60%-into-window
 // default origin below.
 const MAX_LIVE_WINDOW = 190;
-const LIVE_STAGGER_MS = 350;
+// Base backoff before retrying IEM's asos.py specifically -- it's the one
+// endpoint here that's slow and prone to 429/503 under load.
+const IEM_RETRY_STAGGER_MS = 350;
 
 let t0wasm = null;
 let model = null;
@@ -101,15 +100,6 @@ async function cachedFetch(url, label) {
     return buf.buffer;
 }
 
-// The series index is fetched once, immediately, so the live prefetch below
-// can start without waiting for the model download button to be clicked.
-const seriesIndexReady = (async () => {
-    seriesIndex = await fetch(INDEX_URL).then((r) => r.json());
-    self.postMessage({ type: 'seriesIndexReady', seriesIndex });
-    return seriesIndex;
-})();
-seriesIndexReady.then(() => { prefetchAllLive(); });
-
 async function handleLoad() {
     self.postMessage({ type: 'status', text: `Loading WASM module (${BACKEND})...` });
     const wasmJsUrl = new URL(`${PKG_DIR}/t0_wasm.js`, import.meta.url).href;
@@ -126,7 +116,10 @@ async function handleLoad() {
     const loadMs = performance.now() - t0;
     self.postMessage({ type: 'status', key: 'load', text: `Model loaded in ${loadMs.toFixed(0)} ms, backend ${BACKEND}` });
 
-    seriesIndex = await seriesIndexReady;
+    // Only data/index.json itself -- not any live source (IEM/NOAA/USGS/
+    // OpenAQ) -- is fetched here; a live series' own data is fetched on
+    // first click, in handleLoadSeries below.
+    seriesIndex = await fetch(INDEX_URL).then((r) => r.json());
 
     self.postMessage({
         type: 'modelReady',
@@ -231,8 +224,11 @@ async function fetchLiveNoaaTide(entry) {
 
 async function fetchLiveUsgsDischarge(entry) {
     // Drawn window stays ~3 days; fetch 512 x 15min (~5.3 days) of extra
-    // context before it -- P9D total.
-    const url = 'https://waterservices.usgs.gov/nwis/iv/?sites=01646500&parameterCd=00060&period=P9D&format=json';
+    // context before it -- 200h total (3d + 512*15min), no more.
+    const end = new Date();
+    const begin = new Date(end.getTime() - 200 * 3600000);
+    const fmt = (d) => d.toISOString().slice(0, 19) + 'Z';
+    const url = `https://waterservices.usgs.gov/nwis/iv/?sites=01646500&parameterCd=00060&startDT=${fmt(begin)}&endDT=${fmt(end)}&format=json`;
     const resp = await fetch(url);
     if (!resp.ok) { const err = new Error(`USGS fetch failed: ${resp.status}`); err.status = resp.status; throw err; }
     const json = await resp.json();
@@ -283,60 +279,24 @@ const LIVE_FETCHERS = {
     'openaq-v3': fetchLiveOpenAq,
 };
 
-// ---- live prefetch: kicked off once at worker startup, in parallel,
-// staggered 350ms apart (IEM's asos.py endpoint especially is slow and
-// throttles), one retry with backoff on 429/503. Cached in memory for the
-// life of the worker (the session). ----
-const liveCache = new Map();    // index -> { status: 'ready' | 'offline', result?, reason? }
-const livePromises = new Map(); // index -> in-flight/settled prefetch promise
-let liveTotal = 0;
-let liveDone = 0;
+// Live fetches happen only on demand (first click on that series), never
+// as a prefetch. Cached in memory for the life of the worker (the
+// session), so a repeat click is instant.
+const liveCache = new Map(); // index -> { status: 'ready' | 'offline', result?, reason? }
 
 async function fetchWithRetry(fetcher, entry) {
     try {
         return await fetcher(entry);
     } catch (err) {
         if (err.status === 429 || err.status === 503) {
-            await sleep(800 + Math.random() * 400);
+            const backoff = entry.liveApi === 'iem-metar'
+                ? IEM_RETRY_STAGGER_MS * 2 + Math.random() * 400
+                : 800 + Math.random() * 400;
+            await sleep(backoff);
             return await fetcher(entry);
         }
         throw err;
     }
-}
-
-function prefetchOne(entry, index, order) {
-    const p = (async () => {
-        self.postMessage({ type: 'liveStatus', index, name: entry.name, status: 'loading' });
-        await sleep(order * LIVE_STAGGER_MS);
-        const fetcher = LIVE_FETCHERS[entry.liveApi];
-        try {
-            if (!fetcher) throw new Error(`no fetcher for liveApi ${entry.liveApi}`);
-            const result = await fetchWithRetry(fetcher, entry);
-            liveCache.set(index, { status: 'ready', result });
-            self.postMessage({ type: 'liveStatus', index, name: entry.name, status: 'ready' });
-            return result;
-        } catch (err) {
-            const reason = err.message || String(err);
-            liveCache.set(index, { status: 'offline', reason });
-            self.postMessage({ type: 'liveStatus', index, name: entry.name, status: 'offline', reason });
-            throw err;
-        } finally {
-            liveDone += 1;
-            self.postMessage({ type: 'liveProgress', text: `fetching live series ${liveDone}/${liveTotal}...` });
-        }
-    })();
-    livePromises.set(index, p);
-    return p;
-}
-
-async function prefetchAllLive() {
-    const liveEntries = seriesIndex.map((entry, index) => ({ entry, index })).filter((x) => x.entry.live);
-    liveTotal = liveEntries.length;
-    liveDone = 0;
-    if (liveTotal === 0) return;
-    self.postMessage({ type: 'liveProgress', text: `fetching live series 0/${liveTotal}...` });
-    await Promise.allSettled(liveEntries.map(({ entry, index }, order) => prefetchOne(entry, index, order)));
-    self.postMessage({ type: 'liveProgressDone' });
 }
 
 // 60% into the displayed window, matching index.html's MAX_LIVE_WINDOW slice.
@@ -348,7 +308,6 @@ function liveDefaultOriginIndex(n) {
 
 async function handleLoadSeries(index) {
     const entry = seriesIndex[index];
-    self.postMessage({ type: 'status', text: `Loading ${entry.name}...` });
     try {
         let values, dates, freq;
         if (entry.live) {
@@ -357,14 +316,20 @@ async function handleLoadSeries(index) {
                 ({ values, dates, freq } = cached.result);
             } else if (cached && cached.status === 'offline') {
                 throw new Error(cached.reason);
-            } else if (livePromises.has(index)) {
-                ({ values, dates, freq } = await livePromises.get(index));
             } else {
+                self.postMessage({ type: 'status', text: `fetching ${entry.name}...` });
                 const fetcher = LIVE_FETCHERS[entry.liveApi];
                 if (!fetcher) throw new Error(`no fetcher for liveApi ${entry.liveApi}`);
-                ({ values, dates, freq } = await fetcher(entry));
+                const t0 = performance.now();
+                const result = await fetchWithRetry(fetcher, entry);
+                const fetchMs = performance.now() - t0;
+                liveCache.set(index, { status: 'ready', result });
+                console.log(`[worker] ${entry.name} fetched in ${fetchMs.toFixed(0)}ms`);
+                self.postMessage({ type: 'status', text: `${entry.name} fetched in ${(fetchMs / 1000).toFixed(1)}s` });
+                ({ values, dates, freq } = result);
             }
         } else {
+            self.postMessage({ type: 'status', text: `Loading ${entry.name}...` });
             ({ values, dates, freq } = await loadBundled(entry));
         }
         const n = values.length;
@@ -384,7 +349,11 @@ async function handleLoadSeries(index) {
             license: entry.license,
         });
     } catch (err) {
-        self.postMessage({ type: 'seriesOffline', index, name: entry.name, reason: err.message || String(err) });
+        const reason = err.message || String(err);
+        if (entry.live && (!liveCache.has(index) || liveCache.get(index).status !== 'offline')) {
+            liveCache.set(index, { status: 'offline', reason });
+        }
+        self.postMessage({ type: 'seriesOffline', index, name: entry.name, reason });
     }
 }
 
