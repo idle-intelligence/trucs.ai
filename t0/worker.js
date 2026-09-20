@@ -23,9 +23,9 @@
  *     { type: 'error', message }
  */
 
-// TODO(TC): once t0-alpha-q8_0.gguf is published, replace LOCAL model
+// TODO: once t0-alpha-q8_0.gguf is published, replace LOCAL model
 // fetching below with this Hub URL.
-const MODEL_HUB_URL = 'https://huggingface.co/idle-intelligence/t0-alpha-q8_0/resolve/main/t0-alpha-q8_0.gguf';
+const MODEL_HUB_URL = 'https://huggingface.co/idle-intelligence/t0-alpha-q8_0-webgpu/resolve/main/t0-alpha-q8_0.gguf';
 const MODEL_URL = new URL('./models/t0-alpha-q8_0.gguf', import.meta.url).href;
 const INDEX_URL = new URL('./data/index.json', import.meta.url).href;
 const CACHE_NAME = 't0-model-v1';
