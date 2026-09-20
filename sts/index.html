@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>speech-to-speech — trucs.ai</title>
+  <meta name="description" content="Full-duplex voice-to-voice running in your browser via WebGPU. No server, no API key.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    button.recording {
+      background: #111;
+      color: #fff;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .notes {
+      margin-top: 1.5em;
+      word-break: break-word;
+      min-height: 4em;
+    }
+    .notes p {
+      margin: 1em 0;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>speech-to-speech</h1>
+    <p>
+      Full-duplex voice-to-voice in your browser.<br>
+      Rust → WebAssembly + WebGPU. No server, no API key.<br>
+      Your audio never leaves your machine.
+    </p>
+
+    <div id="model-status">
+      <button id="load-btn" disabled>download</button>
+      <span id="status-text">model will be stored locally: ~3.8 GB</span>
+    </div>
+    <p class="panel-desc">The download button is disabled until the demo is usable.</p>
+
+    <hr>
+
+    <button id="record-btn" disabled>start recording</button>
+
+    <div id="sts-notes" class="notes">
+      <p>A Q4_K-quantized PersonaPlex-7B, pruned to 24 layers with QLoRA recovery, running on Burn's wgpu backend compiled to WebAssembly. The pipeline is microphone → Mimi encoder → temporal and depth transformers → Mimi decoder → playback, end to end in your browser.</p>
+      <p>Walkie-talkie mode works, with a handful of voice presets. Generation runs about 3× slower than realtime, so it is turn-based for now. Audio quality is poor.</p>
+      <p>Full duplex mode, where the model can listen and speak at the same time, is not supported yet. The model runs in "walkie mode": it listens, then speaks.</p>
+      <p>Next: true duplex streaming, then performance work.</p>
+    </div>
+
+    <hr>
+
+    <p id="desc-full" class="panel-desc">Quantized, pruned <a href="https://huggingface.co/idle-intelligence/personaplex-24L-q4_k-webgpu">PersonaPlex-7B</a> (24 layers, QLoRA-recovered) model (Mimi audio codec + temporal/depth transformers), <a href="https://github.com/idle-intelligence/sts-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.</p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+</body>
+</html>
