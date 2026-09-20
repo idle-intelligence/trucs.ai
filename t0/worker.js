@@ -1,20 +1,26 @@
 /**
  * Web Worker: loads the t0-wasm module + model once, then loads whichever
  * series the page picks (bundled file or a live HTTP fetch) and runs
- * forecasts against it.
+ * forecasts against it. Live series are prefetched in parallel, in the
+ * background, starting the moment the worker is created (independent of
+ * the model download), so a click on a live series button is instant.
  *
  * Protocol:
  *   Main -> Worker:
  *     { type: 'load' }                                  -- fetch WASM + model, init
  *     { type: 'loadSeries', index }                      -- fetch/parse the series at data/index.json[index]
- *     { type: 'forecast', origin: number, requestId: number }
+ *     { type: 'forecast', origin: number, horizon: number, requestId: number }
  *
  *   Worker -> Main:
  *     { type: 'status', text, key? }
- *     { type: 'modelReady', modelBytes, loadMs, nQuantiles, horizon, backend }
- *     { type: 'seriesReady', index, series, dates, name, unit, frequency, defaultOriginIndex, horizon, naive }
+ *     { type: 'seriesIndexReady', seriesIndex }
+ *     { type: 'liveStatus', index, name, status: 'loading' | 'ready' | 'offline', reason? }
+ *     { type: 'liveProgress', text }                     -- "fetching live series N/M..."
+ *     { type: 'liveProgressDone' }                       -- restore the caller's own status line
+ *     { type: 'modelReady', modelBytes, loadMs, nQuantiles, backend, seriesIndex }
+ *     { type: 'seriesReady', index, series, dates, name, unit, frequency, defaultOriginIndex, naive }
  *     { type: 'seriesOffline', index, name, reason }
- *     { type: 'forecast', origin, originDate, requestId, quantiles, nQuantiles, horizon, ms }
+ *     { type: 'forecast', origin, requestId, quantiles, nQuantiles, horizon, ms }
  *     { type: 'error', message }
  */
 
@@ -26,7 +32,11 @@ const INDEX_URL = new URL('./data/index.json', import.meta.url).href;
 const CACHE_NAME = 't0-model-v1';
 
 const CONTEXT_CAP = 512;
-const HORIZON = 32;
+// Matches MAX_LIVE_WINDOW in index.html -- the last N points shown for a
+// live series with no fixed window, used to place the 60%-into-window
+// default origin below.
+const MAX_LIVE_WINDOW = 190;
+const LIVE_STAGGER_MS = 350;
 
 let t0wasm = null;
 let model = null;
@@ -48,7 +58,7 @@ self.onmessage = async (e) => {
         } else if (type === 'loadSeries') {
             await handleLoadSeries(data.index);
         } else if (type === 'forecast') {
-            await handleForecast(data.origin, data.requestId);
+            await handleForecast(data.origin, data.horizon, data.requestId);
         } else if (type === 'setActiveSeries') {
             self.__currentSeries = data.series;
         } else {
@@ -91,6 +101,15 @@ async function cachedFetch(url, label) {
     return buf.buffer;
 }
 
+// The series index is fetched once, immediately, so the live prefetch below
+// can start without waiting for the model download button to be clicked.
+const seriesIndexReady = (async () => {
+    seriesIndex = await fetch(INDEX_URL).then((r) => r.json());
+    self.postMessage({ type: 'seriesIndexReady', seriesIndex });
+    return seriesIndex;
+})();
+seriesIndexReady.then(() => { prefetchAllLive(); });
+
 async function handleLoad() {
     self.postMessage({ type: 'status', text: `Loading WASM module (${BACKEND})...` });
     const wasmJsUrl = new URL(`${PKG_DIR}/t0_wasm.js`, import.meta.url).href;
@@ -107,14 +126,13 @@ async function handleLoad() {
     const loadMs = performance.now() - t0;
     self.postMessage({ type: 'status', key: 'load', text: `Model loaded in ${loadMs.toFixed(0)} ms, backend ${BACKEND}` });
 
-    seriesIndex = await fetch(INDEX_URL).then((r) => r.json());
+    seriesIndex = await seriesIndexReady;
 
     self.postMessage({
         type: 'modelReady',
         modelBytes: modelBuf.byteLength,
         loadMs,
         nQuantiles: model.nQuantiles(),
-        horizon: HORIZON,
         backend: BACKEND,
         seriesIndex,
     });
@@ -174,6 +192,10 @@ function findNearestDateIndex(dates, target) {
     return best;
 }
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function loadBundled(entry) {
     const base = new URL(`./data/${entry.file}`, import.meta.url).href;
     const metaUrl = new URL(`./data/${entry.meta}`, import.meta.url).href;
@@ -193,7 +215,7 @@ async function fetchLiveNoaaTide(entry) {
     const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
     const url = `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?begin_date=${fmt(begin)}&end_date=${fmt(end)}&station=8443970&product=water_level&datum=MLLW&units=metric&time_zone=gmt&format=json`;
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`NOAA tide fetch failed: ${resp.status}`);
+    if (!resp.ok) { const err = new Error(`NOAA tide fetch failed: ${resp.status}`); err.status = resp.status; throw err; }
     const json = await resp.json();
     if (json.error) throw new Error(json.error.message || 'NOAA tide error');
     const rows = json.data; // 6-min native
@@ -206,7 +228,7 @@ async function fetchLiveNoaaTide(entry) {
 async function fetchLiveUsgsDischarge(entry) {
     const url = 'https://waterservices.usgs.gov/nwis/iv/?sites=01646500&parameterCd=00060&period=P3D&format=json';
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`USGS fetch failed: ${resp.status}`);
+    if (!resp.ok) { const err = new Error(`USGS fetch failed: ${resp.status}`); err.status = resp.status; throw err; }
     const json = await resp.json();
     const series = json.value?.timeSeries?.[0]?.values?.[0]?.value;
     if (!series || !series.length) throw new Error('USGS: no data returned');
@@ -223,7 +245,7 @@ async function fetchLiveMetar(entry) {
     const [y2, m2, d2] = fmt(end);
     const url = `https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=LFPB&data=tmpc&year1=${y1}&month1=${m1}&day1=${d1}&year2=${y2}&month2=${m2}&day2=${d2}&tz=UTC&format=onlycomma&latlon=no&elev=no&missing=M&trace=T&direct=no&report_type=3`;
     const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`IEM METAR fetch failed: ${resp.status}`);
+    if (!resp.ok) { const err = new Error(`IEM METAR fetch failed: ${resp.status}`); err.status = resp.status; throw err; }
     const text = await resp.text();
     const lines = text.trim().split('\n').slice(1);
     const values = [], dates = [];
@@ -242,7 +264,7 @@ async function fetchLiveOpenAq(entry) {
     // deployment does not have -- see web/data/README.md (series repo).
     // This always fails, surfacing "(offline)" on the button, per spec.
     const resp = await fetch(entry.liveUrl);
-    if (!resp.ok) throw new Error(`OpenAQ requires an API key (HTTP ${resp.status})`);
+    if (!resp.ok) { const err = new Error(`OpenAQ requires an API key (HTTP ${resp.status})`); err.status = resp.status; throw err; }
     throw new Error('OpenAQ: unexpected success without a key -- parsing not implemented');
 }
 
@@ -253,20 +275,92 @@ const LIVE_FETCHERS = {
     'openaq-v3': fetchLiveOpenAq,
 };
 
+// ---- live prefetch: kicked off once at worker startup, in parallel,
+// staggered 350ms apart (IEM's asos.py endpoint especially is slow and
+// throttles), one retry with backoff on 429/503. Cached in memory for the
+// life of the worker (the session). ----
+const liveCache = new Map();    // index -> { status: 'ready' | 'offline', result?, reason? }
+const livePromises = new Map(); // index -> in-flight/settled prefetch promise
+let liveTotal = 0;
+let liveDone = 0;
+
+async function fetchWithRetry(fetcher, entry) {
+    try {
+        return await fetcher(entry);
+    } catch (err) {
+        if (err.status === 429 || err.status === 503) {
+            await sleep(800 + Math.random() * 400);
+            return await fetcher(entry);
+        }
+        throw err;
+    }
+}
+
+function prefetchOne(entry, index, order) {
+    const p = (async () => {
+        self.postMessage({ type: 'liveStatus', index, name: entry.name, status: 'loading' });
+        await sleep(order * LIVE_STAGGER_MS);
+        const fetcher = LIVE_FETCHERS[entry.liveApi];
+        try {
+            if (!fetcher) throw new Error(`no fetcher for liveApi ${entry.liveApi}`);
+            const result = await fetchWithRetry(fetcher, entry);
+            liveCache.set(index, { status: 'ready', result });
+            self.postMessage({ type: 'liveStatus', index, name: entry.name, status: 'ready' });
+            return result;
+        } catch (err) {
+            const reason = err.message || String(err);
+            liveCache.set(index, { status: 'offline', reason });
+            self.postMessage({ type: 'liveStatus', index, name: entry.name, status: 'offline', reason });
+            throw err;
+        } finally {
+            liveDone += 1;
+            self.postMessage({ type: 'liveProgress', text: `fetching live series ${liveDone}/${liveTotal}...` });
+        }
+    })();
+    livePromises.set(index, p);
+    return p;
+}
+
+async function prefetchAllLive() {
+    const liveEntries = seriesIndex.map((entry, index) => ({ entry, index })).filter((x) => x.entry.live);
+    liveTotal = liveEntries.length;
+    liveDone = 0;
+    if (liveTotal === 0) return;
+    self.postMessage({ type: 'liveProgress', text: `fetching live series 0/${liveTotal}...` });
+    await Promise.allSettled(liveEntries.map(({ entry, index }, order) => prefetchOne(entry, index, order)));
+    self.postMessage({ type: 'liveProgressDone' });
+}
+
+// 60% into the displayed window, matching index.html's MAX_LIVE_WINDOW slice.
+function liveDefaultOriginIndex(n) {
+    const start = Math.max(0, n - MAX_LIVE_WINDOW);
+    const end = n - 1;
+    return start + Math.round(0.6 * (end - start));
+}
+
 async function handleLoadSeries(index) {
     const entry = seriesIndex[index];
     self.postMessage({ type: 'status', text: `Loading ${entry.name}...` });
     try {
         let values, dates, freq;
         if (entry.live) {
-            const fetcher = LIVE_FETCHERS[entry.liveApi];
-            if (!fetcher) throw new Error(`no fetcher for liveApi ${entry.liveApi}`);
-            ({ values, dates, freq } = await fetcher(entry));
+            const cached = liveCache.get(index);
+            if (cached && cached.status === 'ready') {
+                ({ values, dates, freq } = cached.result);
+            } else if (cached && cached.status === 'offline') {
+                throw new Error(cached.reason);
+            } else if (livePromises.has(index)) {
+                ({ values, dates, freq } = await livePromises.get(index));
+            } else {
+                const fetcher = LIVE_FETCHERS[entry.liveApi];
+                if (!fetcher) throw new Error(`no fetcher for liveApi ${entry.liveApi}`);
+                ({ values, dates, freq } = await fetcher(entry));
+            }
         } else {
             ({ values, dates, freq } = await loadBundled(entry));
         }
         const n = values.length;
-        const defaultOriginIndex = entry.live ? n - HORIZON : findNearestDateIndex(dates, entry.defaultOrigin);
+        const defaultOriginIndex = entry.live ? liveDefaultOriginIndex(n) : findNearestDateIndex(dates, entry.defaultOrigin);
         self.postMessage({
             type: 'seriesReady',
             index,
@@ -277,7 +371,6 @@ async function handleLoadSeries(index) {
             series: values,
             dates,
             defaultOriginIndex,
-            horizon: HORIZON,
             naive: naiveDescriptor(freq),
             source: entry.source,
             license: entry.license,
@@ -287,7 +380,7 @@ async function handleLoadSeries(index) {
     }
 }
 
-async function handleForecast(origin, requestId) {
+async function handleForecast(origin, horizon, requestId) {
     if (!model || !self.__currentSeries) {
         self.postMessage({ type: 'error', message: 'forecast requested before model/series ready' });
         return;
@@ -296,7 +389,7 @@ async function handleForecast(origin, requestId) {
     const ctxStart = Math.max(0, origin - CONTEXT_CAP);
     const context = new Float32Array(series.slice(ctxStart, origin));
     const t0 = performance.now();
-    const quantiles = await model.forecast(context, HORIZON);
+    const quantiles = await model.forecast(context, horizon);
     const ms = performance.now() - t0;
     self.postMessage({
         type: 'forecast',
@@ -304,7 +397,7 @@ async function handleForecast(origin, requestId) {
         requestId,
         quantiles: Array.from(quantiles),
         nQuantiles: model.nQuantiles(),
-        horizon: HORIZON,
+        horizon,
         ms,
     });
 }

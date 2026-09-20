@@ -117,7 +117,7 @@
     <p>
       t0-alpha, The Forecasting Company's open time-series model, quantized by us to 8 bit.<br>
       Forecasting in your browser on WebGPU. No server.<br>
-      Pick a series below, drag the origin, and watch it predict the next 32 steps.
+      Pick a series below, drag the origin, and watch it forecast everything after it.
     </p>
 
     <div id="model-status">
@@ -186,6 +186,12 @@
     const MIN_PRECEDING = 60;
     const MAX_LIVE_WINDOW = 190;
     const QLEVELS = [0.1, 0.25, 0.5, 0.75, 0.9];
+    // Horizon is derived from the origin's distance to the window end (see
+    // computeHorizon), not fixed -- these are just the model's own bounds
+    // (single-pass max horizon 1024).
+    const MIN_HORIZON = 8;
+    const MAX_HORIZON = 1024;
+    const FREQ_UNIT = { D: 'd', H: 'h', W: 'wk', MS: 'mo', '30T': 'x30m', '15T': 'x15m' };
 
     // Loose date parsing shared by window/origin lookups -- dates strings
     // are either "YYYY-MM-DD" or "YYYY-MM-DD HH:MM" (see worker.js
@@ -219,6 +225,7 @@
     }
 
     function setStatus(text) {
+      lastStatus = text;
       statusText.textContent = text;
       console.log(`[t0] ${text}`);
     }
@@ -238,7 +245,7 @@
     // Per-active-series state
     let series = null;      // Float32Array-ish array of values
     let dates = null;       // parallel array of date/time strings
-    let horizon = 32;
+    let freqLabel = '';     // e.g. 'D', 'H', 'W', '30T', 'MS' -- see FREQ_UNIT
     let nQuantiles = 5;
     let naive = null;       // { label, lag }
     let unit = '';
@@ -250,6 +257,11 @@
     let requestIdCounter = 0;
     let debounceTimer = null;
 
+    // Series index + per-series live-fetch state, both available before the
+    // model itself is loaded (the worker prefetches live series immediately).
+    let liveState = {}; // index -> 'loading' | 'ready' | 'offline'
+    let lastStatus = statusText.textContent;
+
     window.__app = {
       ready: false,
       lastForecast: null,
@@ -258,6 +270,15 @@
       origin() { return ORIGIN; },
       activeIndex() { return activeIndex; },
       inputWindowPoints() { return INPUT_WINDOW ? INPUT_WINDOW.end - INPUT_WINDOW.start + 1 : null; },
+      windowRange() { return INPUT_WINDOW ? { start: INPUT_WINDOW.start, end: INPUT_WINDOW.end } : null; },
+      // Test hook: set the origin as a fraction [0,1] of the input window
+      // and trigger a forecast, without simulating pointer drag events.
+      setOriginFraction(frac) {
+        if (!INPUT_WINDOW) return null;
+        commitOrigin(INPUT_WINDOW.start + frac * (INPUT_WINDOW.end - INPUT_WINDOW.start));
+        return ORIGIN;
+      },
+      liveState() { return liveState; },
     };
 
     function fitCanvas(canvas, ctx) {
@@ -484,8 +505,18 @@
       }
       const crps = 2 * (pinballSum / Math.max(1, pinballCount));
       const naiveRatio = n > 0 ? (saeMedian / n) / (saeNaive / n) : NaN;
-      metricsLine.textContent = `inside band ${inside}/${hZ} · CRPS ${crps.toFixed(1)} · vs naive ${naiveRatio.toFixed(2)}`;
+      const hUnit = FREQ_UNIT[freqLabel] || 'steps';
+      metricsLine.textContent = `horizon ${hZ} ${hUnit} · inside band ${inside}/${hZ} · CRPS ${crps.toFixed(1)} · vs naive ${naiveRatio.toFixed(2)}`;
       metricMs.textContent = ms.toFixed(1);
+    }
+
+    // Horizon = origin to the end of the shown window, not a fixed step
+    // count: drag the origin near the end for a short horizon over all the
+    // data; drag near the start to forecast the whole rest of the window.
+    function computeHorizon(o) {
+      const windowPoints = INPUT_WINDOW.end - INPUT_WINDOW.start + 1;
+      const raw = INPUT_WINDOW.end - o;
+      return Math.max(MIN_HORIZON, Math.min(raw, windowPoints - 1, MAX_HORIZON));
     }
 
     function runForecast() {
@@ -493,7 +524,8 @@
       forecasting = true;
       setStatus('forecasting…');
       requestIdCounter += 1;
-      worker.postMessage({ type: 'forecast', origin: ORIGIN, requestId: requestIdCounter });
+      const h = computeHorizon(ORIGIN);
+      worker.postMessage({ type: 'forecast', origin: ORIGIN, horizon: h, requestId: requestIdCounter });
     }
 
     function scheduleForecast() {
@@ -504,7 +536,7 @@
     function clampOrigin(o) {
       if (!INPUT_WINDOW) return Math.round(o);
       const lo = INPUT_WINDOW.start + MIN_PRECEDING;
-      const hi = Math.min(INPUT_WINDOW.end, series.length - 1 - horizon + 1);
+      const hi = INPUT_WINDOW.end - MIN_HORIZON;
       return Math.min(hi, Math.max(lo, Math.round(o)));
     }
 
@@ -565,9 +597,13 @@
         const btn = document.createElement('button');
         btn.className = 'series-btn';
         btn.type = 'button';
-        btn.textContent = entry.name;
+        const st = liveState[i];
+        if (entry.live && st === 'offline') btn.textContent = `${entry.name} (offline)`;
+        else if (entry.live && st !== 'ready') btn.textContent = `${entry.name}…`;
+        else btn.textContent = entry.name;
         btn.dataset.index = i;
-        btn.disabled = !modelReady;
+        btn.disabled = !modelReady || (entry.live && st !== 'ready');
+        btn.classList.toggle('active', i === activeIndex);
         btn.addEventListener('click', () => selectSeries(i));
         seriesGrid.appendChild(btn);
       });
@@ -586,9 +622,24 @@
         case 'status':
           setStatus(msg.text);
           break;
+        case 'seriesIndexReady':
+          seriesIndex = msg.seriesIndex;
+          renderSeriesGrid();
+          break;
+        case 'liveStatus':
+          liveState[msg.index] = msg.status;
+          if (msg.status === 'offline') console.warn(`[t0] ${msg.name} offline: ${msg.reason}`);
+          if (seriesIndex) renderSeriesGrid();
+          break;
+        case 'liveProgress':
+          statusText.textContent = msg.text;
+          console.log(`[t0] ${msg.text}`);
+          break;
+        case 'liveProgressDone':
+          statusText.textContent = lastStatus;
+          break;
         case 'modelReady': {
           modelReady = true;
-          horizon = msg.horizon;
           nQuantiles = msg.nQuantiles;
           seriesIndex = msg.seriesIndex;
           renderSeriesGrid();
@@ -607,28 +658,23 @@
           if (msg.index !== activeIndex) break; // stale response, user switched again
           series = msg.series;
           dates = msg.dates;
-          horizon = msg.horizon;
+          freqLabel = msg.frequency;
           naive = msg.naive;
           unit = msg.unit;
           INPUT_WINDOW = computeInputWindow(seriesIndex[msg.index], dates);
           ORIGIN = clampOrigin(msg.defaultOriginIndex);
           markerOrigin = ORIGIN;
           worker.postMessage({ type: 'setActiveSeries', series });
-          inputDesc.textContent = `${msg.name} (${unit}), ${msg.live ? 'live' : 'bundled'} data. Drag the origin to choose where the forecast starts.`;
+          inputDesc.textContent = `${msg.name} (${unit}), ${msg.live ? 'live' : 'bundled'} data. Drag the origin. The model forecasts everything after it, to the end of the window.`;
           naiveNote.textContent = `Naive baseline: ${msg.naive.label}.`;
           setStatus(`${msg.name} loaded (${series.length} points)`);
-          for (const btn of seriesGrid.children) btn.disabled = false;
           drawAll();
           runForecast();
           break;
         }
         case 'seriesOffline': {
-          const btn = seriesGrid.children[msg.index];
-          if (btn) {
-            btn.textContent = `${msg.name} (offline)`;
-            btn.disabled = true;
-            btn.classList.remove('active');
-          }
+          liveState[msg.index] = 'offline';
+          renderSeriesGrid();
           if (msg.index === activeIndex) {
             activeIndex = null;
             series = null;
