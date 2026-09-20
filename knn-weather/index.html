@@ -10,23 +10,37 @@
   <link rel="stylesheet" href="../assets/style.css">
   <style>
     body { max-width: 1200px; }
-    label { display: inline-block; width: 5.5em; color: #555; }
-    .field { margin: 0.4em 0; display: inline-block; margin-right: 1.5em; }
-    input[type="number"] {
-      font-family: inherit; font-size: 1rem; padding: 0.3em 0.5em;
-      border: 1px solid #ccc; border-radius: 2px; width: 9em;
-    }
+    h3 { margin-top: 1.5em; }
     button {
-      font-family: inherit; font-size: 0.9rem; padding: 0.4em 1em;
+      font-family: inherit; font-size: 1rem; padding: 0.5em 1.5em;
       border: 1px solid #111; background: #fff; color: #111;
       cursor: pointer; border-radius: 2px;
     }
     button:hover:not(:disabled) { background: #111; color: #fff; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
-    #geo-btn, #find-btn, #compute-btn {
-      font-size: 1rem; padding: 0.5em 1.5em;
+    .section-label { color: #555; font-size: 0.85rem; margin: 1.2em 0 0.5em; }
+    .section-label:first-child { margin-top: 0; }
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.5em;
     }
-    .input-row { margin: 0.5em 0; }
+    .pick-btn {
+      font-family: inherit; font-size: 0.85rem; padding: 0.4em 0;
+      cursor: pointer; border: 1px solid #ddd; background: #fff; color: #111;
+      border-radius: 2px; text-align: center;
+    }
+    .pick-btn:hover:not(:disabled) { border-color: #111; }
+    .pick-btn.active { background: #111; color: #fff; border-color: #111; }
+    .k-grid { grid-template-columns: repeat(4, 3.5em); justify-content: start; }
+    .input-row { margin: 0.6em 0; display: flex; align-items: center; gap: 0.75em; flex-wrap: wrap; }
+    input[type="text"], input[type="number"] {
+      font-family: inherit; font-size: 1rem; padding: 0.3em 0.5em;
+      border: 1px solid #ccc; border-radius: 2px;
+    }
+    input[type="text"] { width: 22em; max-width: 100%; }
+    input[type="number"] { width: 4.5em; }
+    #compute-btn { font-size: 1rem; padding: 0.5em 1.5em; margin-top: 0.6em; }
     #status-text { color: #555; font-size: 0.9rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 0.75em; font-size: 0.85rem; }
     th, td { text-align: left; padding: 0.3em 0.4em; border-bottom: 1px solid #eee; white-space: nowrap; }
@@ -37,6 +51,8 @@
       max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     @media (max-width: 480px) {
+      .btn-grid { grid-template-columns: repeat(3, 1fr); }
+      .k-grid { grid-template-columns: repeat(4, 1fr); }
       #results .col-country, #results .col-elev, #results .col-source { display: none; }
       #results th, #results td { padding: 0.3em 0.3em; }
       #results td:nth-child(3) { max-width: 6em; }
@@ -69,30 +85,24 @@
     </p>
 
     <h2>STATUS</h2>
-    <p id="status-text">idle</p>
+    <p id="status-text">choose a location</p>
 
     <h2>INPUT</h2>
     <div id="controls">
+      <p class="section-label">location</p>
+      <div class="btn-grid" id="city-grid"></div>
       <div class="input-row">
-        <div class="field">
-          <label for="lat">location</label>
-          <input type="number" id="lat" step="any" value="48.8566" aria-label="latitude" title="latitude">
-        </div>
-        <div class="field">
-          <input type="number" id="lon" step="any" value="2.3522" aria-label="longitude" title="longitude">
-        </div>
-        <button id="geo-btn" type="button" title="Use my location (optional)">use my location</button>
+        <button id="geo-btn" type="button" title="Use my location">use my location</button>
+        <input type="text" id="loc-input" placeholder='or type "lat, lon" or a city name' aria-label="location">
       </div>
+
+      <p class="section-label">stations</p>
       <div class="input-row">
-        <div class="field">
-          <label for="k">stations</label>
-          <input type="number" id="k" step="1" min="1" max="20" value="5" style="width: 5em;">
-        </div>
+        <div class="btn-grid k-grid" id="k-grid"></div>
+        <input type="number" id="k-input" step="1" min="1" max="23" value="7" aria-label="number of stations">
       </div>
-      <div class="input-row">
-        <button id="find-btn" type="button">find stations</button>
-        <button id="compute-btn" type="button" disabled>compute</button>
-      </div>
+
+      <button id="compute-btn" type="button" disabled>compute</button>
       <div id="error" hidden></div>
     </div>
 
@@ -173,17 +183,12 @@
     import { idw, idwCircularDeg } from './idw.js';
     import { computeCorrections } from './corrections.js';
 
-    // Station-history sparklines (history.js/sparkline.js) are implemented but
-    // disabled for now — the underlying page design dropped them from OUTPUT.
-    // Flip this on to re-fetch and render 24h history under the stations table.
-    const HISTORY_ENABLED = false;
-
-    const latInput = document.getElementById('lat');
-    const lonInput = document.getElementById('lon');
-    const kInput = document.getElementById('k');
-    const findBtn = document.getElementById('find-btn');
-    const computeBtn = document.getElementById('compute-btn');
+    const cityGrid = document.getElementById('city-grid');
+    const kGrid = document.getElementById('k-grid');
+    const kInput = document.getElementById('k-input');
+    const locInput = document.getElementById('loc-input');
     const geoBtn = document.getElementById('geo-btn');
+    const computeBtn = document.getElementById('compute-btn');
     const errorBox = document.getElementById('error');
     const statusText = document.getElementById('status-text');
     const resultsTable = document.getElementById('results');
@@ -200,6 +205,20 @@
       { key: 'windMs', label: 'wind speed', unit: 'm/s', digits: 1 },
       { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
     ];
+
+    const CITIES = [
+      { name: 'Paris', lat: 48.8566, lon: 2.3522 },
+      { name: 'Lyon', lat: 45.7640, lon: 4.8357 },
+      { name: 'Marseille', lat: 43.2965, lon: 5.3698 },
+      { name: 'Bordeaux', lat: 44.8378, lon: -0.5792 },
+      { name: 'Lille', lat: 50.6292, lon: 3.0573 },
+      { name: 'New York', lat: 40.7128, lon: -74.0060 },
+      { name: 'San Francisco', lat: 37.7749, lon: -122.4194 },
+      { name: 'Los Angeles', lat: 34.0522, lon: -118.2437 },
+      { name: 'Chicago', lat: 41.8781, lon: -87.6298 },
+      { name: 'Montréal', lat: 45.5019, lon: -73.5674 },
+    ];
+    const K_CHOICES = [3, 5, 7, 23];
 
     // ── STATUS: one line of text, replaced at each stage transition. Detailed
     // per-source/per-station progress goes to the console, not the page. ──
@@ -227,6 +246,119 @@
       return (Date.now() - d.getTime()) / 60000;
     }
 
+    // ── Location + station-count pickers ──
+
+    let currentLocation = null; // { lat, lon, label }
+    let currentK = 7;
+
+    function normalize(s) {
+      return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+    }
+
+    function renderCityButtons() {
+      cityGrid.innerHTML = '';
+      for (const c of CITIES) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pick-btn';
+        btn.textContent = c.name;
+        btn.addEventListener('click', () => setLocation(c.lat, c.lon, c.name));
+        cityGrid.appendChild(btn);
+      }
+    }
+
+    function renderKButtons() {
+      kGrid.innerHTML = '';
+      for (const k of K_CHOICES) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pick-btn';
+        btn.textContent = String(k);
+        btn.addEventListener('click', () => setK(k));
+        kGrid.appendChild(btn);
+      }
+    }
+
+    function markActiveCity(label) {
+      cityGrid.querySelectorAll('.pick-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.textContent === label);
+      });
+    }
+
+    function markActiveK(k) {
+      kGrid.querySelectorAll('.pick-btn').forEach((btn) => {
+        btn.classList.toggle('active', Number(btn.textContent) === k);
+      });
+    }
+
+    function setLocation(lat, lon, label) {
+      showError('');
+      currentLocation = { lat, lon, label };
+      markActiveCity(label ?? null);
+      locInput.value = label ?? `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+      setStatus(`location: ${label ? `${label} (${lat.toFixed(2)}, ${lon.toFixed(2)})` : `${lat.toFixed(2)}, ${lon.toFixed(2)}`} — press compute`);
+      computeBtn.disabled = false;
+    }
+
+    function setK(k) {
+      currentK = Math.max(1, Math.min(23, k));
+      kInput.value = currentK;
+      markActiveK(currentK);
+    }
+
+    function parseLocationInput(text) {
+      const trimmed = text.trim();
+      if (!trimmed) return null;
+
+      const coordMatch = trimmed.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lon = parseFloat(coordMatch[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon, label: null };
+        return null;
+      }
+
+      const norm = normalize(trimmed);
+      const city = CITIES.find((c) => normalize(c.name) === norm);
+      return city ? { lat: city.lat, lon: city.lon, label: city.name } : null;
+    }
+
+    function applyLocationInput() {
+      const parsed = parseLocationInput(locInput.value);
+      if (!parsed) {
+        showError('enter "lat, lon" or a city name from the list above');
+        return;
+      }
+      setLocation(parsed.lat, parsed.lon, parsed.label);
+    }
+
+    renderCityButtons();
+    renderKButtons();
+    markActiveK(currentK);
+
+    kInput.addEventListener('change', () => {
+      const v = Math.max(1, Math.min(23, parseInt(kInput.value, 10) || 7));
+      setK(v);
+    });
+    locInput.addEventListener('change', applyLocationInput);
+    locInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') applyLocationInput();
+    });
+
+    geoBtn.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        showError('geolocation not supported by this browser');
+        return;
+      }
+      setStatus('requesting your location…');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setLocation(pos.coords.latitude, pos.coords.longitude, null),
+        (err) => showError(`geolocation failed: ${err.message}`),
+      );
+    });
+
+    // ── Rendering ──
+
     function renderNeighbours(rows) {
       resultsBody.innerHTML = '';
       rows.forEach((s, i) => {
@@ -238,7 +370,7 @@
           <td>${s.name}</td>
           <td class="col-country">${s.country}</td>
           <td class="num col-elev">${s.elev}</td>
-          <td class="num">${s.distance.toFixed(2)}</td>
+          <td class="num">${s.distance.toFixed(1)}</td>
           <td class="num">${fmtNum(o.tempC, 1)}</td>
           <td class="num">${fmtNum(o.dewpointC, 1)}</td>
           <td class="num">${fmtNum(o.windMs, 1)}</td>
@@ -310,7 +442,7 @@
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${icao}</td>
-            <td class="num">${term.distance.toFixed(2)}</td>
+            <td class="num">${term.distance.toFixed(1)}</td>
             <td class="num">${term.weightNorm.toFixed(3)}</td>
             <td class="num">${term.value.toFixed(v.digits)}</td>
             <td class="num">${cVal != null ? cVal.toFixed(v.digits) : (cp && !cp.included ? 'excluded (age)' : '—')}</td>
@@ -456,7 +588,7 @@
         ['IEM fetch', perf.iemMs != null ? `${perf.iemMs.toFixed(0)} ms` : 'skipped'],
         ['NWS fetch', perf.nwsMs != null ? `${perf.nwsMs.toFixed(0)} ms (${perf.nwsCount} station${perf.nwsCount === 1 ? '' : 's'})` : 'skipped (no US stations in range)'],
         ['Open-Meteo fetch', perf.openMeteoMs != null ? `${perf.openMeteoMs.toFixed(0)} ms` : 'failed'],
-        ['total (find stations)', `${perf.totalMs.toFixed(0)} ms`],
+        ['total', `${perf.totalMs.toFixed(0)} ms`],
       ];
       for (const [label, val] of rows) {
         const tr = document.createElement('tr');
@@ -465,41 +597,36 @@
       }
     }
 
-    // ── Stage 1: find stations + fetch observations ──
+    // ── Compute: find stations, fetch observations, apply corrections — one
+    // step, triggered by a single button once a location has been set. ──
 
-    let currentFinal = null;
-    let currentModel = null;
-
-    async function findStations() {
-      const lat = parseFloat(latInput.value);
-      const lon = parseFloat(lonInput.value);
-      const k = Math.max(1, Math.min(20, parseInt(kInput.value, 10) || 5));
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        showError('lat/lon must be numbers');
+    async function compute() {
+      if (!currentLocation) {
+        showError('choose a location first');
         return;
       }
+      const { lat, lon } = currentLocation;
+      const k = Math.max(1, Math.min(23, parseInt(kInput.value, 10) || 7));
+
       showError('');
-      findBtn.disabled = true;
       computeBtn.disabled = true;
-      currentFinal = null;
-      currentModel = null;
-      setStatus('fetching stations…');
+      setStatus('finding nearest stations…');
 
       const t0 = performance.now();
       let stations;
       try {
         stations = await loadStations();
-        console.log(`station list loaded (${stations.length})`);
       } catch (err) {
         showError(`failed to load station list: ${err.message}`);
-        findBtn.disabled = false;
+        computeBtn.disabled = false;
         return;
       }
 
       const tKnn0 = performance.now();
       const candidates = await nearest(lat, lon, k + SPARE);
       const knnMs = performance.now() - tKnn0;
-      console.log(`kNN search: ${candidates.length} candidates (k=${k} + ${SPARE} spare) in ${knnMs.toFixed(1)} ms`);
+
+      setStatus('fetching observations…');
 
       let iemMs = null;
       let iemMap = new Map();
@@ -507,7 +634,6 @@
       try {
         iemMap = await fetchIem(candidates.map((c) => c.icao));
         iemMs = performance.now() - tIem0;
-        console.log(`IEM: ${iemMap.size}/${candidates.length} stations returned current obs (${iemMs.toFixed(0)} ms)`);
       } catch (err) {
         iemMs = performance.now() - tIem0;
         console.log(`IEM: fetch failed — ${err.message} (${iemMs.toFixed(0)} ms)`);
@@ -520,21 +646,9 @@
         const tNws0 = performance.now();
         const results = await Promise.allSettled(usStations.map((c) => fetchNws(c.icao)));
         nwsMs = performance.now() - tNws0;
-        let ok = 0;
         results.forEach((r, i) => {
-          if (r.status === 'fulfilled' && r.value) {
-            nwsMap.set(usStations[i].icao, r.value);
-            ok++;
-          }
+          if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].icao, r.value);
         });
-        console.log(`NWS: ${ok}/${usStations.length} US stations returned current obs (${nwsMs.toFixed(0)} ms)`);
-      } else {
-        console.log('NWS: no US stations among candidates — skipped');
-      }
-
-      for (const c of candidates) {
-        const has = nwsMap.has(c.icao) ? 'NWS' : iemMap.has(c.icao) ? 'IEM' : 'none';
-        console.log(`${c.icao} (${c.distance.toFixed(1)} km): ${has === 'none' ? 'no current obs available' : `obs from ${has}`}`);
       }
 
       // Prefer NWS (fresher, direct) then IEM.
@@ -548,31 +662,25 @@
       if (final.length < k) final = final.concat(withoutObs.slice(0, k - final.length));
       final.sort((a, b) => a.distance - b.distance);
 
-      console.log(`${final.length} stations selected (${withObs.length} of ${candidates.length} candidates had obs)`);
-
       let openMeteoMs = null;
       let modelPoint = null;
       const tOm0 = performance.now();
       try {
         modelPoint = await fetchOpenMeteoPoint(lat, lon);
         openMeteoMs = performance.now() - tOm0;
-        console.log(`Open-Meteo model fetched, elevation ${modelPoint.elevationM ?? '?'} m (${openMeteoMs.toFixed(0)} ms)`);
       } catch (err) {
         openMeteoMs = performance.now() - tOm0;
         console.log(`Open-Meteo: fetch failed — ${err.message} (${openMeteoMs.toFixed(0)} ms)`);
       }
 
-      if (HISTORY_ENABLED) {
-        // Intentionally not wired up — see the HISTORY_ENABLED comment above.
-      }
-
       renderNeighbours(final);
 
-      const totalMs = performance.now() - t0;
-      console.log(`stations found in ${totalMs.toFixed(0)} ms`);
-      const finalWithObs = final.filter((c) => c.obs).length;
-      setStatus(`${final.length} stations found, ${finalWithObs} with observations`);
+      setStatus('computing estimate…');
+      const corr = computeCorrections(final, modelPoint?.elevationM ?? null);
+      renderCalc(final, corr);
+      renderOutput(corr, modelPoint);
 
+      const totalMs = performance.now() - t0;
       renderPerf({
         stationsScanned: stations.length,
         knnMs,
@@ -583,54 +691,20 @@
         totalMs,
       });
 
-      currentFinal = final;
-      currentModel = modelPoint;
-      findBtn.disabled = false;
-      computeBtn.disabled = final.length === 0;
-    }
-
-    // ── Stage 2: compute the corrected estimate ──
-
-    function computeEstimate() {
-      if (!currentFinal) return;
-      setStatus('computing…');
-      const corr = computeCorrections(currentFinal, currentModel?.elevationM ?? null);
-      renderCalc(currentFinal, corr);
-      renderOutput(corr, currentModel);
-      const ages = currentFinal
-        .map((c) => ageMinutes(c.obs?.obsTime))
-        .filter((a) => a != null);
+      const ages = final.map((c) => ageMinutes(c.obs?.obsTime)).filter((a) => a != null);
       const ageRange = ages.length
         ? `${Math.min(...ages).toFixed(0)}–${Math.max(...ages).toFixed(0)} min`
         : 'unknown';
-      setStatus(`estimate ready (obs age ${ageRange})`);
-      console.log('estimate computed from the found stations');
+      const finalWithObs = final.filter((c) => c.obs).length;
+      setStatus(`estimate ready from ${final.length} stations (${finalWithObs} with observations, obs age ${ageRange})`);
+
+      computeBtn.disabled = false;
     }
 
-    geoBtn.addEventListener('click', () => {
-      if (!navigator.geolocation) {
-        showError('geolocation not supported by this browser');
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          latInput.value = pos.coords.latitude.toFixed(4);
-          lonInput.value = pos.coords.longitude.toFixed(4);
-          findStations();
-        },
-        (err) => showError(`geolocation failed: ${err.message}`),
-      );
-    });
-
-    findBtn.addEventListener('click', findStations);
-    computeBtn.addEventListener('click', computeEstimate);
-
-    loadStations()
-      .then(() => findStations())
-      .catch((err) => showError(`failed to load station list: ${err.message}`));
+    computeBtn.addEventListener('click', compute);
 
     // Exposed for reuse (t0-web) and for headless verification.
-    window.__app = { nearest, idw, idwCircularDeg, findStations, computeEstimate };
+    window.__app = { nearest, idw, idwCircularDeg, setLocation, setK, compute };
   </script>
 </body>
 </html>

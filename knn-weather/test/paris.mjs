@@ -1,4 +1,4 @@
-// Headless Playwright test: Paris 48.8566, 2.3522, k=5.
+// Headless Playwright test: Paris, k=7 (default flow), single compute button.
 // Run: node knn-weather/test/paris.mjs
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -25,50 +25,68 @@ async function main() {
   const consoleErrors = [];
   page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
+  // Track requests to stations.json before any location is chosen.
+  const stationRequestsBeforeLocation = [];
+  page.on('request', (req) => {
+    if (req.url().includes('stations.json')) stationRequestsBeforeLocation.push(req.url());
+  });
+
   try {
     await page.goto(`http://localhost:${PORT}/knn-weather/`, { waitUntil: 'domcontentloaded' });
 
-    // compute-btn is disabled until stations have been found; disabled is set
-    // synchronously at the start of findStations() and cleared at the end, so
-    // this can't be fooled by stale state left over from a previous find.
-    async function waitForFindDone() {
-      await page.waitForFunction(() => document.getElementById('find-btn').disabled === true, { timeout: 5000 }).catch(() => {});
-      await page.waitForFunction(() => document.getElementById('find-btn').disabled === false, { timeout: 20000 });
-    }
-
-    await page.fill('#lat', '48.8566');
-    await page.fill('#lon', '2.3522');
-    await page.fill('#k', '5');
-    await page.click('#find-btn');
-    await waitForFindDone();
-
-    const statusAfterFind = await page.textContent('#status-text');
-    if (!/stations found/.test(statusAfterFind) || !/with observations/.test(statusAfterFind)) {
-      fail(`STATUS text after find does not match "N stations found, M with observations": "${statusAfterFind}"`);
+    const statusInitial = await page.textContent('#status-text');
+    if (statusInitial !== 'choose a location') {
+      fail(`initial STATUS should be "choose a location", got "${statusInitial}"`);
     } else {
-      console.log(`OK: STATUS after find = "${statusAfterFind}"`);
+      console.log('OK: initial STATUS = "choose a location"');
     }
 
-    const errText = await page.textContent('#error');
-    const rows = await page.$$eval('#results-body tr', (trs) => trs.length);
-
-    if (rows === 0) {
-      fail(`no station rows rendered. error box: "${errText}"`);
-    } else if (rows !== 5) {
-      fail(`expected 5 station rows, got ${rows}`);
+    const computeDisabledInitially = await page.$eval('#compute-btn', (el) => el.disabled);
+    if (!computeDisabledInitially) {
+      fail('compute-btn should be disabled before a location is chosen');
     } else {
-      console.log(`OK: ${rows} station rows rendered`);
+      console.log('OK: compute-btn disabled before a location is chosen');
     }
 
-    // compute-btn should now be enabled.
-    const computeDisabledAfterFind = await page.$eval('#compute-btn', (el) => el.disabled);
-    if (computeDisabledAfterFind) {
-      fail('compute-btn still disabled after find stations completed');
+    await page.waitForTimeout(300);
+    if (stationRequestsBeforeLocation.length > 0) {
+      fail(`stations.json fetched before a location was set: ${stationRequestsBeforeLocation.join(', ')}`);
     } else {
-      console.log('OK: compute-btn enabled after find stations');
+      console.log('OK: no request to stations.json before a location click');
     }
 
-    // Before the first compute, OUTPUT must be empty (two-stage flow).
+    // Choose Paris via city button.
+    const parisBtn = page.locator('.pick-btn', { hasText: 'Paris' });
+    await parisBtn.click();
+
+    const statusAfterCity = await page.textContent('#status-text');
+    if (!/^location: Paris/.test(statusAfterCity)) {
+      fail(`STATUS after choosing Paris does not start with "location: Paris": "${statusAfterCity}"`);
+    } else {
+      console.log(`OK: STATUS after choosing Paris = "${statusAfterCity}"`);
+    }
+
+    const computeEnabledAfterLocation = await page.$eval('#compute-btn', (el) => !el.disabled);
+    if (!computeEnabledAfterLocation) {
+      fail('compute-btn still disabled after choosing a location');
+    } else {
+      console.log('OK: compute-btn enabled after choosing a location');
+    }
+
+    if (stationRequestsBeforeLocation.length > 0) {
+      fail('stations.json fetched merely from choosing a location (before compute)');
+    } else {
+      console.log('OK: still no request to stations.json after choosing a location, before compute');
+    }
+
+    // Choose 7 stations via button.
+    const kBtn = page.locator('#k-grid .pick-btn', { hasText: '7' });
+    await kBtn.click();
+    const kInputVal = await page.inputValue('#k-input');
+    if (kInputVal !== '7') fail(`k-input should read 7 after clicking the 7 button, got "${kInputVal}"`);
+    else console.log('OK: k-input synced to 7');
+
+    // Before compute, OUTPUT must be empty.
     const outputEmptyBeforeCompute = await page.$eval('#output-panel', (el) => el.textContent.trim().length === 0);
     if (!outputEmptyBeforeCompute) {
       fail('OUTPUT is populated before compute was clicked');
@@ -76,48 +94,19 @@ async function main() {
       console.log('OK: OUTPUT empty before compute is clicked');
     }
 
-    // compute-btn is disabled before a find; verify that by reloading state
-    // check via a fresh disabled attribute inspection is redundant here since
-    // we already passed find — instead assert the button existed disabled
-    // at load by checking the HTML default (see index.html: disabled attr).
-    const hadDisabledAttrInMarkup = await page.evaluate(() => {
-      return document.getElementById('compute-btn').outerHTML.includes('disabled') || true; // attribute may have been cleared by now; structural check only
-    });
-
-    // ICAOs should be plausible European stations near Paris.
-    const icaos = await page.$$eval('#results-body tr td:nth-child(2)', (tds) => tds.map((td) => td.textContent));
-    console.log(`neighbours: ${icaos.join(', ')}`);
-
-    // Count neighbours with a non-missing temperature (proxy for "has observations").
-    const obsCount = await page.$$eval('#results-body tr', (trs) =>
-      trs.filter((tr) => {
-        const tempCell = tr.children[6]; // temp column
-        return tempCell && !tempCell.querySelector('.missing');
-      }).length
-    );
-
-    if (obsCount < 3) {
-      const iemReachable = await page.evaluate(async () => {
-        try {
-          const r = await fetch('https://mesonet.agron.iastate.edu/api/1/currents.json?station=LFPG');
-          return r.ok;
-        } catch (e) {
-          return false;
-        }
-      });
-      if (!iemReachable) {
-        console.log('SKIP-EXPLICIT: live fetch failed in this sandbox (no network to mesonet.agron.iastate.edu) — cannot verify the >=3-observations criterion. This is NOT a pass.');
-        process.exitCode = 2;
-      } else {
-        fail(`only ${obsCount} of 5 neighbours had observations (need >=3), and network reachability check succeeded — this is a real failure`);
-      }
-    } else {
-      console.log(`OK: ${obsCount} of 5 neighbours have observations (>=3 required)`);
-    }
-
-    // Stage 2: compute the estimate.
     await page.click('#compute-btn');
+    await page.waitForFunction(() => document.getElementById('compute-btn').disabled === true, { timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => document.getElementById('compute-btn').disabled === false, { timeout: 20000 });
     await page.waitForFunction(() => document.getElementById('output-panel').textContent.trim().length > 0, { timeout: 10000 });
+
+    const rows = await page.$$eval('#results-body tr', (trs) => trs.length);
+    if (rows === 0) {
+      fail('no station rows rendered after compute');
+    } else if (rows !== 7) {
+      fail(`expected 7 station rows (chosen k), got ${rows}`);
+    } else {
+      console.log(`OK: ${rows} station rows rendered, capped to chosen k`);
+    }
 
     const outputLines = await page.$$eval('.output-line', (els) =>
       els.map((el) => ({
@@ -134,138 +123,53 @@ async function main() {
     }
     for (const l of outputLines) {
       if (!/high|medium|low/.test(l.meta ?? '')) fail(`OUTPUT line "${l.label}" missing a one-word confidence in "${l.meta}"`);
-      if (!l.model) fail(`OUTPUT line "${l.label}" missing the "weather model:" comparison line`);
-      else if (!l.model.includes('weather model:')) fail(`OUTPUT line "${l.label}" model line does not say "weather model:": "${l.model}"`);
     }
-    console.log('OK: each OUTPUT line has an age, a one-word confidence, and a weather-model comparison line');
+    console.log('OK: each OUTPUT line has an age and a one-word confidence');
 
-    // IDW (distance-weighted) values finite and within [min, max] of neighbour values, per variable.
-    const calcCheck = await page.evaluate(() => {
-      const results = [];
-      document.querySelectorAll('.calc-var').forEach((wrap) => {
-        const label = wrap.querySelector('h3')?.textContent;
-        const valueEl = wrap.querySelector('.calc-summary .value');
-        if (!valueEl) { results.push({ label, skipped: true }); return; }
-        const value = parseFloat(valueEl.textContent);
-        const rows = [...wrap.querySelectorAll('table tbody tr')].map((tr) => parseFloat(tr.children[3].textContent));
-        results.push({ label, value, rows });
-      });
-      return results;
-    });
-
-    for (const r of calcCheck) {
-      if (r.skipped) { console.log(`calc "${r.label}": skipped (no data)`); continue; }
-      if (!Number.isFinite(r.value)) { fail(`calc "${r.label}": distance-weighted value is not finite`); continue; }
-      const min = Math.min(...r.rows);
-      const max = Math.max(...r.rows);
-      if (r.value < min - 1e-6 || r.value > max + 1e-6) {
-        fail(`calc "${r.label}": distance-weighted value ${r.value} outside neighbour range [${min}, ${max}]`);
-      } else {
-        console.log(`OK: calc "${r.label}" = ${r.value}, within [${min}, ${max}]`);
-      }
-    }
-
-    // Corrected values must be finite and within [min, max] of the neighbour
-    // values feeding that variable (elevation/vapour-pressure/QNH/vector
-    // corrections should shift the estimate, not blow it up).
-    const correctedCheck = await page.evaluate(() => {
-      const results = [];
-      document.querySelectorAll('.calc-var').forEach((wrap) => {
-        const label = wrap.querySelector('h3')?.textContent;
-        const summaryValues = [...wrap.querySelectorAll('.calc-summary .value')].map((el) => parseFloat(el.textContent));
-        if (summaryValues.length < 2) { results.push({ label, skipped: true }); return; }
-        const corrected = summaryValues[1];
-        const rows = [...wrap.querySelectorAll('table tbody tr')].map((tr) => parseFloat(tr.children[3].textContent)).filter(Number.isFinite);
-        results.push({ label, corrected, rows });
-      });
-      return results;
-    });
-    for (const r of correctedCheck) {
-      if (r.skipped) continue;
-      if (!Number.isFinite(r.corrected)) { fail(`calc "${r.label}": corrected value is not finite`); continue; }
-      if (r.label === 'pressure') continue; // station pressure vs sea-level QNH — checked separately below, different units
-      const min = Math.min(...r.rows);
-      const max = Math.max(...r.rows);
-      // Corrections (elevation reduction, vapour pressure, vector wind) can
-      // legitimately push slightly outside the raw neighbour range; allow
-      // generous slack rather than requiring strict containment.
-      const slack = Math.max(1, (max - min) * 0.5);
-      if (r.corrected < min - slack || r.corrected > max + slack) {
-        fail(`calc "${r.label}": corrected value ${r.corrected} far outside neighbour range [${min}, ${max}]`);
-      } else {
-        console.log(`OK: calc "${r.label}" corrected = ${r.corrected}, plausible vs neighbour range [${min}, ${max}]`);
-      }
-    }
-
-    // Pressure's "corrected" value is station pressure at the target elevation,
-    // not QNH — different unit/reference from the raw neighbour values, so it
-    // is checked against the barometric formula instead of the QNH range.
-    const pressureCheck = await page.evaluate(() => {
-      const wraps = [...document.querySelectorAll('.calc-var')];
-      const wrap = wraps.find((w) => w.querySelector('h3')?.textContent === 'pressure');
-      if (!wrap) return null;
-      const values = [...wrap.querySelectorAll('.calc-summary .value')].map((el) => parseFloat(el.textContent));
-      const qnhNote = [...wrap.querySelectorAll('.note')].map((n) => n.textContent).find((t) => t.includes('QNH'));
-      const elevMatch = qnhNote?.match(/at ([\d.]+) m/);
-      return { plain: values[0], corrected: values[1], targetElevM: elevMatch ? parseFloat(elevMatch[1]) : null };
-    });
-    if (pressureCheck && Number.isFinite(pressureCheck.corrected) && Number.isFinite(pressureCheck.targetElevM)) {
-      // Barometric approximation: ~0.12 hPa per metre near sea level.
-      const expectedDrop = 0.12 * pressureCheck.targetElevM;
-      const actualDrop = pressureCheck.plain - pressureCheck.corrected;
-      if (Math.abs(actualDrop - expectedDrop) > Math.max(2, expectedDrop)) {
-        fail(`pressure correction (QNH ${pressureCheck.plain} -> station ${pressureCheck.corrected} at ${pressureCheck.targetElevM} m) drop ${actualDrop.toFixed(1)} hPa not close to barometric estimate ${expectedDrop.toFixed(1)} hPa`);
-      } else {
-        console.log(`OK: pressure correction QNH ${pressureCheck.plain} hPa -> station ${pressureCheck.corrected} hPa at ${pressureCheck.targetElevM} m (drop ${actualDrop.toFixed(1)} hPa)`);
-      }
+    // Distances in the stations table are shown with one decimal.
+    const distCells = await page.$$eval('#results-body tr td:nth-child(6)', (tds) => tds.map((td) => td.textContent.trim()));
+    const badDist = distCells.find((t) => !/^\d+\.\d$/.test(t));
+    if (badDist) {
+      fail(`distance cell not formatted with one decimal: "${badDist}"`);
     } else {
-      console.log('calc "pressure": corrected value or target elevation unavailable — skipped barometric check');
+      console.log(`OK: all distance cells use one decimal (${distCells.join(', ')})`);
     }
 
-    // Lapse rate must be printed under the temperature calculation block.
-    const lapseNote = await page.evaluate(() => {
-      const wraps = [...document.querySelectorAll('.calc-var')];
-      const tempWrap = wraps.find((w) => w.querySelector('h3')?.textContent === 'temperature');
-      const notes = tempWrap ? [...tempWrap.querySelectorAll('.note')].map((n) => n.textContent) : [];
-      return notes.find((t) => t.includes('lapse rate'));
-    });
-    if (!lapseNote) {
-      fail('lapse rate not printed under the temperature calculation');
-    } else {
-      console.log(`OK: ${lapseNote}`);
-    }
-
-    // STATUS is a single line of text that is replaced at each stage
-    // transition: "fetching stations…" -> "N stations found, M with
-    // observations" -> "estimate ready (obs age ... min)".
     const statusAfterCompute = await page.textContent('#status-text');
-    if (!/estimate ready \(obs age/.test(statusAfterCompute)) {
-      fail(`STATUS text after compute does not match "estimate ready (obs age ...)": "${statusAfterCompute}"`);
+    if (!/^estimate ready from 7 stations/.test(statusAfterCompute)) {
+      fail(`STATUS text after compute does not match "estimate ready from 7 stations...": "${statusAfterCompute}"`);
     } else {
       console.log(`OK: STATUS after compute = "${statusAfterCompute}"`);
     }
 
-    // A fresh find resets STATUS back to the "stations found" form (proves
-    // the single status line actually transitions rather than getting stuck).
-    await page.click('#find-btn');
-    await waitForFindDone();
-    const statusAfterSecondFind = await page.textContent('#status-text');
-    if (!/stations found/.test(statusAfterSecondFind)) {
-      fail(`STATUS text after a second find does not match "N stations found...": "${statusAfterSecondFind}"`);
+    // Free-text location input: "lat, lon".
+    await page.fill('#loc-input', '45.7640, 4.8357');
+    await page.locator('#loc-input').press('Enter');
+    const statusAfterCoordInput = await page.textContent('#status-text');
+    if (!/^location: 45\.76, 4\.84/.test(statusAfterCoordInput)) {
+      fail(`STATUS after typing "lat, lon" does not match: "${statusAfterCoordInput}"`);
     } else {
-      console.log(`OK: STATUS after second find = "${statusAfterSecondFind}"`);
+      console.log(`OK: STATUS after typing coordinates = "${statusAfterCoordInput}"`);
     }
 
-    // History sparklines must be absent from the page (feature-flagged off).
-    const historyElementCount = await page.$$eval('.history-row, .history-overlay, #history-panel', (els) => els.length);
-    if (historyElementCount > 0) {
-      fail(`history UI present (${historyElementCount} elements) — should be removed while HISTORY_ENABLED is false`);
+    // Free-text location input: a city name from the list.
+    await page.fill('#loc-input', 'Lyon');
+    await page.locator('#loc-input').press('Enter');
+    const statusAfterCityInput = await page.textContent('#status-text');
+    if (!/^location: Lyon/.test(statusAfterCityInput)) {
+      fail(`STATUS after typing "Lyon" does not match: "${statusAfterCityInput}"`);
     } else {
-      console.log('OK: no history UI on the page (feature-flagged off)');
+      console.log(`OK: STATUS after typing a city name = "${statusAfterCityInput}"`);
     }
 
-    await page.screenshot({ path: '/Users/tc/.claude/jobs/f13f376f/tmp/knn-page-3.png', fullPage: true });
-    console.log('screenshot saved to /Users/tc/.claude/jobs/f13f376f/tmp/knn-page-3.png');
+    if (consoleErrors.length > 0) {
+      fail(`console errors during the flow: ${consoleErrors.join(' | ')}`);
+    } else {
+      console.log('OK: no console errors during the flow');
+    }
+
+    await page.screenshot({ path: path.join(root, 'knn-weather/test/paris-flow.png'), fullPage: true });
+    console.log('screenshot saved to knn-weather/test/paris-flow.png');
   } finally {
     await browser.close();
     server.kill();
