@@ -17,7 +17,7 @@ The swarm needs to route messages — swarm queries, weather questions, general 
 It needs user input classified client-side in the browser (WASM, no server round-trip).  
 I was focused on the inference/deployment side and didn't want to spend time on the training pipeline, but I wanted the _real_ pipeline in place, not a placeholder.
 
-So I thought: why not ask a "team" to do it? I didn't really care about quality at this stage.
+So I thought: why not ask a "team" to do it? I wasn't tuning for accuracy yet, just checking whether a model of this shape fits the pipeline at all.
 
 ---
 
@@ -41,7 +41,7 @@ They chose to train a bert-mini (fine). The training engineer kept getting stuck
 
 The Lead broke its own "never runs training code" rule and ran the training itself.
 
-92.2% accuracy. Not bad for "I don't really care about quality."
+92.2% accuracy. Not bad, for a run that was only meant to prove the shape fits.
 
 ---
 
