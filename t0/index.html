@@ -425,16 +425,8 @@
       for (let i = start; i <= end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
       const pad = (hi - lo) * 0.1 || 1;
       const domain = { lo: lo - pad, hi: hi + pad };
-      const yAt = drawGridlines(outputCtx, w, h, domain);
+      drawGridlines(outputCtx, w, h, domain);
       drawXTicks(outputCtx, w, h, xAt, start, end);
-      outputCtx.strokeStyle = '#999';
-      outputCtx.lineWidth = 1.5;
-      outputCtx.beginPath();
-      for (let i = start; i <= end; i++) {
-        const x = xAt(i), y = yAt(series[i]);
-        if (i === start) outputCtx.moveTo(x, y); else outputCtx.lineTo(x, y);
-      }
-      outputCtx.stroke();
       if (!modelReady) {
         outputCtx.fillStyle = '#999';
         outputCtx.font = '12px ui-monospace, monospace';
