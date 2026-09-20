@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>forecast — trucs.ai</title>
+  <meta name="description" content="t0-alpha, The Forecasting Company's open time-series model, forecasting in your browser on WebGPU. No server.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    body { max-width: 1200px; }
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover:not(:disabled) { background: #111; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .series-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5em;
+      margin: 0.75em 0;
+    }
+    .series-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.4em 0.3em;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
+    }
+    .series-btn:hover:not(:disabled) { border-color: #111; }
+    .series-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .series-btn.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2em;
+    }
+    .panel-title {
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: #111;
+      margin-bottom: 0.5em;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+      margin-top: 0.5em;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 220px;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+    #inputChart { cursor: crosshair; touch-action: none; }
+    .legend {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.4em 1em;
+      margin-top: 0.5em;
+      font-size: 0.8rem;
+      color: #555;
+    }
+    .legend .left span { margin-right: 0.75em; }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1em;
+      margin-top: 0.5em;
+    }
+    .metric { text-align: center; }
+    .metric-value {
+      font-size: 1.1rem;
+      font-weight: bold;
+    }
+    .metric-label {
+      font-size: 0.75rem;
+      color: #999;
+      text-transform: uppercase;
+    }
+    @media (max-width: 800px) {
+      .panels { grid-template-columns: 1fr; }
+      .series-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>forecast</h1>
+    <p>
+      t0-alpha, The Forecasting Company's open time-series model, quantized by us to 8 bit.<br>
+      Forecasting in your browser on WebGPU. No server.<br>
+      Pick a series below, drag the origin, and watch it predict the next 32 steps.
+    </p>
+
+    <div id="model-status">
+      <button id="load-btn">download</button>
+      <span id="status-text">model will be stored locally: ~109 MB</span>
+    </div>
+
+    <hr>
+
+    <h2>INPUT</h2>
+    <div class="series-grid" id="seriesGrid"></div>
+    <canvas id="inputChart"></canvas>
+    <p class="panel-desc" id="inputDesc">Choose a series, then drag the dashed origin line to pick where the forecast starts.</p>
+
+    <h2>OUTPUT</h2>
+    <canvas id="outputChart"></canvas>
+    <div class="legend">
+      <span class="left">
+        <span>•••• actual</span>
+        <span>— forecast median</span>
+        <span>▮ Q10–Q90 band</span>
+      </span>
+      <span class="right" id="metricsLine">inside band — · CRPS — · vs naive —</span>
+    </div>
+    <p class="panel-desc" id="naiveNote">Naive baseline: —.</p>
+
+    <h2 id="perfHeading" style="display:none">PERFORMANCE</h2>
+    <div class="metrics-grid" id="metricsCard" style="display:none">
+      <div class="metric"><div class="metric-value" id="metricMs">—</div><div class="metric-label">ms / forecast</div></div>
+      <div class="metric"><div class="metric-value" id="metricSize">—</div><div class="metric-label">model size</div></div>
+      <div class="metric"><div class="metric-value" id="metricBackend">—</div><div class="metric-label">backend</div></div>
+    </div>
+
+    <hr>
+
+    <p class="panel-desc">
+      Model: <a href="https://huggingface.co/theforecastingcompany/t0-alpha">t0-alpha</a>
+      by <a href="https://www.theforecastingcompany.ai">The Forecasting Company</a>, Apache-2.0.
+      Custom Rust inference compiled to WebAssembly.
+    </p>
+    <p class="panel-desc" id="dataCredit">Data sources and licences: see <a href="./data/README.md">data/README.md</a>.</p>
+    <p class="panel-desc"><a href="https://github.com/idle-intelligence/t0-web">github.com/idle-intelligence/t0-web</a></p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    const loadBtn = document.getElementById('load-btn');
+    const statusText = document.getElementById('status-text');
+    const seriesGrid = document.getElementById('seriesGrid');
+    const inputCanvas = document.getElementById('inputChart');
+    const inputCtx = inputCanvas.getContext('2d');
+    const outputCanvas = document.getElementById('outputChart');
+    const outputCtx = outputCanvas.getContext('2d');
+    const inputDesc = document.getElementById('inputDesc');
+    const naiveNote = document.getElementById('naiveNote');
+    const perfHeading = document.getElementById('perfHeading');
+    const metricsCard = document.getElementById('metricsCard');
+    const metricMs = document.getElementById('metricMs');
+    const metricSize = document.getElementById('metricSize');
+    const metricBackend = document.getElementById('metricBackend');
+    const metricsLine = document.getElementById('metricsLine');
+
+    const PAD_L = 48, PAD_R = 8, PAD_T = 10, PAD_B = 20;
+    const MIN_PRECEDING = 20;
+    const QLEVELS = [0.1, 0.25, 0.5, 0.75, 0.9];
+
+    function setStatus(text) {
+      statusText.textContent = text;
+      console.log(`[t0] ${text}`);
+    }
+    function formatBytes(bytes) {
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    function formatBackend(b) {
+      return b === 'webgpu' ? 'WebGPU' : b;
+    }
+
+    const worker = new Worker('./worker.js', { type: 'module' });
+
+    let seriesIndex = null;
+    let activeIndex = null;
+    let modelReady = false;
+
+    // Per-active-series state
+    let series = null;      // Float32Array-ish array of values
+    let dates = null;       // parallel array of date/time strings
+    let horizon = 32;
+    let nQuantiles = 5;
+    let naive = null;       // { label, lag }
+    let unit = '';
+    let INPUT_WINDOW = null; // { start, end } indices into series/dates
+    let ORIGIN = null;
+    let markerOrigin = null;
+    let lastForecast = null;
+    let forecasting = false;
+    let requestIdCounter = 0;
+    let debounceTimer = null;
+
+    window.__app = {
+      ready: false,
+      lastForecast: null,
+      forecastCount: 0,
+      runForecast() { runForecast(); },
+      origin() { return ORIGIN; },
+      activeIndex() { return activeIndex; },
+    };
+
+    function fitCanvas(canvas, ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { w: rect.width, h: rect.height };
+    }
+
+    function shortLabel(dateStr) {
+      // dateStr is "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"
+      const [datePart, timePart] = dateStr.split(' ');
+      const [, m, d] = datePart.split('-');
+      if (timePart) return `${m}/${d} ${timePart}`;
+      return `${m}/${d}`;
+    }
+
+    function drawGridlines(ctx, w, h, domain) {
+      const plotH = h - PAD_T - PAD_B;
+      const yAt = (v) => PAD_T + plotH - ((v - domain.lo) / (domain.hi - domain.lo)) * plotH;
+      ctx.strokeStyle = '#eee';
+      ctx.fillStyle = '#999';
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.lineWidth = 1;
+      const nY = 4;
+      for (let t = 0; t <= nY; t++) {
+        const v = domain.lo + (t / nY) * (domain.hi - domain.lo);
+        const y = yAt(v);
+        ctx.beginPath();
+        ctx.moveTo(PAD_L, y);
+        ctx.lineTo(w - PAD_R, y);
+        ctx.stroke();
+        ctx.fillText(Math.round(v).toLocaleString(), 2, y + 3);
+      }
+      return yAt;
+    }
+
+    function drawXTicks(ctx, w, h, xAt, start, end, step) {
+      ctx.strokeStyle = '#eee';
+      ctx.fillStyle = '#999';
+      const n = end - start;
+      const stride = Math.max(1, Math.round(n / 6));
+      for (let i = start; i <= end; i += stride) {
+        const x = xAt(i);
+        ctx.beginPath();
+        ctx.moveTo(x, PAD_T);
+        ctx.lineTo(x, h - PAD_B);
+        ctx.stroke();
+        const label = shortLabel(dates[i]);
+        ctx.textAlign = x > w - 40 ? 'right' : 'left';
+        ctx.fillText(label, x > w - 40 ? x - 2 : x + 2, h - 6);
+        ctx.textAlign = 'left';
+      }
+    }
+
+    function drawOriginMarker(ctx, x, h) {
+      ctx.strokeStyle = '#999';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, PAD_T);
+      ctx.lineTo(x, h - PAD_B);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(x, PAD_T, 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    function drawInputChart() {
+      const { w, h } = fitCanvas(inputCanvas, inputCtx);
+      inputCtx.clearRect(0, 0, w, h);
+      if (!series || !INPUT_WINDOW) return;
+      const { start, end } = INPUT_WINDOW;
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (i) => PAD_L + ((i - start) / (end - start)) * plotW;
+
+      let lo = Infinity, hi = -Infinity;
+      for (let i = start; i <= end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
+      const pad = (hi - lo) * 0.1 || 1;
+      const domain = { lo: lo - pad, hi: hi + pad };
+      const yAt = drawGridlines(inputCtx, w, h, domain);
+      drawXTicks(inputCtx, w, h, xAt, start, end);
+
+      const o = markerOrigin ?? ORIGIN;
+      inputCtx.strokeStyle = '#111';
+      inputCtx.lineWidth = 1.5;
+      inputCtx.beginPath();
+      for (let i = start; i <= o; i++) {
+        const x = xAt(i), y = yAt(series[i]);
+        if (i === start) inputCtx.moveTo(x, y); else inputCtx.lineTo(x, y);
+      }
+      inputCtx.stroke();
+
+      inputCtx.strokeStyle = '#ccc';
+      inputCtx.lineWidth = 1.5;
+      inputCtx.beginPath();
+      for (let i = o; i <= end; i++) {
+        const x = xAt(i), y = yAt(series[i]);
+        if (i === o) inputCtx.moveTo(x, y); else inputCtx.lineTo(x, y);
+      }
+      inputCtx.stroke();
+
+      drawOriginMarker(inputCtx, xAt(o), h);
+    }
+
+    function drawOutputChart() {
+      const { w, h } = fitCanvas(outputCanvas, outputCtx);
+      outputCtx.clearRect(0, 0, w, h);
+      if (!series || !lastForecast || lastForecast.origin !== ORIGIN) return;
+      const { quantiles, horizon: hZ, nQuantiles: nq } = lastForecast;
+      const q = (t, qi) => quantiles[t * nq + qi];
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (t) => PAD_L + (t / (hZ - 1)) * plotW;
+
+      let lo = Infinity, hi = -Infinity;
+      for (const v of quantiles) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      for (let t = 0; t < hZ; t++) {
+        if (ORIGIN + t < series.length) { lo = Math.min(lo, series[ORIGIN + t]); hi = Math.max(hi, series[ORIGIN + t]); }
+      }
+      const pad = (hi - lo) * 0.1 || 1;
+      const domain = { lo: lo - pad, hi: hi + pad };
+      const yAt = drawGridlines(outputCtx, w, h, domain);
+
+      outputCtx.strokeStyle = '#eee';
+      outputCtx.fillStyle = '#999';
+      const stride = Math.max(1, Math.round(hZ / 6));
+      for (let t = 0; t < hZ; t += stride) {
+        const x = xAt(t);
+        outputCtx.beginPath();
+        outputCtx.moveTo(x, PAD_T);
+        outputCtx.lineTo(x, h - PAD_B);
+        outputCtx.stroke();
+        const idx = ORIGIN + t;
+        const label = idx < dates.length ? shortLabel(dates[idx]) : '';
+        outputCtx.textAlign = x > w - 40 ? 'right' : 'left';
+        outputCtx.fillText(label, x > w - 40 ? x - 2 : x + 2, h - 6);
+        outputCtx.textAlign = 'left';
+      }
+
+      outputCtx.fillStyle = 'rgba(0, 0, 0, 0.09)';
+      outputCtx.beginPath();
+      for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAt(q(t, 0)));
+      for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAt(q(t, nq - 1)));
+      outputCtx.closePath();
+      outputCtx.fill();
+
+      if (nq >= 5) {
+        outputCtx.fillStyle = 'rgba(0, 0, 0, 0.09)';
+        outputCtx.beginPath();
+        for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAt(q(t, 1)));
+        for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAt(q(t, nq - 2)));
+        outputCtx.closePath();
+        outputCtx.fill();
+      }
+
+      const mid = Math.floor(nq / 2);
+      outputCtx.strokeStyle = '#555';
+      outputCtx.lineWidth = 2;
+      outputCtx.beginPath();
+      for (let t = 0; t < hZ; t++) {
+        const x = xAt(t), y = yAt(q(t, mid));
+        if (t === 0) outputCtx.moveTo(x, y); else outputCtx.lineTo(x, y);
+      }
+      outputCtx.stroke();
+
+      outputCtx.strokeStyle = '#111';
+      outputCtx.lineWidth = 2;
+      outputCtx.setLineDash([0.1, 6]);
+      outputCtx.lineCap = 'round';
+      outputCtx.beginPath();
+      let started = false;
+      for (let t = 0; t < hZ; t++) {
+        if (ORIGIN + t >= series.length) break;
+        const x = xAt(t), y = yAt(series[ORIGIN + t]);
+        if (!started) { outputCtx.moveTo(x, y); started = true; } else outputCtx.lineTo(x, y);
+      }
+      outputCtx.stroke();
+      outputCtx.setLineDash([]);
+      outputCtx.lineCap = 'butt';
+    }
+
+    function drawAll() {
+      drawInputChart();
+      drawOutputChart();
+    }
+
+    function naiveValue(t) {
+      if (!naive) return series[ORIGIN + t];
+      if (naive.lag > 0) return series[ORIGIN + t - naive.lag];
+      return series[ORIGIN - 1]; // persistence: last known value
+    }
+
+    function updateMetrics() {
+      if (!lastForecast || lastForecast.origin !== ORIGIN) {
+        metricsLine.textContent = 'inside band — · CRPS — · vs naive —';
+        metricMs.textContent = '—';
+        return;
+      }
+      const { quantiles, horizon: hZ, nQuantiles: nq, ms } = lastForecast;
+      const mid = Math.floor(nq / 2);
+      let inside = 0, pinballSum = 0, pinballCount = 0;
+      let saeMedian = 0, saeNaive = 0, n = 0;
+      for (let t = 0; t < hZ; t++) {
+        if (ORIGIN + t >= series.length) continue;
+        const actual = series[ORIGIN + t];
+        const q0 = quantiles[t * nq + 0], qLast = quantiles[t * nq + nq - 1];
+        if (actual >= q0 && actual <= qLast) inside += 1;
+        for (let qi = 0; qi < nq; qi++) {
+          const pred = quantiles[t * nq + qi];
+          const lvl = QLEVELS[qi] ?? qi / (nq - 1);
+          const err = actual - pred;
+          pinballSum += err >= 0 ? err * lvl : -err * (1 - lvl);
+          pinballCount += 1;
+        }
+        const pred = quantiles[t * nq + mid];
+        saeMedian += Math.abs(actual - pred);
+        saeNaive += Math.abs(actual - naiveValue(t));
+        n += 1;
+      }
+      const crps = 2 * (pinballSum / Math.max(1, pinballCount));
+      const naiveRatio = n > 0 ? (saeMedian / n) / (saeNaive / n) : NaN;
+      metricsLine.textContent = `inside band ${inside}/${hZ} · CRPS ${crps.toFixed(1)} · vs naive ${naiveRatio.toFixed(2)}`;
+      metricMs.textContent = ms.toFixed(1);
+    }
+
+    function runForecast() {
+      if (forecasting || !modelReady || series === null) return;
+      forecasting = true;
+      setStatus('forecasting…');
+      requestIdCounter += 1;
+      worker.postMessage({ type: 'forecast', origin: ORIGIN, requestId: requestIdCounter });
+    }
+
+    function scheduleForecast() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runForecast, 150);
+    }
+
+    function clampOrigin(o) {
+      if (!INPUT_WINDOW) return Math.round(o);
+      const lo = INPUT_WINDOW.start + MIN_PRECEDING;
+      const hi = series.length - 1 - horizon + 1;
+      return Math.min(hi, Math.max(lo, Math.round(o)));
+    }
+
+    function commitOrigin(o) {
+      ORIGIN = clampOrigin(o);
+      markerOrigin = ORIGIN;
+      lastForecast = null;
+      drawAll();
+      updateMetrics();
+      if (modelReady) scheduleForecast();
+    }
+
+    function previewMarker(o) {
+      markerOrigin = clampOrigin(o);
+      drawInputChart();
+    }
+
+    function originFromEvent(e) {
+      const rect = inputCanvas.getBoundingClientRect();
+      const { start, end } = INPUT_WINDOW;
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left - PAD_L) / (rect.width - PAD_L - PAD_R)));
+      return start + frac * (end - start);
+    }
+    let dragging = false;
+    inputCanvas.addEventListener('pointerdown', (e) => {
+      if (series === null) return;
+      dragging = true;
+      inputCanvas.setPointerCapture(e.pointerId);
+      previewMarker(originFromEvent(e));
+    });
+    inputCanvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      previewMarker(originFromEvent(e));
+    });
+    inputCanvas.addEventListener('pointerup', () => {
+      if (!dragging) return;
+      dragging = false;
+      commitOrigin(markerOrigin);
+    });
+
+    function selectSeries(index) {
+      if (index === activeIndex) return;
+      activeIndex = index;
+      for (const btn of seriesGrid.children) {
+        btn.classList.toggle('active', Number(btn.dataset.index) === index);
+      }
+      series = null;
+      lastForecast = null;
+      drawAll();
+      updateMetrics();
+      setStatus(`Loading ${seriesIndex[index].name}...`);
+      worker.postMessage({ type: 'loadSeries', index });
+    }
+
+    function renderSeriesGrid() {
+      seriesGrid.innerHTML = '';
+      seriesIndex.forEach((entry, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'series-btn';
+        btn.type = 'button';
+        btn.textContent = entry.name;
+        btn.dataset.index = i;
+        btn.disabled = !modelReady;
+        btn.addEventListener('click', () => selectSeries(i));
+        seriesGrid.appendChild(btn);
+      });
+    }
+
+    async function loadModel() {
+      loadBtn.disabled = true;
+      setStatus('loading...');
+      worker.postMessage({ type: 'load' });
+    }
+    loadBtn.addEventListener('click', loadModel);
+
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      switch (msg.type) {
+        case 'status':
+          setStatus(msg.text);
+          break;
+        case 'modelReady': {
+          modelReady = true;
+          horizon = msg.horizon;
+          nQuantiles = msg.nQuantiles;
+          seriesIndex = msg.seriesIndex;
+          renderSeriesGrid();
+          perfHeading.style.display = 'block';
+          metricsCard.style.display = 'grid';
+          metricSize.textContent = formatBytes(msg.modelBytes);
+          metricBackend.textContent = formatBackend(msg.backend);
+          setStatus(`model loaded, ${formatBackend(msg.backend)}`);
+          window.__app.ready = true;
+          // load the first bundled series by default
+          const firstIdx = seriesIndex.findIndex((e) => !e.live);
+          selectSeries(firstIdx >= 0 ? firstIdx : 0);
+          break;
+        }
+        case 'seriesReady': {
+          if (msg.index !== activeIndex) break; // stale response, user switched again
+          series = msg.series;
+          dates = msg.dates;
+          horizon = msg.horizon;
+          naive = msg.naive;
+          unit = msg.unit;
+          INPUT_WINDOW = { start: 0, end: series.length - 1 };
+          ORIGIN = clampOrigin(msg.defaultOriginIndex);
+          markerOrigin = ORIGIN;
+          worker.postMessage({ type: 'setActiveSeries', series });
+          inputDesc.textContent = `${msg.name} (${unit}), ${msg.live ? 'live' : 'bundled'} data. Drag the origin to choose where the forecast starts.`;
+          naiveNote.textContent = `Naive baseline: ${msg.naive.label}.`;
+          setStatus(`${msg.name} loaded (${series.length} points)`);
+          for (const btn of seriesGrid.children) btn.disabled = false;
+          drawAll();
+          runForecast();
+          break;
+        }
+        case 'seriesOffline': {
+          const btn = seriesGrid.children[msg.index];
+          if (btn) {
+            btn.textContent = `${msg.name} (offline)`;
+            btn.disabled = true;
+            btn.classList.remove('active');
+          }
+          if (msg.index === activeIndex) {
+            activeIndex = null;
+            series = null;
+            drawAll();
+          }
+          setStatus(`${msg.name}: offline (${msg.reason})`);
+          console.warn(`[t0] ${msg.name} offline: ${msg.reason}`);
+          break;
+        }
+        case 'forecast': {
+          if (msg.requestId !== requestIdCounter) break;
+          forecasting = false;
+          lastForecast = msg;
+          window.__app.lastForecast = msg;
+          window.__app.forecastCount += 1;
+          setStatus(`forecast in ${msg.ms.toFixed(0)} ms`);
+          drawAll();
+          updateMetrics();
+          break;
+        }
+        case 'error':
+          forecasting = false;
+          setStatus('Error: ' + msg.message);
+          console.error(msg.message);
+          break;
+        default:
+          console.warn('[main] unknown message type:', msg.type);
+      }
+    };
+  </script>
+</body>
+</html>

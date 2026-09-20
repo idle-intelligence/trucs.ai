@@ -1,0 +1,7 @@
+{
+  "name": "co2_weekly_mlo",
+  "source": "NOAA GML co2_weekly_mlo.csv (Mauna Loa Observatory), Pieter Tans/Xin Lan, NOAA GML; Ralph Keeling, Scripps",
+  "start_date": "2023-08-13 00:00:00",
+  "freq": "W",
+  "n_points": 160
+}
