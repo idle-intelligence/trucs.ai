@@ -279,6 +279,23 @@
         return ORIGIN;
       },
       liveState() { return liveState; },
+      // Test hook: fire a forecast at an explicit (origin, horizon) pair,
+      // bypassing the window-derived horizon, to compare timings across
+      // horizons at a fixed origin/context.
+      rawForecast(origin, horizonOverride) {
+        return new Promise((resolve) => {
+          requestIdCounter += 1;
+          const rid = requestIdCounter;
+          const handler = (e) => {
+            if (e.data && e.data.type === 'forecast' && e.data.requestId === rid) {
+              worker.removeEventListener('message', handler);
+              resolve(e.data);
+            }
+          };
+          worker.addEventListener('message', handler);
+          worker.postMessage({ type: 'forecast', origin, horizon: horizonOverride, requestId: rid });
+        });
+      },
     };
 
     function fitCanvas(canvas, ctx) {
