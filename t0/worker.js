@@ -25,7 +25,7 @@
 
 // Version tag on the engine URLs: browsers cache the wasm at a fixed path
 // across rebuilds, even through a hard reload. Bump when the engine changes.
-const ENGINE_BUILD = '2026-09-21';
+const ENGINE_BUILD = '2026-09-22';
 
 // t0-alpha, quantized to Q4_0 -- the smallest and fastest of the four
 // published weights (alpha/beta x Q8_0/Q4_0). The other three are compared
