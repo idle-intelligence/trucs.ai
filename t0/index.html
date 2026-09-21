@@ -106,7 +106,7 @@
   <main>
     <h1>forecast</h1>
     <p>
-      t0-alpha, The Forecasting Company's time-series model, quantized by us, forecasting in your browser.<br>
+      t0-alpha, The Forecasting Company's time-series model, quantized to 4 bits, forecasting in your browser.<br>
       Rust → WebAssembly + WebGPU. No server, no API key.<br>
       Your data never leaves your machine.
     </p>
@@ -662,7 +662,7 @@
         if (entry.live && st === 'offline') {
           btn.textContent = `${entry.name} (offline)`;
         } else if (entry.live && st !== 'ready') {
-          btn.innerHTML = `${entry.name}<br><span class="hint">click to load live data</span>`;
+          btn.textContent = entry.name;
         } else {
           btn.textContent = entry.name;
         }
