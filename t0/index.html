@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>forecast – trucs.ai</title>
+  <title>forecast — trucs.ai</title>
   <meta name="description" content="t0-alpha, The Forecasting Company's open time-series model, forecasting in your browser on WebGPU. No server.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
@@ -131,13 +131,13 @@
         <span>– forecast median</span>
         <span>▮ Q10–Q90 band</span>
       </span>
-      <span class="right" id="metricsLine">inside band – · CRPS – · vs naive –</span>
+      <span class="right" id="metricsLine">inside band - · CRPS - · vs naive -</span>
     </div>
     <p class="panel-desc" id="bandNote" style="display:none"></p>
     <div class="metrics-grid" id="metricsCard" style="display:none">
-      <div class="metric"><div class="metric-value" id="metricMs">–</div><div class="metric-label">ms / forecast</div></div>
-      <div class="metric"><div class="metric-value" id="metricSize">–</div><div class="metric-label">model size</div></div>
-      <div class="metric"><div class="metric-value" id="metricBackend">–</div><div class="metric-label">backend</div></div>
+      <div class="metric"><div class="metric-value" id="metricMs">-</div><div class="metric-label">ms / forecast</div></div>
+      <div class="metric"><div class="metric-value" id="metricSize">-</div><div class="metric-label">model size</div></div>
+      <div class="metric"><div class="metric-value" id="metricBackend">-</div><div class="metric-label">backend</div></div>
     </div>
 
     <hr>
@@ -533,7 +533,7 @@
 
     function updateMetrics() {
       if (!lastForecast || lastForecast.origin !== ORIGIN) {
-        metricsLine.textContent = 'inside band – · CRPS – · vs naive –';
+        metricsLine.textContent = 'inside band - · CRPS - · vs naive -';
         metricMs.textContent = '–';
         return;
       }
