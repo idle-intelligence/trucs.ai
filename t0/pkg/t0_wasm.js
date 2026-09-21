@@ -18,6 +18,26 @@ export class T0Wasm {
         wasm.__wbg_t0wasm_free(ptr, 0);
     }
     /**
+     * `n_signals` independent forecasts in one call, each over the same
+     * `context` (used for batch-latency benchmarking, see
+     * `bench/ours/index.html`), internally chunked at `chunk_size` (0 means
+     * "no chunking") the same way `t0-cli bench --chunk` is on native — see
+     * `t0_core::forecast_batch_chunked_async`'s doc comment for why the
+     * chunk cap exists on `wgpu`. Returns `n_signals * horizon * n_quantiles`
+     * values, signal-major then time-major then quantile-minor.
+     * @param {Float32Array} context
+     * @param {number} n_signals
+     * @param {number} horizon
+     * @param {number} chunk_size
+     * @returns {Promise<Float32Array>}
+     */
+    forecastBatch(context, n_signals, horizon, chunk_size) {
+        const ptr0 = passArrayF32ToWasm0(context, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.t0wasm_forecastBatch(this.__wbg_ptr, ptr0, len0, n_signals, horizon, chunk_size);
+        return ret;
+    }
+    /**
      * One forward pass, one signal (`v = 1`). `context` is the raw
      * (unscaled) time series; `horizon` is the number of future steps
      * requested. Returns `horizon * n_quantiles` values, time-major then
@@ -182,7 +202,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 382, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 381, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h156bf3764d385c09);
             return ret;
         },
