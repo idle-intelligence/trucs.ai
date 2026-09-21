@@ -23,10 +23,16 @@
  *     { type: 'error', message }
  */
 
-// TODO: once t0-alpha-q8_0.gguf is published, replace LOCAL model
-// fetching below with this Hub URL.
-const MODEL_HUB_URL = 'https://huggingface.co/idle-intelligence/t0-alpha-q8_0-webgpu/resolve/main/t0-alpha-q8_0.gguf';
-const MODEL_URL = new URL('./models/t0-alpha-q8_0.gguf', import.meta.url).href;
+// Version tag on the engine URLs: browsers cache the wasm at a fixed path
+// across rebuilds, even through a hard reload. Bump when the engine changes.
+const ENGINE_BUILD = '2026-09-21';
+
+// t0-alpha, quantized to Q4_0 -- the smallest and fastest of the four
+// published weights (alpha/beta x Q8_0/Q4_0). The other three are compared
+// on the repo's own demo, not here.
+const MODEL_HF_REPO = 'idle-intelligence/t0-alpha-q4_0-webgpu';
+const MODEL_FILE = 't0-alpha-q4_0.gguf';
+const MODEL_URL = `https://huggingface.co/${MODEL_HF_REPO}/resolve/main/${MODEL_FILE}`;
 const INDEX_URL = new URL('./data/index.json', import.meta.url).href;
 const CACHE_NAME = 't0-model-v1';
 
@@ -42,14 +48,34 @@ const IEM_RETRY_STAGGER_MS = 350;
 let t0wasm = null;
 let model = null;
 let seriesIndex = null; // parsed data/index.json
+let forecastInFlight = null; // Promise<Float32Array> of model.forecast() while pending
 
-// WebGPU: t0-fast (crates/t0-fast, no Burn at inference, GGUF Q8_0/Q4_0
-// weights kept resident on the GPU, no F32-expansion round trip -- see
-// t0-web's docs/BENCHMARKS.md head-to-head table, ~34ms warm vs Burn's
-// ~169ms). No WebGPU: Burn/burn-ndarray on CPU, same as t0-web's own page.
-const HAS_WEBGPU = typeof navigator !== 'undefined' && !!navigator.gpu;
-const BACKEND = HAS_WEBGPU ? 'WebGPU · t0-fast' : 'CPU';
-const PKG_DIR = HAS_WEBGPU ? './pkg-fast' : './pkg';
+// Backend selection: WebGPU only if navigator.gpu exists AND an adapter can
+// actually be obtained -- some browsers/flags expose navigator.gpu but fail
+// requestAdapter(), and t0-wasm's wgpu build has no graceful fallback for
+// that. Two separate wasm-pack outputs -- pkg-wgpu/ (WebGPU, no
+// F32-expansion round trip, GGUF Q8_0/Q4_0 weights kept resident on the
+// GPU) and pkg/ (CPU, Burn/burn-ndarray).
+let BACKEND = null;
+let PKG_DIR = null;
+
+async function detectBackend() {
+    if (BACKEND) return;
+    if (typeof navigator !== 'undefined' && navigator.gpu) {
+        try {
+            const adapter = await navigator.gpu.requestAdapter();
+            if (adapter) {
+                BACKEND = 'WebGPU';
+                PKG_DIR = './pkg-wgpu';
+                return;
+            }
+        } catch (err) {
+            // fall through to CPU
+        }
+    }
+    BACKEND = 'CPU';
+    PKG_DIR = './pkg';
+}
 
 self.onmessage = async (e) => {
     const { type, ...data } = e.data;
@@ -118,13 +144,18 @@ async function handleLoadIndex() {
 }
 
 async function handleLoad() {
+    await detectBackend();
+
     self.postMessage({ type: 'status', text: `Loading WASM module (${BACKEND})...` });
-    const wasmJsUrl = new URL(`${PKG_DIR}/t0_wasm.js`, import.meta.url).href;
+    const wasmJsUrl = new URL(`${PKG_DIR}/t0_wasm.js?v=${ENGINE_BUILD}`, import.meta.url).href;
     t0wasm = await import(wasmJsUrl);
-    await t0wasm.default();
+    await t0wasm.default({ module_or_path: new URL(`${PKG_DIR}/t0_wasm_bg.wasm?v=${ENGINE_BUILD}`, import.meta.url).href });
+    // Must run before T0Wasm.load(): on wgpu this drives the async
+    // requestAdapter()/requestDevice() setup that WASM has no blocking
+    // executor for; a no-op on the CPU build.
     await t0wasm.initBackend();
 
-    self.postMessage({ type: 'status', key: 'download', text: 'Downloading model (Q8_0, ~109 MB)...' });
+    self.postMessage({ type: 'status', key: 'download', text: 'Downloading model (Q4_0, ~59MB)...' });
     const modelBuf = await cachedFetch(MODEL_URL, 'Downloading model');
 
     self.postMessage({ type: 'status', key: 'load', text: 'Loading model...' });
@@ -384,7 +415,18 @@ async function handleForecast(origin, horizon, requestId) {
     const ctxStart = Math.max(0, origin - CONTEXT_CAP);
     const context = new Float32Array(series.slice(ctxStart, origin));
     const t0 = performance.now();
-    const quantiles = await model.forecast(context, horizon);
+    // model.forecast is always async (the wgpu build needs a real async GPU
+    // readback; the CPU build resolves the same Promise immediately) --
+    // tracked in forecastInFlight so nothing frees the model out from under
+    // a pending call.
+    const p = model.forecast(context, horizon);
+    forecastInFlight = p;
+    let quantiles;
+    try {
+        quantiles = await p;
+    } finally {
+        if (forecastInFlight === p) forecastInFlight = null;
+    }
     const ms = performance.now() - t0;
     self.postMessage({
         type: 'forecast',
