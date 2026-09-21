@@ -1,0 +1,7 @@
+{
+  "name": "sunspot_monthly",
+  "source": "SILSO data/image, Royal Observatory of Belgium, Brussels, SN_m_tot_V2.0.txt, CC BY-NC 4.0",
+  "start_date": "1950-01-01 00:00:00",
+  "freq": "MS",
+  "n_points": 732
+}

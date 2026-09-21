@@ -1,0 +1,112 @@
+[
+  {
+    "name": "US births",
+    "file": "series.f32",
+    "meta": "series_meta.json",
+    "frequency": "D",
+    "unit": "births/day",
+    "window": {
+      "start": "1988-07-01",
+      "end": "1988-12-31"
+    },
+    "defaultOrigin": "1988-11-30",
+    "source": "GIFT-Eval (Salesforce/GiftEval on HuggingFace Hub), config us_births/D",
+    "license": "see web/data/README.md"
+  },
+  {
+    "name": "Boston tide",
+    "file": null,
+    "frequency": "H",
+    "unit": "m (MLLW)",
+    "window": {
+      "days": 8,
+      "end": "now"
+    },
+    "defaultOrigin": "60%-of-window",
+    "live": true,
+    "liveApi": "noaa-tide",
+    "liveUrl": "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?station=8443970&product=water_level&datum=MLLW&units=metric&time_zone=gmt&format=json&date=recent",
+    "station": "8443970 (Boston, MA)",
+    "source": "NOAA CO-OPS Tides & Currents",
+    "license": "US Government public domain"
+  },
+  {
+    "name": "Mauna Loa CO2",
+    "file": "co2_weekly_mlo.f32",
+    "meta": "co2_weekly_mlo_meta.json",
+    "frequency": "W",
+    "unit": "ppm CO2",
+    "window": {
+      "start": "2023-08-13",
+      "end": "2026-08-30"
+    },
+    "defaultOrigin": "2025-06-08",
+    "live": false,
+    "source": "NOAA GML co2_weekly_mlo.csv, Mauna Loa Observatory",
+    "license": "US Government public domain, credit NOAA/Scripps"
+  },
+  {
+    "name": "France electricity",
+    "file": "eco2mix_national.f32",
+    "meta": "eco2mix_national_meta.json",
+    "frequency": "30T",
+    "unit": "MW consumption",
+    "window": {
+      "start": "2023-12-20 00:00",
+      "end": "2023-12-27 23:30"
+    },
+    "defaultOrigin": "2023-12-24 19:00",
+    "live": false,
+    "source": "RTE via ODRE, dataset eco2mix-national-cons-def",
+    "license": "Licence Ouverte / Open Licence (Etalab), see web/data/README.md"
+  },
+  {
+    "name": "Potomac discharge",
+    "file": null,
+    "frequency": "15T",
+    "unit": "cfs",
+    "window": {
+      "days": 3,
+      "end": "now"
+    },
+    "defaultOrigin": "60%-of-window",
+    "live": true,
+    "liveApi": "usgs-iv",
+    "liveUrl": "https://waterservices.usgs.gov/nwis/iv/?sites=01646500&parameterCd=00060&period=P3D&format=json",
+    "station": "01646500 (Potomac River)",
+    "source": "USGS NWIS instantaneous values",
+    "license": "US Government public domain"
+  },
+  {
+    "name": "Sunspot number",
+    "file": "sunspot_monthly.f32",
+    "meta": "sunspot_monthly_meta.json",
+    "frequency": "MS",
+    "unit": "monthly sunspot number",
+    "window": {
+      "start": "1996-01",
+      "end": "2010-12"
+    },
+    "defaultOrigin": "2004-12",
+    "live": false,
+    "source": "SILSO, Royal Observatory of Belgium, SN_m_tot_V2.0.txt",
+    "license": "CC BY-NC 4.0, attribution: SILSO data/image, Royal Observatory of Belgium, Brussels"
+  },
+  {
+    "name": "Paris Le Bourget temp",
+    "file": null,
+    "frequency": "H",
+    "unit": "deg C",
+    "window": {
+      "days": 7,
+      "end": "now"
+    },
+    "defaultOrigin": "60%-of-window",
+    "live": true,
+    "liveApi": "iem-metar",
+    "liveUrl": "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?station=LFPB&data=tmpc&tz=UTC&format=onlycomma&latlon=no&elev=no&missing=M&trace=T&direct=no&report_type=3",
+    "station": "LFPB (Paris Le Bourget)",
+    "source": "Iowa Environmental Mesonet ASOS/METAR archive",
+    "license": "Public domain (NWS METAR observations), served by IEM"
+  }
+]

@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>forecast — trucs.ai</title>
+  <meta name="description" content="t0-alpha, The Forecasting Company's open time-series model, forecasting in your browser on WebGPU. No server.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover:not(:disabled) { background: #111; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .series-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+      margin: 0.75em 0;
+    }
+    .series-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.35em 0.9em;
+      cursor: pointer;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .series-btn:hover:not(:disabled) { background: #111; color: #fff; }
+    .series-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .series-btn .hint {
+      display: block;
+      font-size: 0.7rem;
+      color: #999;
+    }
+    .series-btn.active .hint { color: #ccc; }
+    .series-btn.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+      margin-top: 0.5em;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 220px;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+    #inputChart { cursor: crosshair; touch-action: none; }
+    .legend {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.4em 1em;
+      margin-top: 0.5em;
+      font-size: 0.8rem;
+      color: #555;
+    }
+    .legend .left span { margin-right: 0.75em; }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1em;
+      margin-top: 0.5em;
+    }
+    .metric { text-align: center; }
+    .metric-value {
+      font-size: 1.1rem;
+      font-weight: bold;
+    }
+    .metric-label {
+      font-size: 0.75rem;
+      color: #999;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>forecast</h1>
+    <p>
+      t0-alpha, The Forecasting Company's time-series model, quantized to 4 bits, forecasting in your browser.<br>
+      Rust → WebAssembly + WebGPU. No server, no API key.<br>
+      Your data never leaves your machine.
+    </p>
+
+    <div id="model-status">
+      <button id="load-btn">download</button>
+      <span id="status-text">model will be stored locally: ~59MB</span>
+    </div>
+
+    <hr>
+
+    <div class="series-grid" id="seriesGrid"></div>
+    <canvas id="inputChart"></canvas>
+    <p class="panel-desc" id="inputDesc">Choose a series, then drag the dashed origin line to pick where the forecast starts.</p>
+
+    <hr>
+
+    <canvas id="outputChart"></canvas>
+    <div class="legend">
+      <span class="left">
+        <span>•••• actual</span>
+        <span>– forecast median</span>
+        <span>▮ Q10–Q90 band</span>
+      </span>
+      <span class="right" id="metricsLine">inside band - · CRPS - · vs naive -</span>
+    </div>
+    <p class="panel-desc" id="bandNote" style="display:none"></p>
+    <div class="metrics-grid" id="metricsCard" style="display:none">
+      <div class="metric"><div class="metric-value" id="metricMs">-</div><div class="metric-label">ms / forecast</div></div>
+      <div class="metric"><div class="metric-value" id="metricSize">-</div><div class="metric-label">model size</div></div>
+      <div class="metric"><div class="metric-value" id="metricBackend">-</div><div class="metric-label">backend</div></div>
+    </div>
+
+    <hr>
+
+    <p class="panel-desc"><a href="https://huggingface.co/theforecastingcompany/t0-alpha">t0-alpha</a> by The Forecasting Company (Apache-2.0), <a id="quantLink" href="https://huggingface.co/idle-intelligence/t0-alpha-q4_0-webgpu">quantized to Q4_0</a>.<br>
+    Inference: <a href="https://github.com/idle-intelligence/t0-web">t0-web</a>, Rust compiled to WebAssembly, WebGPU when available.<br>
+    Data sources and licences: <a href="./data/README.md">data/README.md</a>.</p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    const QUANTIZED_MODEL_URL = 'https://huggingface.co/idle-intelligence/t0-alpha-q4_0-webgpu';
+    document.getElementById('quantLink').href = QUANTIZED_MODEL_URL;
+
+    const loadBtn = document.getElementById('load-btn');
+    const statusText = document.getElementById('status-text');
+    const seriesGrid = document.getElementById('seriesGrid');
+    const inputCanvas = document.getElementById('inputChart');
+    const inputCtx = inputCanvas.getContext('2d');
+    const outputCanvas = document.getElementById('outputChart');
+    const outputCtx = outputCanvas.getContext('2d');
+    const inputDesc = document.getElementById('inputDesc');
+    let naiveLabel = 'naive';
+    const bandNote = document.getElementById('bandNote');
+    const metricsCard = document.getElementById('metricsCard');
+    const metricMs = document.getElementById('metricMs');
+    const metricSize = document.getElementById('metricSize');
+    const metricBackend = document.getElementById('metricBackend');
+    const metricsLine = document.getElementById('metricsLine');
+
+    const PAD_L = 48, PAD_R = 8, PAD_T = 10, PAD_B = 20;
+    const MIN_PRECEDING = 60;
+    const MAX_LIVE_WINDOW = 190;
+    const QLEVELS = [0.1, 0.25, 0.5, 0.75, 0.9];
+    // Horizon is derived from the origin's distance to the window end (see
+    // computeHorizon), not fixed -- these are just the model's own bounds
+    // (single-pass max horizon 1024).
+    const MIN_HORIZON = 8;
+    const MAX_HORIZON = 1024;
+    const FREQ_UNIT = { D: 'd', H: 'h', W: 'wk', MS: 'mo', '30T': 'x30m', '15T': 'x15m' };
+
+    // Loose date parsing shared by window/origin lookups -- dates strings
+    // are either "YYYY-MM-DD" or "YYYY-MM-DD HH:MM" (see worker.js
+    // isoDateOrDatetime); index.json window bounds may be coarser
+    // ("1996-01" for a monthly series), so comparisons use getTime(), not
+    // string equality.
+    function looseTime(s) {
+      const t = s.trim();
+      return new Date(t.replace(' ', 'T') + (t.endsWith('Z') ? '' : 'Z')).getTime();
+    }
+
+    // The declared index.json window for a bundled series maps to a slice
+    // of the full loaded `dates` array (only us_births' bundled file is
+    // wider than its window; the others already match 1:1). Live series
+    // have no fixed window -- show at most the last MAX_LIVE_WINDOW points.
+    function computeInputWindow(entry, dates) {
+      const n = dates.length;
+      if (entry.window && entry.window.start && entry.window.end) {
+        const lo = looseTime(entry.window.start);
+        const hi = looseTime(entry.window.end);
+        let start = dates.findIndex((d) => looseTime(d) >= lo);
+        if (start < 0) start = 0;
+        let end = n - 1;
+        for (let i = n - 1; i >= 0; i--) {
+          if (looseTime(dates[i]) <= hi) { end = i; break; }
+        }
+        if (end <= start) end = n - 1;
+        return { start, end };
+      }
+      return { start: Math.max(0, n - MAX_LIVE_WINDOW), end: n - 1 };
+    }
+
+    function setStatus(text) {
+      statusText.textContent = text;
+      console.log(`[t0] ${text}`);
+    }
+    function formatBytes(bytes) {
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    function formatBackend(b) {
+      return b;
+    }
+
+    const worker = new Worker('./worker.js', { type: 'module' });
+    worker.postMessage({ type: 'loadIndex' });
+
+    let seriesIndex = null;
+    let activeIndex = null;
+    let modelReady = false;
+
+    // Per-active-series state
+    let series = null;      // Float32Array-ish array of values
+    let dates = null;       // parallel array of date/time strings
+    let freqLabel = '';     // e.g. 'D', 'H', 'W', '30T', 'MS' -- see FREQ_UNIT
+    let nQuantiles = 5;
+    let naive = null;       // { label, lag }
+    let unit = '';
+    let INPUT_WINDOW = null; // { start, end } indices into series/dates
+    let ORIGIN = null;
+    let markerOrigin = null;
+    let lastForecast = null;
+    let forecasting = false;
+    let requestIdCounter = 0;
+    let debounceTimer = null;
+
+    // Per-series live-fetch state. Nothing is fetched until a live series
+    // is actually clicked; a live button loads on the first click
+    // hint until then, or "(offline)" if the fetch failed.
+    let liveState = {}; // index -> 'ready' | 'offline' (absent = not yet fetched)
+
+    window.__app = {
+      ready: false,
+      lastForecast: null,
+      forecastCount: 0,
+      runForecast() { runForecast(); },
+      origin() { return ORIGIN; },
+      activeIndex() { return activeIndex; },
+      inputWindowPoints() { return INPUT_WINDOW ? INPUT_WINDOW.end - INPUT_WINDOW.start + 1 : null; },
+      windowRange() { return INPUT_WINDOW ? { start: INPUT_WINDOW.start, end: INPUT_WINDOW.end } : null; },
+      // Test hook: set the origin as a fraction [0,1] of the input window
+      // and trigger a forecast, without simulating pointer drag events.
+      setOriginFraction(frac) {
+        if (!INPUT_WINDOW) return null;
+        commitOrigin(INPUT_WINDOW.start + frac * (INPUT_WINDOW.end - INPUT_WINDOW.start));
+        return ORIGIN;
+      },
+      liveState() { return liveState; },
+      // Test hook: fire a forecast at an explicit (origin, horizon) pair,
+      // bypassing the window-derived horizon, to compare timings across
+      // horizons at a fixed origin/context.
+      rawForecast(origin, horizonOverride) {
+        return new Promise((resolve) => {
+          requestIdCounter += 1;
+          const rid = requestIdCounter;
+          const handler = (e) => {
+            if (e.data && e.data.type === 'forecast' && e.data.requestId === rid) {
+              worker.removeEventListener('message', handler);
+              resolve(e.data);
+            }
+          };
+          worker.addEventListener('message', handler);
+          worker.postMessage({ type: 'forecast', origin, horizon: horizonOverride, requestId: rid });
+        });
+      },
+    };
+
+    function fitCanvas(canvas, ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { w: rect.width, h: rect.height };
+    }
+
+    function shortLabel(dateStr) {
+      // dateStr is "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"
+      const [datePart, timePart] = dateStr.split(' ');
+      const [, m, d] = datePart.split('-');
+      if (timePart) return `${m}/${d} ${timePart}`;
+      return `${m}/${d}`;
+    }
+
+    function drawGridlines(ctx, w, h, domain) {
+      const plotH = h - PAD_T - PAD_B;
+      const yAt = (v) => PAD_T + plotH - ((v - domain.lo) / (domain.hi - domain.lo)) * plotH;
+      ctx.strokeStyle = '#eee';
+      ctx.fillStyle = '#999';
+      ctx.font = '10px ui-monospace, monospace';
+      ctx.lineWidth = 1;
+      const nY = 4;
+      for (let t = 0; t <= nY; t++) {
+        const v = domain.lo + (t / nY) * (domain.hi - domain.lo);
+        const y = yAt(v);
+        ctx.beginPath();
+        ctx.moveTo(PAD_L, y);
+        ctx.lineTo(w - PAD_R, y);
+        ctx.stroke();
+        ctx.fillText(Math.round(v).toLocaleString(), 2, y + 3);
+      }
+      return yAt;
+    }
+
+    // Fewer ticks on a narrow column so date labels don't overlap.
+    function tickCount(w) {
+      return Math.max(3, Math.min(6, Math.floor(w / 70)));
+    }
+
+    function drawXTicks(ctx, w, h, xAt, start, end, step) {
+      ctx.strokeStyle = '#eee';
+      ctx.fillStyle = '#999';
+      const n = end - start;
+      const stride = Math.max(1, Math.round(n / tickCount(w)));
+      for (let i = start; i <= end; i += stride) {
+        const x = xAt(i);
+        ctx.beginPath();
+        ctx.moveTo(x, PAD_T);
+        ctx.lineTo(x, h - PAD_B);
+        ctx.stroke();
+        const label = shortLabel(dates[i]);
+        ctx.textAlign = x > w - 40 ? 'right' : 'left';
+        ctx.fillText(label, x > w - 40 ? x - 2 : x + 2, h - 6);
+        ctx.textAlign = 'left';
+      }
+    }
+
+    function drawOriginMarker(ctx, x, h) {
+      ctx.strokeStyle = '#999';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, PAD_T);
+      ctx.lineTo(x, h - PAD_B);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(x, PAD_T, 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    function drawInputChart() {
+      const { w, h } = fitCanvas(inputCanvas, inputCtx);
+      inputCtx.clearRect(0, 0, w, h);
+      if (!series || !INPUT_WINDOW) return;
+      const { start, end } = INPUT_WINDOW;
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (i) => PAD_L + ((i - start) / (end - start)) * plotW;
+
+      let lo = Infinity, hi = -Infinity;
+      for (let i = start; i <= end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
+      const pad = (hi - lo) * 0.1 || 1;
+      const domain = { lo: lo - pad, hi: hi + pad };
+      const yAt = drawGridlines(inputCtx, w, h, domain);
+      drawXTicks(inputCtx, w, h, xAt, start, end);
+
+      const o = markerOrigin ?? ORIGIN;
+      inputCtx.strokeStyle = '#111';
+      inputCtx.lineWidth = 1.5;
+      inputCtx.beginPath();
+      for (let i = start; i <= o; i++) {
+        const x = xAt(i), y = yAt(series[i]);
+        if (i === start) inputCtx.moveTo(x, y); else inputCtx.lineTo(x, y);
+      }
+      inputCtx.stroke();
+
+      inputCtx.strokeStyle = '#ccc';
+      inputCtx.lineWidth = 1.5;
+      inputCtx.beginPath();
+      for (let i = o; i <= end; i++) {
+        const x = xAt(i), y = yAt(series[i]);
+        if (i === o) inputCtx.moveTo(x, y); else inputCtx.lineTo(x, y);
+      }
+      inputCtx.stroke();
+
+      drawOriginMarker(inputCtx, xAt(o), h);
+    }
+
+    // Shown before a forecast exists for the current origin -- no model
+    // downloaded yet, or one just downloaded and hasn't run yet. Draws the
+    // actual data across the input window so OUTPUT is never blank.
+    function drawOutputEmpty(w, h) {
+      const { start, end } = INPUT_WINDOW;
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (i) => PAD_L + ((i - start) / (end - start)) * plotW;
+      let lo = Infinity, hi = -Infinity;
+      for (let i = start; i <= end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
+      const pad = (hi - lo) * 0.1 || 1;
+      const domain = { lo: lo - pad, hi: hi + pad };
+      drawGridlines(outputCtx, w, h, domain);
+      drawXTicks(outputCtx, w, h, xAt, start, end);
+      if (!modelReady) {
+        outputCtx.fillStyle = '#999';
+        outputCtx.font = '12px ui-monospace, monospace';
+        outputCtx.textAlign = 'center';
+        outputCtx.fillText('download the model to start forecasting', w / 2, h / 2);
+        outputCtx.textAlign = 'left';
+      }
+    }
+
+    function drawOutputChart() {
+      const { w, h } = fitCanvas(outputCanvas, outputCtx);
+      outputCtx.clearRect(0, 0, w, h);
+      if (!series || !INPUT_WINDOW) { bandNote.style.display = 'none'; return; }
+      if (!lastForecast || lastForecast.origin !== ORIGIN) {
+        drawOutputEmpty(w, h);
+        bandNote.style.display = 'none';
+        return;
+      }
+      const { quantiles, horizon: hZ, nQuantiles: nq } = lastForecast;
+      const q = (t, qi) => quantiles[t * nq + qi];
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (t) => PAD_L + (t / (hZ - 1)) * plotW;
+
+      // Y-range is [min,max] of the drawn INPUT window, the actual
+      // continuation, and the forecast median only -- NOT the full
+      // quantile band, which can run far wider than the data (e.g. a
+      // long-horizon Q10 dipping well below anything in view) and flatten
+      // everything else to a line. Bands are clipped to this frame below;
+      // a note is printed if they extend past it.
+      const mid = Math.floor(nq / 2);
+      let lo = Infinity, hi = -Infinity;
+      for (let i = INPUT_WINDOW.start; i <= INPUT_WINDOW.end; i++) { lo = Math.min(lo, series[i]); hi = Math.max(hi, series[i]); }
+      for (let t = 0; t < hZ; t++) {
+        lo = Math.min(lo, q(t, mid)); hi = Math.max(hi, q(t, mid));
+        if (ORIGIN + t < series.length) { lo = Math.min(lo, series[ORIGIN + t]); hi = Math.max(hi, series[ORIGIN + t]); }
+      }
+      const pad = (hi - lo) * 0.1 || 1;
+      const domain = { lo: lo - pad, hi: hi + pad };
+      const yAt = drawGridlines(outputCtx, w, h, domain);
+      const yAtClamped = (v) => yAt(Math.min(domain.hi, Math.max(domain.lo, v)));
+
+      let bandLo = Infinity, bandHi = -Infinity;
+      for (let t = 0; t < hZ; t++) { bandLo = Math.min(bandLo, q(t, 0)); bandHi = Math.max(bandHi, q(t, nq - 1)); }
+      const noteParts = [];
+      if (bandLo < domain.lo) noteParts.push(`Q${Math.round(QLEVELS[0] * 100)} down to ${bandLo.toFixed(0)}`);
+      if (bandHi > domain.hi) noteParts.push(`Q${Math.round(QLEVELS[nq - 1] * 100)} up to ${bandHi.toFixed(0)}`);
+      if (noteParts.length) {
+        bandNote.textContent = `band extends beyond the frame (${noteParts.join(', ')})`;
+        bandNote.style.display = '';
+      } else {
+        bandNote.style.display = 'none';
+      }
+
+      outputCtx.strokeStyle = '#eee';
+      outputCtx.fillStyle = '#999';
+      const stride = Math.max(1, Math.round(hZ / tickCount(w)));
+      for (let t = 0; t < hZ; t += stride) {
+        const x = xAt(t);
+        outputCtx.beginPath();
+        outputCtx.moveTo(x, PAD_T);
+        outputCtx.lineTo(x, h - PAD_B);
+        outputCtx.stroke();
+        const idx = ORIGIN + t;
+        const label = idx < dates.length ? shortLabel(dates[idx]) : '';
+        outputCtx.textAlign = x > w - 40 ? 'right' : 'left';
+        outputCtx.fillText(label, x > w - 40 ? x - 2 : x + 2, h - 6);
+        outputCtx.textAlign = 'left';
+      }
+
+      outputCtx.fillStyle = 'rgba(0, 0, 0, 0.09)';
+      outputCtx.beginPath();
+      for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAtClamped(q(t, 0)));
+      for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAtClamped(q(t, nq - 1)));
+      outputCtx.closePath();
+      outputCtx.fill();
+
+      if (nq >= 5) {
+        outputCtx.fillStyle = 'rgba(0, 0, 0, 0.09)';
+        outputCtx.beginPath();
+        for (let t = 0; t < hZ; t++) outputCtx.lineTo(xAt(t), yAtClamped(q(t, 1)));
+        for (let t = hZ - 1; t >= 0; t--) outputCtx.lineTo(xAt(t), yAtClamped(q(t, nq - 2)));
+        outputCtx.closePath();
+        outputCtx.fill();
+      }
+
+      outputCtx.strokeStyle = '#555';
+      outputCtx.lineWidth = 2;
+      outputCtx.beginPath();
+      for (let t = 0; t < hZ; t++) {
+        const x = xAt(t), y = yAt(q(t, mid));
+        if (t === 0) outputCtx.moveTo(x, y); else outputCtx.lineTo(x, y);
+      }
+      outputCtx.stroke();
+
+      outputCtx.strokeStyle = '#111';
+      outputCtx.lineWidth = 2;
+      outputCtx.setLineDash([0.1, 6]);
+      outputCtx.lineCap = 'round';
+      outputCtx.beginPath();
+      let started = false;
+      for (let t = 0; t < hZ; t++) {
+        if (ORIGIN + t >= series.length) break;
+        const x = xAt(t), y = yAt(series[ORIGIN + t]);
+        if (!started) { outputCtx.moveTo(x, y); started = true; } else outputCtx.lineTo(x, y);
+      }
+      outputCtx.stroke();
+      outputCtx.setLineDash([]);
+      outputCtx.lineCap = 'butt';
+    }
+
+    function drawAll() {
+      drawInputChart();
+      drawOutputChart();
+    }
+
+    function naiveValue(t) {
+      if (!naive) return series[ORIGIN + t];
+      if (naive.lag > 0) return series[ORIGIN + t - naive.lag];
+      return series[ORIGIN - 1]; // persistence: last known value
+    }
+
+    function updateMetrics() {
+      if (!lastForecast || lastForecast.origin !== ORIGIN) {
+        metricsLine.textContent = 'inside band - · CRPS - · vs naive -';
+        metricMs.textContent = '–';
+        return;
+      }
+      const { quantiles, horizon: hZ, nQuantiles: nq, ms } = lastForecast;
+      const mid = Math.floor(nq / 2);
+      let inside = 0, pinballSum = 0, pinballCount = 0;
+      let saeMedian = 0, saeNaive = 0, n = 0;
+      for (let t = 0; t < hZ; t++) {
+        if (ORIGIN + t >= series.length) continue;
+        const actual = series[ORIGIN + t];
+        const q0 = quantiles[t * nq + 0], qLast = quantiles[t * nq + nq - 1];
+        if (actual >= q0 && actual <= qLast) inside += 1;
+        for (let qi = 0; qi < nq; qi++) {
+          const pred = quantiles[t * nq + qi];
+          const lvl = QLEVELS[qi] ?? qi / (nq - 1);
+          const err = actual - pred;
+          pinballSum += err >= 0 ? err * lvl : -err * (1 - lvl);
+          pinballCount += 1;
+        }
+        const pred = quantiles[t * nq + mid];
+        saeMedian += Math.abs(actual - pred);
+        saeNaive += Math.abs(actual - naiveValue(t));
+        n += 1;
+      }
+      const crps = 2 * (pinballSum / Math.max(1, pinballCount));
+      const naiveRatio = n > 0 ? (saeMedian / n) / (saeNaive / n) : NaN;
+      const hUnit = FREQ_UNIT[freqLabel] || 'steps';
+      metricsLine.textContent = `horizon ${hZ} ${hUnit} · inside band ${inside}/${hZ} · CRPS ${crps.toFixed(1)} · vs ${naiveLabel} ${naiveRatio.toFixed(2)}`;
+      metricMs.textContent = ms.toFixed(1);
+    }
+
+    // Horizon = origin to the end of the shown window, not a fixed step
+    // count: drag the origin near the end for a short horizon over all the
+    // data; drag near the start to forecast the whole rest of the window.
+    function computeHorizon(o) {
+      const windowPoints = INPUT_WINDOW.end - INPUT_WINDOW.start + 1;
+      const raw = INPUT_WINDOW.end - o;
+      return Math.max(MIN_HORIZON, Math.min(raw, windowPoints - 1, MAX_HORIZON));
+    }
+
+    // If a forecast is requested while one is already in flight (e.g. the
+    // origin moves again before the model-ready auto-forecast returns),
+    // it's not dropped -- forecastPending is set and re-checked once the
+    // in-flight one resolves (see the 'forecast' message handler below).
+    let forecastPending = false;
+
+    function runForecast() {
+      if (!modelReady || series === null) return;
+      if (forecasting) { forecastPending = true; return; }
+      forecasting = true;
+      setStatus('forecasting…');
+      requestIdCounter += 1;
+      const h = computeHorizon(ORIGIN);
+      worker.postMessage({ type: 'forecast', origin: ORIGIN, horizon: h, requestId: requestIdCounter });
+    }
+
+    function scheduleForecast() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runForecast, 150);
+    }
+
+    function clampOrigin(o) {
+      if (!INPUT_WINDOW) return Math.round(o);
+      const lo = INPUT_WINDOW.start + MIN_PRECEDING;
+      const hi = INPUT_WINDOW.end - MIN_HORIZON;
+      return Math.min(hi, Math.max(lo, Math.round(o)));
+    }
+
+    function commitOrigin(o) {
+      ORIGIN = clampOrigin(o);
+      markerOrigin = ORIGIN;
+      lastForecast = null;
+      drawAll();
+      updateMetrics();
+      if (modelReady) scheduleForecast();
+    }
+
+    function previewMarker(o) {
+      markerOrigin = clampOrigin(o);
+      drawInputChart();
+    }
+
+    function originFromEvent(e) {
+      const rect = inputCanvas.getBoundingClientRect();
+      const { start, end } = INPUT_WINDOW;
+      const frac = Math.min(1, Math.max(0, (e.clientX - rect.left - PAD_L) / (rect.width - PAD_L - PAD_R)));
+      return start + frac * (end - start);
+    }
+    let dragging = false;
+    inputCanvas.addEventListener('pointerdown', (e) => {
+      if (series === null) return;
+      dragging = true;
+      inputCanvas.setPointerCapture(e.pointerId);
+      previewMarker(originFromEvent(e));
+    });
+    inputCanvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      previewMarker(originFromEvent(e));
+    });
+    inputCanvas.addEventListener('pointerup', () => {
+      if (!dragging) return;
+      dragging = false;
+      commitOrigin(markerOrigin);
+    });
+
+    function selectSeries(index) {
+      if (index === activeIndex) return;
+      activeIndex = index;
+      for (const btn of seriesGrid.children) {
+        btn.classList.toggle('active', Number(btn.dataset.index) === index);
+      }
+      series = null;
+      lastForecast = null;
+      drawAll();
+      updateMetrics();
+      worker.postMessage({ type: 'loadSeries', index });
+    }
+
+    function renderSeriesGrid() {
+      seriesGrid.innerHTML = '';
+      seriesIndex.forEach((entry, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'series-btn';
+        btn.type = 'button';
+        const st = liveState[i];
+        if (entry.live && st === 'offline') {
+          btn.textContent = `${entry.name} (offline)`;
+        } else if (entry.live && st !== 'ready') {
+          btn.textContent = entry.name;
+        } else {
+          btn.textContent = entry.name;
+        }
+        btn.dataset.index = i;
+        btn.disabled = entry.live && st === 'offline';
+        btn.classList.toggle('active', i === activeIndex);
+        btn.addEventListener('click', () => selectSeries(i));
+        seriesGrid.appendChild(btn);
+      });
+    }
+
+    async function loadModel() {
+      loadBtn.disabled = true;
+      setStatus('loading...');
+      worker.postMessage({ type: 'load' });
+    }
+    loadBtn.addEventListener('click', loadModel);
+
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      switch (msg.type) {
+        case 'status':
+          setStatus(msg.text);
+          break;
+        case 'indexReady': {
+          seriesIndex = msg.seriesIndex;
+          renderSeriesGrid();
+          // load the first bundled series by default, before any model
+          // download, so INPUT/OUTPUT are never blank on arrival
+          const firstIdx = seriesIndex.findIndex((e) => !e.live);
+          selectSeries(firstIdx >= 0 ? firstIdx : 0);
+          break;
+        }
+        case 'modelReady': {
+          modelReady = true;
+          nQuantiles = msg.nQuantiles;
+          seriesIndex = msg.seriesIndex;
+          renderSeriesGrid();
+          metricsCard.style.display = 'grid';
+          metricSize.textContent = formatBytes(msg.modelBytes);
+          metricBackend.textContent = formatBackend(msg.backend);
+          setStatus(`model loaded (${formatBytes(msg.modelBytes)}), ${formatBackend(msg.backend)}`);
+          window.__app.ready = true;
+          if (activeIndex === null) {
+            const firstIdx = seriesIndex.findIndex((e) => !e.live);
+            selectSeries(firstIdx >= 0 ? firstIdx : 0);
+          } else {
+            drawAll();
+            if (series) runForecast();
+          }
+          break;
+        }
+        case 'seriesReady': {
+          if (msg.live) { liveState[msg.index] = 'ready'; renderSeriesGrid(); }
+          if (msg.index !== activeIndex) break; // stale response, user switched again
+          series = msg.series;
+          dates = msg.dates;
+          freqLabel = msg.frequency;
+          naive = msg.naive;
+          unit = msg.unit;
+          INPUT_WINDOW = computeInputWindow(seriesIndex[msg.index], dates);
+          ORIGIN = clampOrigin(msg.defaultOriginIndex);
+          markerOrigin = ORIGIN;
+          worker.postMessage({ type: 'setActiveSeries', series });
+          inputDesc.textContent = `${msg.name} (${unit}), ${msg.live ? 'live' : 'bundled'} data. Drag the origin. The model forecasts everything after it, to the end of the window.`;
+          naiveLabel = msg.naive.label.replace(/^repeat-/, '').replace(/-/g, ' ');
+          setStatus(`${msg.name} loaded (${series.length} points)`);
+          drawAll();
+          runForecast();
+          break;
+        }
+        case 'seriesOffline': {
+          liveState[msg.index] = 'offline';
+          renderSeriesGrid();
+          if (msg.index === activeIndex) {
+            activeIndex = null;
+            series = null;
+            drawAll();
+          }
+          setStatus(`${msg.name}: offline (${msg.reason})`);
+          console.warn(`[t0] ${msg.name} offline: ${msg.reason}`);
+          break;
+        }
+        case 'forecast': {
+          if (msg.requestId !== requestIdCounter) break;
+          forecasting = false;
+          lastForecast = msg;
+          window.__app.lastForecast = msg;
+          window.__app.forecastCount += 1;
+          setStatus(`forecast in ${msg.ms.toFixed(0)} ms`);
+          drawAll();
+          updateMetrics();
+          if (forecastPending) {
+            forecastPending = false;
+            runForecast();
+          }
+          break;
+        }
+        case 'error':
+          forecasting = false;
+          setStatus('Error: ' + msg.message);
+          console.error(msg.message);
+          break;
+        default:
+          console.warn('[main] unknown message type:', msg.type);
+      }
+    };
+
+    window.addEventListener('resize', () => drawAll());
+  </script>
+</body>
+</html>
