@@ -244,7 +244,7 @@
     let debounceTimer = null;
 
     // Per-series live-fetch state. Nothing is fetched until a live series
-    // is actually clicked; a live button shows a "click to load live data"
+    // is actually clicked; a live button loads on the first click
     // hint until then, or "(offline)" if the fetch failed.
     let liveState = {}; // index -> 'ready' | 'offline' (absent = not yet fetched)
 
