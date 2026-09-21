@@ -25,6 +25,9 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd><a href="/llm-tts/">LLM → TTS</a></dd>
   <dd><a href="/stt-llm-tts/">STT → LLM → TTS</a></dd>
   <dd><a href="/sts/">Speech-to-speech</a> (almost)</dd>
+
+  <dt>Time series</dt>
+  <dd>Browser <a href="/t0/">forecasting</a> with t0-alpha</dd>
 </dl>
   
 ---
