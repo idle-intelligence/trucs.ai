@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>kNN weather — trucs.ai</title>
-  <meta name="description" content="Weather at any point on Earth, estimated from the nearest live METAR stations. Runs entirely in your browser.">
+  <meta name="description" content="Weather at any point on Earth, estimated from the 5 nearest live METAR stations. Runs entirely in your browser.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../assets/style.css">
@@ -19,18 +19,8 @@
       cursor: pointer;
       border-radius: 2px;
     }
-    button:hover {
-      background: #111;
-      color: #fff;
-    }
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    button:disabled:hover {
-      background: #fff;
-      color: #111;
-    }
+    button:hover:not(:disabled) { background: #111; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
     #model-status {
       display: flex;
       align-items: center;
@@ -40,96 +30,71 @@
       color: #555;
       font-size: 0.85rem;
     }
-    .voice-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
+    .series-grid {
+      display: flex;
+      flex-wrap: wrap;
       gap: 0.5em;
+      margin: 0.75em 0;
     }
-    .voice-btn {
+    .series-btn {
       font-family: inherit;
       font-size: 0.85rem;
-      padding: 0.4em 0;
+      padding: 0.35em 0.9em;
       cursor: pointer;
-      border: 1px solid #ddd;
+      border: 1px solid #111;
       background: #fff;
       color: #111;
       border-radius: 2px;
       text-align: center;
+      line-height: 1.3;
     }
-    .voice-btn:hover:not(:disabled) {
-      border-color: #111;
-    }
-    .voice-btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    .voice-btn.active {
+    .series-btn:hover:not(:disabled) { background: #111; color: #fff; }
+    .series-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .series-btn.active {
       background: #111;
       color: #fff;
       border-color: #111;
     }
-    .voice-btn.loading {
-      border-color: #999;
-      color: #999;
+    .input-row {
+      margin: 0.75em 0;
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+      flex-wrap: wrap;
     }
-    .panel-desc {
-      color: #999;
-      font-size: 0.8rem;
-    }
-
-    /* kNN-specific additions below — nothing above this line redefines tts/index.html rules. */
-
-    body { max-width: 1200px; }
-    h3 { margin-top: 1.5em; }
-    .section-label { color: #555; font-size: 0.85rem; margin: 1.2em 0 0.5em; }
-    .k-grid { grid-template-columns: repeat(4, 5.5em); justify-content: start; }
-    .input-row { margin: 0.75em 0; display: flex; align-items: center; gap: 0.75em; flex-wrap: wrap; }
     input[type="text"] {
-      font-family: inherit; font-size: 1rem; padding: 0.4em 0.5em;
-      border: 1px solid #ddd; background: #fff; color: #111; border-radius: 2px;
-      width: 22em; max-width: 100%;
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.4em 0.5em;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      width: 14em;
+      max-width: 100%;
     }
     input[type="text"]:focus { outline: none; border-color: #111; }
     #compute-btn { margin-top: 0.75em; }
-    table { border-collapse: collapse; width: 100%; margin-top: 0.75em; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 0.3em 0.4em; border-bottom: 1px solid #eee; white-space: nowrap; }
-    th { color: #555; font-weight: normal; border-bottom: 1px solid #111; }
-    td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .table-wrap { overflow-x: auto; max-width: 100%; }
-    #results td:nth-child(3) {
-      max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    @media (max-width: 480px) {
-      .voice-grid { grid-template-columns: repeat(2, 1fr); }
-      .k-grid { grid-template-columns: repeat(2, 1fr); }
-      #results .col-country, #results .col-elev, #results .col-source { display: none; }
-      #results th, #results td { padding: 0.3em 0.3em; }
-      #results td:nth-child(3) { max-width: 6em; }
-    }
-    .missing { color: #bbb; }
-    #error { color: #b00; margin-top: 0.5em; }
-    .calc-var { margin-top: 1.5em; }
-    .calc-var h3 { margin-bottom: 0.3em; }
-    .calc-summary { margin: 0.3em 0 0.5em; }
-    .calc-summary .value { font-weight: bold; color: #111; }
-    .calc-summary .nearest { color: #777; font-size: 0.85rem; }
-    .note { color: #999; font-size: 0.8rem; margin: 0.3em 0; }
-    #perf-table td, #perf-table th { white-space: normal; }
-    #output-panel { margin-top: 0.5em; }
+    #output-panel { margin-top: 1.5em; min-height: 4em; }
     .output-line { margin: 0.9em 0; }
     .output-label { display: inline-block; width: 7.5em; color: #555; }
     .output-value { font-size: 1.2rem; font-weight: bold; color: #111; }
     .output-meta { color: #777; font-size: 0.85rem; margin-left: 0.6em; }
     .output-model { color: #999; font-size: 0.85rem; margin-left: 7.5em; }
+    .missing { color: #bbb; }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
   </style>
 </head>
 <body>
   <main>
     <h1>kNN weather</h1>
     <p>
-      Weather at any point on Earth, estimated from the nearest live METAR
-      stations. Runs client-side: distance search over ~8,100 stations, live
-      observations fetched directly from the source APIs.
+      Weather at any point on Earth, estimated from the 5 nearest live weather stations.<br>
+      Runs entirely in your browser: distance search over ~8,100 stations, observations fetched live from the source APIs.<br>
+      No model to download, no server.
     </p>
 
     <div id="model-status">
@@ -138,89 +103,22 @@
 
     <hr>
 
-    <h2>INPUT</h2>
-    <p class="section-label">location</p>
-    <div class="voice-grid" id="city-grid"></div>
+    <div class="series-grid" id="city-grid-fr"></div>
+    <div class="series-grid" id="city-grid-us"></div>
     <div class="input-row">
       <button id="geo-btn" type="button" title="Use my location">use my location</button>
-      <input type="text" id="loc-input" placeholder='or type "lat, lon" or a city name' aria-label="location">
+      <input type="text" id="loc-input" placeholder="lat, lon" aria-label="location">
     </div>
-
-    <p class="section-label">stations</p>
-    <div class="voice-grid k-grid" id="k-grid"></div>
-
     <button id="compute-btn" type="button" disabled>compute</button>
-    <p id="error" class="panel-desc" hidden></p>
 
-    <h2>OUTPUT</h2>
-    <p class="panel-desc" id="output-model-note" hidden>
-      For comparison, each value is followed by the current-hour figure from a
-      numerical weather model (Open-Meteo), interpolated to this point. It is
-      a model output, not a measurement.
-    </p>
-    <div id="output-panel"><p class="note">choose a location, then compute</p></div>
-
-    <h2>PERFORMANCE</h2>
-    <table id="perf-table">
-      <tbody id="perf-body"><tr><td class="note" colspan="2">—</td></tr></tbody>
-    </table>
+    <div id="output-panel"></div>
 
     <hr>
 
-    <h2>how</h2>
-
-    <div class="table-wrap">
-      <table id="results" hidden>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>ICAO</th>
-            <th>name</th>
-            <th class="col-country">country</th>
-            <th class="num col-elev">elev (m)</th>
-            <th class="num">dist (km)</th>
-            <th class="num">temp (°C)</th>
-            <th class="num">dewpoint (°C)</th>
-            <th class="num">wind (m/s)</th>
-            <th class="num">dir (°)</th>
-            <th class="num">pres (hPa)</th>
-            <th>obs (UTC)</th>
-            <th class="col-source">source</th>
-          </tr>
-        </thead>
-        <tbody id="results-body"></tbody>
-      </table>
-    </div>
-
-    <h3>calculation</h3>
     <p class="panel-desc">
-      For each variable, the estimate is the distance-weighted average of the
-      neighbours that reported a value; missing values are left out.
-    </p>
-    <div id="calc-panel"></div>
-
-    <h3>method</h3>
-    <p class="panel-desc">
-      Each value starts as the distance-weighted average of the neighbouring
-      stations that reported it (closer stations weigh more). Temperature is
-      then reduced to the target point's elevation with a lapse rate fitted
-      by least squares across the neighbours (falling back to the standard
-      atmosphere, −6.5 K/km, if there are fewer than three stations or the fit
-      is implausible). Dew point is averaged as vapour pressure and converted
-      back, since dew point is not linearly averageable. Pressure is averaged
-      as sea-level pressure (QNH), then reduced to station pressure at the
-      target elevation. Wind is averaged as vector components, not scalar
-      speed and direction. Observations older than 60 minutes are excluded
-      from these corrected averages.
-    </p>
-    <p class="panel-desc">
-      Station list: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP), ~8,100 METAR-reporting stations.<br>
-      Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a> (global ASOS/METAR currents), <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a> (US stations), <a href="https://open-meteo.com/">Open-Meteo</a> (numerical weather model, for comparison only).<br>
+      Distance-weighted average (kNN / IDW) of the 5 nearest METAR stations, corrected for elevation, pressure and wind direction (Nalder &amp; Wein, 1998); method from SenseAI's weather tools (2015), where I was CTO.<br>
+      Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; comparison from <a href="https://open-meteo.com/">Open-Meteo</a>.<br>
       Source: <a href="https://github.com/idle-intelligence/trucs.ai/tree/main/knn-weather">github.com/idle-intelligence/trucs.ai/tree/main/knn-weather</a>.
-    </p>
-
-    <p class="panel-desc">
-      kNN / IDW method from SenseAI's weather tools (2015), where I was CTO; elevation, vapour-pressure, QNH and vector-wind corrections after Nalder &amp; Wein (1998) and standard practice.
     </p>
 
     <hr>
@@ -233,20 +131,15 @@
     import { idw, idwCircularDeg } from './idw.js';
     import { computeCorrections } from './corrections.js';
 
-    const cityGrid = document.getElementById('city-grid');
-    const kGrid = document.getElementById('k-grid');
+    const cityGridFr = document.getElementById('city-grid-fr');
+    const cityGridUs = document.getElementById('city-grid-us');
     const locInput = document.getElementById('loc-input');
     const geoBtn = document.getElementById('geo-btn');
     const computeBtn = document.getElementById('compute-btn');
-    const errorBox = document.getElementById('error');
     const statusText = document.getElementById('status-text');
-    const resultsTable = document.getElementById('results');
-    const resultsBody = document.getElementById('results-body');
-    const calcPanel = document.getElementById('calc-panel');
     const outputPanel = document.getElementById('output-panel');
-    const outputModelNote = document.getElementById('output-model-note');
-    const perfBody = document.getElementById('perf-body');
 
+    const K = 5;
     const SPARE = 3;
     const VARS = [
       { key: 'tempC', label: 'temperature', unit: '°C', digits: 1 },
@@ -255,39 +148,30 @@
       { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
     ];
 
-    const CITIES = [
+    const CITIES_FR = [
       { name: 'Paris', lat: 48.8566, lon: 2.3522 },
       { name: 'Lyon', lat: 45.7640, lon: 4.8357 },
       { name: 'Marseille', lat: 43.2965, lon: 5.3698 },
       { name: 'Bordeaux', lat: 44.8378, lon: -0.5792 },
       { name: 'Lille', lat: 50.6292, lon: 3.0573 },
+    ];
+    const CITIES_US = [
       { name: 'New York', lat: 40.7128, lon: -74.0060 },
       { name: 'San Francisco', lat: 37.7749, lon: -122.4194 },
       { name: 'Los Angeles', lat: 34.0522, lon: -118.2437 },
       { name: 'Chicago', lat: 41.8781, lon: -87.6298 },
       { name: 'Montréal', lat: 45.5019, lon: -73.5674 },
     ];
-    const K_CHOICES = [3, 5, 7, 23];
 
-    // ── STATUS: one line of text, replaced at each stage transition. Detailed
-    // per-source/per-station progress goes to the console, not the page. ──
+    // ── STATUS: one line of text, replaced at each stage transition. ──
 
-    function setStatus(text) {
+    function setStatus(text, isError = false) {
       statusText.textContent = text;
-    }
-
-    function showError(msg) {
-      errorBox.textContent = msg;
-      errorBox.hidden = !msg;
-      if (msg) setStatus(msg);
+      statusText.style.color = isError ? '#b00' : '#555';
     }
 
     function fmtNum(v, digits) {
       return v == null || !Number.isFinite(v) ? '<span class="missing">—</span>' : v.toFixed(digits);
-    }
-
-    function fmtTime(d) {
-      return d instanceof Date && !Number.isNaN(d.getTime()) ? d.toISOString().replace('.000Z', 'Z') : '';
     }
 
     function ageMinutes(d) {
@@ -295,94 +179,55 @@
       return (Date.now() - d.getTime()) / 60000;
     }
 
-    // ── Location + station-count pickers ──
+    // ── Location picker ──
 
     let currentLocation = null; // { lat, lon, label }
-    let currentK = 5;
 
-    function normalize(s) {
-      return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-    }
-
-    function renderCityButtons() {
-      cityGrid.innerHTML = '';
-      for (const c of CITIES) {
+    function renderCityButtons(container, cities) {
+      container.innerHTML = '';
+      for (const c of cities) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'voice-btn';
+        btn.className = 'series-btn';
         btn.textContent = c.name;
         btn.addEventListener('click', () => setLocation(c.lat, c.lon, c.name));
-        cityGrid.appendChild(btn);
-      }
-    }
-
-    function renderKButtons() {
-      kGrid.innerHTML = '';
-      for (const k of K_CHOICES) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'voice-btn';
-        btn.textContent = String(k);
-        btn.addEventListener('click', () => setK(k));
-        kGrid.appendChild(btn);
+        container.appendChild(btn);
       }
     }
 
     function markActiveCity(label) {
-      cityGrid.querySelectorAll('.voice-btn').forEach((btn) => {
+      document.querySelectorAll('#city-grid-fr .series-btn, #city-grid-us .series-btn').forEach((btn) => {
         btn.classList.toggle('active', btn.textContent === label);
       });
     }
 
-    function markActiveK(k) {
-      kGrid.querySelectorAll('.voice-btn').forEach((btn) => {
-        btn.classList.toggle('active', Number(btn.textContent) === k);
-      });
-    }
-
     function setLocation(lat, lon, label) {
-      showError('');
       currentLocation = { lat, lon, label };
       markActiveCity(label ?? null);
-      locInput.value = label ?? `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
       setStatus(`location: ${label ? `${label} (${lat.toFixed(2)}, ${lon.toFixed(2)})` : `${lat.toFixed(2)}, ${lon.toFixed(2)}`} — press compute`);
       computeBtn.disabled = false;
     }
 
-    function setK(k) {
-      currentK = Math.max(1, Math.min(23, k));
-      markActiveK(currentK);
-    }
-
-    function parseLocationInput(text) {
+    function parseCoords(text) {
       const trimmed = text.trim();
-      if (!trimmed) return null;
-
-      const coordMatch = trimmed.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-      if (coordMatch) {
-        const lat = parseFloat(coordMatch[1]);
-        const lon = parseFloat(coordMatch[2]);
-        if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon, label: null };
-        return null;
-      }
-
-      const norm = normalize(trimmed);
-      const city = CITIES.find((c) => normalize(c.name) === norm);
-      return city ? { lat: city.lat, lon: city.lon, label: city.name } : null;
+      const m = trimmed.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (!m) return null;
+      const lat = parseFloat(m[1]);
+      const lon = parseFloat(m[2]);
+      return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
     }
 
     function applyLocationInput() {
-      const parsed = parseLocationInput(locInput.value);
+      const parsed = parseCoords(locInput.value);
       if (!parsed) {
-        showError('enter "lat, lon" or a city name from the list above');
+        setStatus('enter coordinates as "lat, lon"', true);
         return;
       }
-      setLocation(parsed.lat, parsed.lon, parsed.label);
+      setLocation(parsed.lat, parsed.lon, null);
     }
 
-    renderCityButtons();
-    renderKButtons();
-    markActiveK(currentK);
+    renderCityButtons(cityGridFr, CITIES_FR);
+    renderCityButtons(cityGridUs, CITIES_US);
 
     locInput.addEventListener('change', applyLocationInput);
     locInput.addEventListener('keydown', (e) => {
@@ -391,178 +236,17 @@
 
     geoBtn.addEventListener('click', () => {
       if (!navigator.geolocation) {
-        showError('geolocation not supported by this browser');
+        setStatus('geolocation not supported by this browser', true);
         return;
       }
       setStatus('requesting your location…');
       navigator.geolocation.getCurrentPosition(
         (pos) => setLocation(pos.coords.latitude, pos.coords.longitude, null),
-        (err) => showError(`geolocation failed: ${err.message}`),
+        (err) => setStatus(`geolocation failed: ${err.message}`, true),
       );
     });
 
-    // ── Rendering ──
-
-    function renderNeighbours(rows) {
-      resultsBody.innerHTML = '';
-      rows.forEach((s, i) => {
-        const o = s.obs ?? {};
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${i + 1}</td>
-          <td>${s.icao}</td>
-          <td>${s.name}</td>
-          <td class="col-country">${s.country}</td>
-          <td class="num col-elev">${s.elev}</td>
-          <td class="num">${s.distance.toFixed(1)}</td>
-          <td class="num">${fmtNum(o.tempC, 1)}</td>
-          <td class="num">${fmtNum(o.dewpointC, 1)}</td>
-          <td class="num">${fmtNum(o.windMs, 1)}</td>
-          <td class="num">${fmtNum(o.windDirDeg, 0)}</td>
-          <td class="num">${fmtNum(o.pressureHpa, 1)}</td>
-          <td>${o.obsTime ? fmtTime(o.obsTime) : '<span class="missing">—</span>'}</td>
-          <td class="col-source">${o.source ?? '<span class="missing">no current observation</span>'}</td>
-        `;
-        resultsBody.appendChild(tr);
-      });
-      resultsTable.hidden = rows.length === 0;
-      let heading = document.getElementById('stations-heading');
-      if (rows.length > 0) {
-        if (!heading) {
-          heading = document.createElement('h3');
-          heading.id = 'stations-heading';
-          heading.textContent = 'stations';
-          resultsTable.closest('.table-wrap').before(heading);
-        }
-      } else if (heading) {
-        heading.remove();
-      }
-    }
-
-    // rows: final neighbours. corr: computeCorrections() result. Renders the
-    // per-variable calculation tables (distance-weighted average + corrected
-    // value, per neighbour) under "how".
-    function renderCalc(rows, corr) {
-      calcPanel.innerHTML = '';
-      for (const v of VARS) {
-        const points = rows
-          .map((s) => ({ station: s, value: s.obs?.[v.key], distance: s.distance, obsTime: s.obs?.obsTime }))
-          .filter((p) => Number.isFinite(p.value));
-
-        const wrap = document.createElement('div');
-        wrap.className = 'calc-var';
-        const h = document.createElement('h3');
-        h.textContent = v.label;
-        wrap.appendChild(h);
-
-        if (points.length === 0) {
-          const p = document.createElement('p');
-          p.className = 'note';
-          p.textContent = 'no neighbour reported this value — skipped.';
-          wrap.appendChild(p);
-          calcPanel.appendChild(wrap);
-          continue;
-        }
-
-        const result = idw(points);
-        const nearest = points[0]; // rows already sorted by distance
-
-        const ages = points.map((p) => ageMinutes(p.obsTime)).filter((a) => a != null);
-        const ageNote = ages.length
-          ? `obs age ${Math.min(...ages).toFixed(0)}–${Math.max(...ages).toFixed(0)} min`
-          : 'obs age unknown';
-
-        const corrValue = correctedValueFor(v.key, corr);
-        const summary = document.createElement('div');
-        summary.className = 'calc-summary';
-        summary.innerHTML = `
-          distance-weighted average: <span class="value">${result.value.toFixed(v.digits)} ${v.unit}</span>
-          ${corrValue != null ? ` · with elevation, pressure and wind corrections: <span class="value">${corrValue.toFixed(v.digits)} ${v.unit}</span>` : ''}
-          (${points.length} neighbour${points.length === 1 ? '' : 's'}, ${ageNote})<br>
-          <span class="nearest">nearest-station value: ${nearest.value.toFixed(v.digits)} ${v.unit} (${nearest.station.icao}, ${nearest.distance.toFixed(1)} km)</span>
-        `;
-        wrap.appendChild(summary);
-
-        const correctedPoints = correctedPointsFor(v.key, corr);
-        const table = document.createElement('table');
-        table.innerHTML = `
-          <thead><tr><th>ICAO</th><th class="num">dist (km)</th><th class="num">weight (norm.)</th><th class="num">value</th><th class="num">corrected</th></tr></thead>
-          <tbody></tbody>
-        `;
-        const tbody = table.querySelector('tbody');
-        result.terms.forEach((term, i) => {
-          const icao = points[i].station.icao;
-          const cp = correctedPoints.find((p) => p.icao === icao);
-          const cVal = cp ? correctedPointValue(v.key, cp) : null;
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${icao}</td>
-            <td class="num">${term.distance.toFixed(1)}</td>
-            <td class="num">${term.weightNorm.toFixed(3)}</td>
-            <td class="num">${term.value.toFixed(v.digits)}</td>
-            <td class="num">${cVal != null ? cVal.toFixed(v.digits) : (cp && !cp.included ? 'excluded (age)' : '—')}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-        wrap.appendChild(table);
-
-        const skipped = rows.length - points.length;
-        if (skipped > 0) {
-          const note = document.createElement('p');
-          note.className = 'note';
-          note.textContent = `${skipped} neighbour${skipped === 1 ? '' : 's'} skipped (no ${v.label} reported).`;
-          wrap.appendChild(note);
-        }
-
-        if (v.key === 'tempC' && corr) {
-          const note = document.createElement('p');
-          note.className = 'note';
-          note.textContent = corr.lapse.fallback
-            ? `lapse rate: standard atmosphere (−6.5 K/km) — ${corr.lapse.reason}`
-            : `lapse rate fitted across neighbours: ${corr.lapse.lapseKPerKm.toFixed(1)} K/km`;
-          wrap.appendChild(note);
-        }
-        if (v.key === 'pressureHpa' && corr && corr.pressure.correctedQnh != null) {
-          const note = document.createElement('p');
-          note.className = 'note';
-          note.textContent = `sea-level pressure (QNH): ${corr.pressure.correctedQnh.toFixed(1)} hPa, reduced to station pressure at ${corr.targetElevM != null ? corr.targetElevM.toFixed(0) : '?'} m.`;
-          wrap.appendChild(note);
-        }
-        if (v.key === 'windMs' && corr && corr.wind.correctedDir != null) {
-          const note = document.createElement('p');
-          note.className = 'note';
-          note.textContent = `corrected direction (vector average): ${corr.wind.correctedDir.toFixed(0)}°.`;
-          wrap.appendChild(note);
-        }
-
-        calcPanel.appendChild(wrap);
-      }
-    }
-
-    function correctedPointsFor(key, corr) {
-      if (!corr) return [];
-      if (key === 'tempC') return corr.temperature.points;
-      if (key === 'dewpointC') return corr.dewpoint.points;
-      if (key === 'windMs') return corr.wind.points;
-      if (key === 'pressureHpa') return corr.pressure.points;
-      return [];
-    }
-
-    function correctedPointValue(key, cp) {
-      if (key === 'tempC') return cp.correctedValue;
-      if (key === 'pressureHpa') return null; // per-station corrected pressure isn't meaningful; see QNH note
-      if (key === 'windMs') return cp.included ? cp.speed : null; // vector correction shown at summary level only
-      return null;
-    }
-
-    function correctedValueFor(key, corr) {
-      if (!corr) return null;
-      if (key === 'tempC') return corr.temperature.corrected;
-      if (key === 'dewpointC') return corr.dewpoint.corrected;
-      if (key === 'windMs') return corr.wind.correctedSpeed;
-      if (key === 'pressureHpa') return corr.pressure.correctedStation;
-      return null;
-    }
+    // ── Output ──
 
     const CONF_THRESHOLDS = {
       tempC: { dist: 25, age: 30, spread: 2, elev: 200 },
@@ -584,10 +268,17 @@
       return 'low';
     }
 
+    function correctedValueFor(key, corr) {
+      if (!corr) return null;
+      if (key === 'tempC') return corr.temperature.corrected;
+      if (key === 'dewpointC') return corr.dewpoint.corrected;
+      if (key === 'windMs') return corr.wind.correctedSpeed;
+      if (key === 'pressureHpa') return corr.pressure.correctedStation;
+      return null;
+    }
+
     // corr: computeCorrections() result. model: fetchOpenMeteoPoint() result (or null).
     function renderOutput(corr, model) {
-      outputModelNote.hidden = false;
-
       const tVal = correctedValueFor('tempC', corr) ?? corr.temperature.plain;
       const dVal = correctedValueFor('dewpointC', corr) ?? corr.dewpoint.plain;
       const wSpeed = corr.wind.correctedSpeed ?? corr.wind.plainScalarSpeed;
@@ -635,72 +326,44 @@
       `).join('');
     }
 
-    function renderPerf(perf) {
-      perfBody.innerHTML = '';
-      const rows = [
-        ['stations scanned', perf.stationsScanned],
-        ['kNN search', `${perf.knnMs.toFixed(1)} ms`],
-        ['IEM fetch', perf.iemMs != null ? `${perf.iemMs.toFixed(0)} ms` : 'skipped'],
-        ['NWS fetch', perf.nwsMs != null ? `${perf.nwsMs.toFixed(0)} ms (${perf.nwsCount} station${perf.nwsCount === 1 ? '' : 's'})` : 'skipped (no US stations in range)'],
-        ['Open-Meteo fetch', perf.openMeteoMs != null ? `${perf.openMeteoMs.toFixed(0)} ms` : 'failed'],
-        ['total', `${perf.totalMs.toFixed(0)} ms`],
-      ];
-      for (const [label, val] of rows) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${label}</td><td class="num">${val}</td>`;
-        perfBody.appendChild(tr);
-      }
-    }
-
     // ── Compute: find stations, fetch observations, apply corrections — one
     // step, triggered by a single button once a location has been set. ──
 
     async function compute() {
       if (!currentLocation) {
-        showError('choose a location first');
+        setStatus('choose a location first', true);
         return;
       }
       const { lat, lon } = currentLocation;
-      const k = currentK;
 
-      showError('');
       computeBtn.disabled = true;
       setStatus('finding nearest stations…');
-
       const t0 = performance.now();
+
       let stations;
       try {
         stations = await loadStations();
       } catch (err) {
-        showError(`failed to load station list: ${err.message}`);
+        setStatus(`failed to load station list: ${err.message}`, true);
         computeBtn.disabled = false;
         return;
       }
 
-      const tKnn0 = performance.now();
-      const candidates = await nearest(lat, lon, k + SPARE);
-      const knnMs = performance.now() - tKnn0;
+      const candidates = await nearest(lat, lon, K + SPARE);
 
       setStatus('fetching observations…');
 
-      let iemMs = null;
       let iemMap = new Map();
-      const tIem0 = performance.now();
       try {
         iemMap = await fetchIem(candidates.map((c) => c.icao));
-        iemMs = performance.now() - tIem0;
       } catch (err) {
-        iemMs = performance.now() - tIem0;
-        console.log(`IEM: fetch failed — ${err.message} (${iemMs.toFixed(0)} ms)`);
+        console.log(`IEM: fetch failed — ${err.message}`);
       }
 
       const usStations = candidates.filter((c) => c.country === 'US');
-      let nwsMs = null;
       const nwsMap = new Map();
       if (usStations.length > 0) {
-        const tNws0 = performance.now();
         const results = await Promise.allSettled(usStations.map((c) => fetchNws(c.icao)));
-        nwsMs = performance.now() - tNws0;
         results.forEach((r, i) => {
           if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].icao, r.value);
         });
@@ -713,45 +376,28 @@
 
       const withObs = candidates.filter((c) => c.obs);
       const withoutObs = candidates.filter((c) => !c.obs);
-      let final = withObs.slice(0, k);
-      if (final.length < k) final = final.concat(withoutObs.slice(0, k - final.length));
+      let final = withObs.slice(0, K);
+      if (final.length < K) final = final.concat(withoutObs.slice(0, K - final.length));
       final.sort((a, b) => a.distance - b.distance);
 
-      let openMeteoMs = null;
       let modelPoint = null;
-      const tOm0 = performance.now();
       try {
         modelPoint = await fetchOpenMeteoPoint(lat, lon);
-        openMeteoMs = performance.now() - tOm0;
       } catch (err) {
-        openMeteoMs = performance.now() - tOm0;
-        console.log(`Open-Meteo: fetch failed — ${err.message} (${openMeteoMs.toFixed(0)} ms)`);
+        console.log(`Open-Meteo: fetch failed — ${err.message}`);
       }
-
-      renderNeighbours(final);
 
       setStatus('computing estimate…');
       const corr = computeCorrections(final, modelPoint?.elevationM ?? null);
-      renderCalc(final, corr);
       renderOutput(corr, modelPoint);
 
       const totalMs = performance.now() - t0;
-      renderPerf({
-        stationsScanned: stations.length,
-        knnMs,
-        iemMs,
-        nwsMs,
-        nwsCount: usStations.length,
-        openMeteoMs,
-        totalMs,
-      });
-
       const ages = final.map((c) => ageMinutes(c.obs?.obsTime)).filter((a) => a != null);
       const ageRange = ages.length
         ? `${Math.min(...ages).toFixed(0)}–${Math.max(...ages).toFixed(0)} min`
         : 'unknown';
       const finalWithObs = final.filter((c) => c.obs).length;
-      setStatus(`estimate ready from ${final.length} stations (${finalWithObs} with observations, obs age ${ageRange})`);
+      setStatus(`estimate ready from ${final.length} stations (${finalWithObs} with observations, obs age ${ageRange}, ${totalMs.toFixed(0)} ms)`);
 
       computeBtn.disabled = false;
     }
@@ -759,7 +405,7 @@
     computeBtn.addEventListener('click', compute);
 
     // Exposed for reuse (t0-web) and for headless verification.
-    window.__app = { nearest, idw, idwCircularDeg, setLocation, setK, compute };
+    window.__app = { nearest, idw, idwCircularDeg, setLocation, compute };
   </script>
 </body>
 </html>
