@@ -79,9 +79,6 @@
     .output-line { margin: 0.9em 0; }
     .output-label { display: inline-block; width: 7.5em; color: #555; }
     .output-value { font-size: 1.2rem; font-weight: bold; color: #111; }
-    .output-meta { color: #777; font-size: 0.85rem; margin-left: 0.6em; }
-    .output-model { color: #999; font-size: 0.85rem; margin-left: 7.5em; }
-    .missing { color: #bbb; }
     .panel-desc {
       color: #999;
       font-size: 0.8rem;
@@ -92,9 +89,9 @@
   <main>
     <h1>kNN weather</h1>
     <p>
-      Weather at any point on Earth, estimated from the 5 nearest live weather stations.<br>
-      Runs entirely in your browser: distance search over ~8,100 stations, observations fetched live from the source APIs.<br>
-      No model to download, no server.
+      Weather at any point on Earth, from the 5 nearest stations.<br>
+      No server. Your location never leaves your browser.<br>
+      ~8,100 METAR stations, live observations.
     </p>
 
     <div id="model-status">
@@ -117,7 +114,7 @@
 
     <p class="panel-desc">
       Distance-weighted average (kNN / IDW) of the 5 nearest METAR stations, corrected for elevation, pressure and wind direction (Nalder &amp; Wein, 1998); method from SenseAI's weather tools (2015), where I was CTO.<br>
-      Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; comparison from <a href="https://open-meteo.com/">Open-Meteo</a>.<br>
+      Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation from <a href="https://open-meteo.com/">Open-Meteo</a>.<br>
       Source: <a href="https://github.com/idle-intelligence/trucs.ai/tree/main/knn-weather">github.com/idle-intelligence/trucs.ai/tree/main/knn-weather</a>.
     </p>
 
@@ -141,12 +138,6 @@
 
     const K = 5;
     const SPARE = 3;
-    const VARS = [
-      { key: 'tempC', label: 'temperature', unit: '°C', digits: 1 },
-      { key: 'dewpointC', label: 'dew point', unit: '°C', digits: 1 },
-      { key: 'windMs', label: 'wind speed', unit: 'm/s', digits: 1 },
-      { key: 'pressureHpa', label: 'pressure', unit: 'hPa', digits: 1 },
-    ];
 
     const CITIES_FR = [
       { name: 'Paris', lat: 48.8566, lon: 2.3522 },
@@ -165,13 +156,8 @@
 
     // ── STATUS: one line of text, replaced at each stage transition. ──
 
-    function setStatus(text, isError = false) {
+    function setStatus(text) {
       statusText.textContent = text;
-      statusText.style.color = isError ? '#b00' : '#555';
-    }
-
-    function fmtNum(v, digits) {
-      return v == null || !Number.isFinite(v) ? '<span class="missing">—</span>' : v.toFixed(digits);
     }
 
     function ageMinutes(d) {
@@ -204,7 +190,7 @@
     function setLocation(lat, lon, label) {
       currentLocation = { lat, lon, label };
       markActiveCity(label ?? null);
-      setStatus(`location: ${label ? `${label} (${lat.toFixed(2)}, ${lon.toFixed(2)})` : `${lat.toFixed(2)}, ${lon.toFixed(2)}`} — press compute`);
+      setStatus(`location: ${label ? `${label} (${lat.toFixed(2)}, ${lon.toFixed(2)})` : `${lat.toFixed(2)}, ${lon.toFixed(2)}`}, press compute`);
       computeBtn.disabled = false;
     }
 
@@ -220,7 +206,7 @@
     function applyLocationInput() {
       const parsed = parseCoords(locInput.value);
       if (!parsed) {
-        setStatus('enter coordinates as "lat, lon"', true);
+        setStatus('enter coordinates as "lat, lon"');
         return;
       }
       setLocation(parsed.lat, parsed.lon, null);
@@ -236,37 +222,17 @@
 
     geoBtn.addEventListener('click', () => {
       if (!navigator.geolocation) {
-        setStatus('geolocation not supported by this browser', true);
+        setStatus('geolocation not supported by this browser');
         return;
       }
       setStatus('requesting your location…');
       navigator.geolocation.getCurrentPosition(
         (pos) => setLocation(pos.coords.latitude, pos.coords.longitude, null),
-        (err) => setStatus(`geolocation failed: ${err.message}`, true),
+        (err) => setStatus(`geolocation failed: ${err.message}`),
       );
     });
 
     // ── Output ──
-
-    const CONF_THRESHOLDS = {
-      tempC: { dist: 25, age: 30, spread: 2, elev: 200 },
-      dewpointC: { dist: 25, age: 30, spread: 2.5, elev: Infinity },
-      windMs: { dist: 25, age: 30, spread: 2, elev: Infinity },
-      pressureHpa: { dist: 25, age: 30, spread: 1.5, elev: Infinity },
-    };
-
-    // One-word confidence from spread, distance to nearest, elevation spread
-    // (temperature only) and worst-case observation age.
-    function confidenceWord(stats, t) {
-      let score = 0;
-      if (stats.nearestDist != null && stats.nearestDist > t.dist) score++;
-      if (stats.maxAge != null && stats.maxAge > t.age) score++;
-      if (stats.spread != null && stats.spread > t.spread) score++;
-      if (stats.elevSpread != null && stats.elevSpread > t.elev) score++;
-      if (score === 0) return 'high';
-      if (score === 1) return 'medium';
-      return 'low';
-    }
 
     function correctedValueFor(key, corr) {
       if (!corr) return null;
@@ -277,8 +243,8 @@
       return null;
     }
 
-    // corr: computeCorrections() result. model: fetchOpenMeteoPoint() result (or null).
-    function renderOutput(corr, model) {
+    // corr: computeCorrections() result.
+    function renderOutput(corr) {
       const tVal = correctedValueFor('tempC', corr) ?? corr.temperature.plain;
       const dVal = correctedValueFor('dewpointC', corr) ?? corr.dewpoint.plain;
       const wSpeed = corr.wind.correctedSpeed ?? corr.wind.plainScalarSpeed;
@@ -286,52 +252,26 @@
       const pVal = correctedValueFor('pressureHpa', corr) ?? corr.pressure.plain;
 
       const lines = [
-        {
-          label: 'temperature',
-          value: tVal != null ? `${tVal.toFixed(1)} °C` : '—',
-          age: corr.temperature.maxAge,
-          confidence: confidenceWord(corr.temperature, CONF_THRESHOLDS.tempC),
-          model: model ? fmtNum(model.tempC, 1) + ' °C' : null,
-        },
-        {
-          label: 'dew point',
-          value: dVal != null ? `${dVal.toFixed(1)} °C` : '—',
-          age: corr.dewpoint.maxAge,
-          confidence: confidenceWord(corr.dewpoint, CONF_THRESHOLDS.dewpointC),
-          model: model ? fmtNum(model.dewpointC, 1) + ' °C' : null,
-        },
-        {
-          label: 'wind',
-          value: wSpeed != null ? `${wSpeed.toFixed(1)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}` : '—',
-          age: corr.wind.maxAge,
-          confidence: confidenceWord(corr.wind, CONF_THRESHOLDS.windMs),
-          model: model ? `${fmtNum(model.windMs, 1)} m/s from ${fmtNum(model.windDirDeg, 0)}°` : null,
-        },
-        {
-          label: 'pressure',
-          value: pVal != null ? `${pVal.toFixed(1)} hPa` : '—',
-          age: corr.pressure.maxAge,
-          confidence: confidenceWord(corr.pressure, CONF_THRESHOLDS.pressureHpa),
-          model: model ? fmtNum(model.pressureHpa, 1) + ' hPa' : null,
-        },
+        { label: 'temperature', value: tVal != null ? `${tVal.toFixed(1)} °C` : 'n/a' },
+        { label: 'dew point', value: dVal != null ? `${dVal.toFixed(1)} °C` : 'n/a' },
+        { label: 'wind', value: wSpeed != null ? `${wSpeed.toFixed(1)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}` : 'n/a' },
+        { label: 'pressure', value: pVal != null ? `${pVal.toFixed(1)} hPa` : 'n/a' },
       ];
 
       outputPanel.innerHTML = lines.map((l) => `
         <div class="output-line">
           <span class="output-label">${l.label}</span>
           <span class="output-value">${l.value}</span>
-          <span class="output-meta">obs age ${l.age != null ? `≤ ${l.age.toFixed(0)} min` : 'unknown'} · confidence: ${l.confidence}</span>
-          ${l.model != null ? `<div class="output-model">weather model: ${l.model}</div>` : ''}
         </div>
       `).join('');
     }
 
-    // ── Compute: find stations, fetch observations, apply corrections — one
+    // -- Compute: find stations, fetch observations, apply corrections - one
     // step, triggered by a single button once a location has been set. ──
 
     async function compute() {
       if (!currentLocation) {
-        setStatus('choose a location first', true);
+        setStatus('choose a location first');
         return;
       }
       const { lat, lon } = currentLocation;
@@ -344,7 +284,7 @@
       try {
         stations = await loadStations();
       } catch (err) {
-        setStatus(`failed to load station list: ${err.message}`, true);
+        setStatus(`failed to load station list: ${err.message}`);
         computeBtn.disabled = false;
         return;
       }
@@ -357,7 +297,7 @@
       try {
         iemMap = await fetchIem(candidates.map((c) => c.icao));
       } catch (err) {
-        console.log(`IEM: fetch failed — ${err.message}`);
+        console.log(`IEM fetch failed: ${err.message}`);
       }
 
       const usStations = candidates.filter((c) => c.country === 'US');
@@ -380,16 +320,18 @@
       if (final.length < K) final = final.concat(withoutObs.slice(0, K - final.length));
       final.sort((a, b) => a.distance - b.distance);
 
-      let modelPoint = null;
+      // Elevation only, for the temperature/pressure corrections below - not
+      // displayed or compared against.
+      let targetPoint = null;
       try {
-        modelPoint = await fetchOpenMeteoPoint(lat, lon);
+        targetPoint = await fetchOpenMeteoPoint(lat, lon);
       } catch (err) {
-        console.log(`Open-Meteo: fetch failed — ${err.message}`);
+        console.log(`elevation fetch failed: ${err.message}`);
       }
 
       setStatus('computing estimate…');
-      const corr = computeCorrections(final, modelPoint?.elevationM ?? null);
-      renderOutput(corr, modelPoint);
+      const corr = computeCorrections(final, targetPoint?.elevationM ?? null);
+      renderOutput(corr);
 
       const totalMs = performance.now() - t0;
       const ages = final.map((c) => ageMinutes(c.obs?.obsTime)).filter((a) => a != null);
