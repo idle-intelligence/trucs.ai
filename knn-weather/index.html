@@ -147,9 +147,9 @@
       { name: 'Lille', lat: 50.6292, lon: 3.0573 },
     ];
     const CITIES_US = [
-      { name: 'New York', lat: 40.7128, lon: -74.0060 },
-      { name: 'San Francisco', lat: 37.7749, lon: -122.4194 },
-      { name: 'Los Angeles', lat: 34.0522, lon: -118.2437 },
+      { name: 'New York', short: 'NYC', lat: 40.7128, lon: -74.0060 },
+      { name: 'San Francisco', short: 'SF', lat: 37.7749, lon: -122.4194 },
+      { name: 'Los Angeles', short: 'LA', lat: 34.0522, lon: -118.2437 },
       { name: 'Chicago', lat: 41.8781, lon: -87.6298 },
       { name: 'Montréal', lat: 45.5019, lon: -73.5674 },
     ];
@@ -176,6 +176,9 @@
         btn.type = 'button';
         btn.className = 'series-btn';
         btn.textContent = c.name;
+        btn.title = c.name;
+        btn.setAttribute('aria-label', c.name);
+        btn.dataset.name = c.name;
         btn.addEventListener('click', () => setLocation(c.lat, c.lon, c.name));
         container.appendChild(btn);
       }
@@ -183,8 +186,34 @@
 
     function markActiveCity(label) {
       document.querySelectorAll('#city-grid-fr .series-btn, #city-grid-us .series-btn').forEach((btn) => {
-        btn.classList.toggle('active', btn.textContent === label);
+        btn.classList.toggle('active', btn.dataset.name === label);
       });
+    }
+
+    // ── Row-fits-on-one-line check, by measured width, not a breakpoint. If a
+    // row of full labels wraps, switch that row to its short labels; if it
+    // still wraps, leave it to wrap (stacks on phone). ──
+
+    function rowWraps(container) {
+      const btns = container.querySelectorAll('.series-btn');
+      if (btns.length === 0) return false;
+      const firstTop = btns[0].offsetTop;
+      return Array.from(btns).some((b) => b.offsetTop !== firstTop);
+    }
+
+    function applyCityLabels(container, cities, short) {
+      const btns = container.querySelectorAll('.series-btn');
+      btns.forEach((btn, i) => {
+        btn.textContent = short && cities[i].short ? cities[i].short : cities[i].name;
+      });
+    }
+
+    let usRowWidth = null;
+
+    function evaluateUsRow() {
+      applyCityLabels(cityGridUs, CITIES_US, false);
+      if (rowWraps(cityGridUs)) applyCityLabels(cityGridUs, CITIES_US, true);
+      markActiveCity(currentLocation?.label ?? null);
     }
 
     function setLocation(lat, lon, label) {
@@ -214,6 +243,16 @@
 
     renderCityButtons(cityGridFr, CITIES_FR);
     renderCityButtons(cityGridUs, CITIES_US);
+
+    usRowWidth = cityGridUs.getBoundingClientRect().width;
+    evaluateUsRow();
+
+    new ResizeObserver((entries) => {
+      const w = entries[0].contentRect.width;
+      if (w === usRowWidth) return;
+      usRowWidth = w;
+      evaluateUsRow();
+    }).observe(cityGridUs);
 
     locInput.addEventListener('change', applyLocationInput);
     locInput.addEventListener('keydown', (e) => {
