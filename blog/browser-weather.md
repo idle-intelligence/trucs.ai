@@ -62,21 +62,13 @@ It's also cheap in data. A station's weight falls with its distance, so the far 
 
 Weather models are fed with data from these same stations, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
-How much does the number of stations matter? Here is the estimate using the 1 to 23 nearest stations, for each value.
-
-<div id="bw-app-2">
-  <div class="series-grid" id="bw-metric-grid"></div>
-  <canvas id="bw-chart"></canvas>
-  <p id="bw-chart-caption" class="panel-desc"></p>
-</div>
-
 <p class="panel-desc">
   Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation from <a href="https://open-meteo.com/">Open-Meteo</a>.
 </p>
 
 <style>
-  #bw-app, #bw-app-2, #bw-weight-app { margin: 1.25em 0; }
-  #bw-app button, #bw-app-2 button {
+  #bw-app, #bw-weight-app { margin: 1.25em 0; }
+  #bw-app button {
     font-family: inherit;
     font-size: 1rem;
     padding: 0.5em 1.5em;
@@ -86,7 +78,7 @@ How much does the number of stations matter? Here is the estimate using the 1 to
     cursor: pointer;
     border-radius: 2px;
   }
-  #bw-app button:hover:not(:disabled), #bw-app-2 button:hover:not(:disabled) { background: #111; color: #fff; }
+  #bw-app button:hover:not(:disabled) { background: #111; color: #fff; }
   .series-grid {
     display: flex;
     flex-wrap: wrap;
@@ -140,6 +132,7 @@ How much does the number of stations matter? Here is the estimate using the 1 to
     text-align: left;
   }
   .bw-table th { color: #555; font-weight: normal; }
+  .bw-no-report { color: #999; }
   .output-line { margin: 0.6em 0; }
   .output-label { display: inline-block; width: 7.5em; color: #555; }
   .output-value { font-size: 1.1rem; font-weight: bold; color: #111; }
@@ -150,7 +143,7 @@ How much does the number of stations matter? Here is the estimate using the 1 to
     white-space: pre-wrap;
     margin: 0.75em 0;
   }
-  #bw-chart, #bw-weight-chart {
+  #bw-weight-chart {
     display: block;
     width: 100%;
     height: 220px;
@@ -168,5 +161,4 @@ PROPOSALS (Claude, for TC to accept or drop; none of this is in the visible post
 - Add uncertainty from station spread (the standard deviation already computed in corrections.js) next to each estimate.
 - Add a note on typical METAR latency (age of the freshest station used) since it changes how "now" the estimate really is.
 - Replace manual city buttons with a click-anywhere map once the map experiment is ready.
-- Let the k sweep run per-city side by side, to show the curve flattens at different k depending on station density.
 -->

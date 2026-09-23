@@ -4,11 +4,12 @@
 import { nearest } from '/knn-weather/knn.js';
 import { fetchIem, fetchNws, fetchOpenMeteoPoint } from '/knn-weather/sources.js';
 import { idw } from '/knn-weather/idw.js';
-import { computeCorrections } from '/knn-weather/corrections.js';
+import { computeCorrections, MAX_AGE_MIN } from '/knn-weather/corrections.js';
 
 const K_MAIN = 5;
-const K_MAX = 23;
 const RADIUS_KM = 100;
+const FALLBACK_N = 5;
+const NEAREST_POOL = 100;
 
 const CITIES = [
   { name: 'Paris', lat: 48.8566, lon: 2.3522 },
@@ -30,12 +31,7 @@ const finalEq = document.getElementById('bw-final-eq');
 const outputPanel = document.getElementById('bw-output-panel');
 const weightChartCanvas = document.getElementById('bw-weight-chart');
 const weightCaption = document.getElementById('bw-weight-caption');
-const metricGrid = document.getElementById('bw-metric-grid');
-const chartCanvas = document.getElementById('bw-chart');
-const chartCaption = document.getElementById('bw-chart-caption');
 
-let sweep = null; // { temperature: [...], dewpoint: [...], wind: [...], pressure: [...] }
-let activeMetric = 'temperature';
 let weightPlot = null; // { terms, total }
 
 function setStatus(text) {
@@ -104,8 +100,17 @@ function ageMinutes(d) {
   return (Date.now() - d.getTime()) / 60000;
 }
 
-function renderCount(n, shown) {
-  countLine.textContent = `There are ${n} stations under ${RADIUS_KM} km from this location. The table shows the nearest ${shown}.`;
+function hasRecentReport(s) {
+  const age = ageMinutes(s.obs?.obsTime);
+  return age != null && age <= MAX_AGE_MIN;
+}
+
+function renderCount(stationSet, recentSet, usedFallback) {
+  if (usedFallback) {
+    countLine.textContent = `No station within ${RADIUS_KM} km of this location. Using the nearest ${stationSet.length} instead, ${recentSet.length} with a recent report.`;
+    return;
+  }
+  countLine.textContent = `There are ${stationSet.length} stations within ${RADIUS_KM} km of this location, ${recentSet.length} with a recent report.`;
 }
 
 function renderTable(rows) {
@@ -113,6 +118,15 @@ function renderTable(rows) {
   const body = rows.map((s) => {
     const o = s.obs || {};
     const age = ageMinutes(o.obsTime);
+    if (!hasRecentReport(s)) {
+      return `<tr>
+        <td>${s.icao}</td>
+        <td>${s.name ?? ''}</td>
+        <td>${s.distance.toFixed(1)}</td>
+        <td colspan="4" class="bw-no-report">no recent report</td>
+        <td>${age != null ? age.toFixed(0) : '-'}</td>
+      </tr>`;
+    }
     return `<tr>
       <td>${s.icao}</td>
       <td>${s.name ?? ''}</td>
@@ -127,8 +141,8 @@ function renderTable(rows) {
   tableWrap.innerHTML = `<table class="bw-table">${head}${body}</table>`;
 }
 
-function renderPlainMean(withObs) {
-  const temps = withObs.map((s) => s.obs?.tempC).filter((v) => Number.isFinite(v));
+function renderPlainMean(recentSet) {
+  const temps = recentSet.map((s) => s.obs?.tempC).filter((v) => Number.isFinite(v));
   if (temps.length === 0) {
     plainMeanValue.textContent = 'n/a';
     return;
@@ -271,87 +285,6 @@ function drawWeightChart() {
   weightCaption.textContent = `share of the final weight (grey: theoretical 1/distance, dots: the ${terms.length} stations used)`;
 }
 
-const METRICS = {
-  temperature: { label: 'temperature', unit: '°C' },
-  dewpoint: { label: 'dew point', unit: '°C' },
-  wind: { label: 'wind speed', unit: 'm/s' },
-  pressure: { label: 'pressure', unit: 'hPa' },
-};
-
-function renderMetricButtons() {
-  metricGrid.innerHTML = '';
-  for (const key of Object.keys(METRICS)) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'series-btn';
-    btn.textContent = METRICS[key].label;
-    btn.classList.toggle('active', key === activeMetric);
-    btn.addEventListener('click', () => {
-      activeMetric = key;
-      renderMetricButtons();
-      drawChart();
-    });
-    metricGrid.appendChild(btn);
-  }
-}
-
-function drawChart() {
-  if (!sweep) return;
-  const ctx = chartCanvas.getContext('2d');
-  const { w, h } = fitCanvas(chartCanvas, ctx);
-  ctx.clearRect(0, 0, w, h);
-
-  const values = sweep[activeMetric];
-  const n = values.length;
-  if (n === 0) return;
-
-  let lo = Infinity, hi = -Infinity;
-  for (const v of values) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-  const pad = (hi - lo) * 0.15 || 1;
-  const domain = { lo: lo - pad, hi: hi + pad };
-
-  const plotW = w - PAD_L - PAD_R;
-  const plotH = h - PAD_T - PAD_B;
-  const xAt = (i) => PAD_L + (n === 1 ? 0 : (i / (n - 1)) * plotW);
-  const yAt = (v) => PAD_T + plotH - ((v - domain.lo) / (domain.hi - domain.lo)) * plotH;
-
-  ctx.strokeStyle = '#eee';
-  ctx.fillStyle = '#999';
-  ctx.font = '10px ui-monospace, monospace';
-  ctx.lineWidth = 1;
-  const nY = 4;
-  for (let t = 0; t <= nY; t++) {
-    const v = domain.lo + (t / nY) * (domain.hi - domain.lo);
-    const y = yAt(v);
-    ctx.beginPath();
-    ctx.moveTo(PAD_L, y);
-    ctx.lineTo(w - PAD_R, y);
-    ctx.stroke();
-    ctx.fillText(v.toFixed(1), 2, y + 3);
-  }
-
-  const stride = Math.max(1, Math.round(n / 8));
-  for (let i = 0; i < n; i += stride) {
-    const x = xAt(i);
-    ctx.beginPath();
-    ctx.moveTo(x, PAD_T);
-    ctx.lineTo(x, h - PAD_B);
-    ctx.stroke();
-    ctx.fillText(String(i + 1), x - 3, h - 6);
-  }
-
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const x = xAt(i), y = yAt(values[i]);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  chartCaption.textContent = `${METRICS[activeMetric].label} (${METRICS[activeMetric].unit}) estimated with k = 1 to ${n} nearest stations`;
-}
-
 async function run(lat, lon) {
   setStatus('finding nearby stations...');
   countLine.textContent = '';
@@ -362,22 +295,23 @@ async function run(lat, lon) {
   firstEstimateValue.textContent = '';
   finalEq.textContent = '';
   outputPanel.innerHTML = '';
-  sweep = null;
+  weightCaption.textContent = '';
   weightPlot = null;
 
-  const wide = await nearest(lat, lon, 60);
+  const wide = await nearest(lat, lon, NEAREST_POOL);
   const within100 = wide.filter((s) => s.distance <= RADIUS_KM);
+  const usedFallback = within100.length === 0;
+  const stationSet = usedFallback ? wide.slice(0, FALLBACK_N) : within100;
 
   setStatus('fetching observations...');
-  const pool = wide.slice(0, 30);
 
   let iemMap = new Map();
   try {
-    iemMap = await fetchIem(pool.map((c) => c.icao));
+    iemMap = await fetchIem(stationSet.map((c) => c.icao));
   } catch (err) {
     console.log(`IEM fetch failed: ${err.message}`);
   }
-  const usStations = pool.filter((c) => c.country === 'US');
+  const usStations = stationSet.filter((c) => c.country === 'US');
   const nwsMap = new Map();
   if (usStations.length > 0) {
     const results = await Promise.allSettled(usStations.map((c) => fetchNws(c.icao)));
@@ -385,14 +319,8 @@ async function run(lat, lon) {
       if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].icao, r.value);
     });
   }
-  for (const c of pool) {
+  for (const c of stationSet) {
     c.obs = nwsMap.get(c.icao) ?? iemMap.get(c.icao) ?? null;
-  }
-
-  const withObs = pool.filter((c) => c.obs);
-  if (withObs.length === 0) {
-    setStatus('no station observations available for this location');
-    return;
   }
 
   let targetElevM = null;
@@ -404,17 +332,15 @@ async function run(lat, lon) {
   }
 
   setStatus('computing estimate...');
+  const tCompute0 = performance.now();
 
-  renderTable(withObs);
-  renderCount(within100.length, withObs.length);
-  renderPlainMean(withObs);
+  renderTable(stationSet);
+  const recentSet = stationSet.filter(hasRecentReport);
+  renderCount(stationSet, recentSet, usedFallback);
+  renderPlainMean(recentSet);
 
-  // k nearest within 100 km, falling back to the closest available if the
-  // area has fewer than that many stations within range.
-  const within100WithObs = withObs.filter((s) => s.distance <= RADIUS_KM);
-  const mainPool = within100WithObs.length > 0 ? within100WithObs : withObs;
-  const kMain = Math.min(K_MAIN, mainPool.length);
-  const mainSubset = mainPool.slice(0, kMain);
+  const kMain = Math.min(K_MAIN, recentSet.length);
+  const mainSubset = recentSet.slice(0, kMain);
 
   const tFirst0 = performance.now();
   const tPtsMain = mainSubset
@@ -430,31 +356,20 @@ async function run(lat, lon) {
   if (idwMain) {
     weightPlot = { terms: idwMain.terms, total: idwMain.terms.reduce((a, t) => a + t.weight, 0) };
     drawWeightChart();
+  } else {
+    weightCaption.textContent = 'not enough stations with a recent report to plot this';
   }
 
   const mainCorr = computeCorrections(mainSubset, targetElevM);
   if (idwMain) renderFinalEquation(mainCorr, idwMain.value);
   renderOutput(mainCorr);
 
-  const kMax = Math.min(K_MAX, withObs.length);
-  sweep = { temperature: [], dewpoint: [], wind: [], pressure: [] };
-  for (let k = 1; k <= kMax; k++) {
-    const subset = withObs.slice(0, k);
-    const corr = computeCorrections(subset, targetElevM);
-    const v = correctedValueFor(corr);
-    sweep.temperature.push(v.temperature);
-    sweep.dewpoint.push(v.dewpoint);
-    sweep.wind.push(v.wind);
-    sweep.pressure.push(v.pressure);
-  }
-  drawChart();
-
-  setStatus(`ready, ${withObs.length} stations with observations, chart uses k = 1 to ${kMax}`);
+  const tCompute1 = performance.now();
+  setStatus(`ready (${(tCompute1 - tCompute0).toFixed(2)} ms)`);
 }
 
 renderCityButtons();
-renderMetricButtons();
-window.addEventListener('resize', () => { drawChart(); drawWeightChart(); });
+window.addEventListener('resize', () => { drawWeightChart(); });
 
 // Exposed for headless verification.
 window.__bwApp = { run };
