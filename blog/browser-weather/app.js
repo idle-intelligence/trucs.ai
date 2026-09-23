@@ -219,6 +219,13 @@ function fitCanvas(canvas, ctx) {
   return { w: rect.width, h: rect.height };
 }
 
+// Rounds a positive value up to a clean tick (5s below 20, 10s below 50, 20s above).
+function niceCeil(v) {
+  if (v <= 0) return 5;
+  const step = v <= 20 ? 5 : v <= 50 ? 10 : 20;
+  return Math.ceil(v / step) * step;
+}
+
 function drawTheoryChart() {
   const ctx = theoryChartCanvas.getContext('2d');
   const { w, h } = fitCanvas(theoryChartCanvas, ctx);
@@ -253,7 +260,14 @@ function drawTheoryChart() {
     ctx.fillText(`${d.toFixed(0)}km`, x - 10, h - 6);
   }
 
-  // w(d) = 5 / d, relative to a station 5 km away (100%).
+  // w(d) = 5 / d, relative to a station 5 km away (100%). Clipped to the
+  // plot rect rather than clamped: the curve's own max (100% at d = 5, the
+  // x-axis minimum) always fits, so this is a safety net, not a fix.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PAD_L, PAD_T, plotW, plotH);
+  ctx.clip();
+
   ctx.strokeStyle = '#111';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -262,10 +276,11 @@ function drawTheoryChart() {
     const d = dMin + (i / steps) * (dMax - dMin);
     const pct = (5 / d) * 100;
     const x = xAt(d);
-    const y = yAt(Math.min(pct, yMax));
+    const y = yAt(pct);
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.stroke();
+  ctx.restore();
 }
 
 function drawWeightChart() {
@@ -276,9 +291,12 @@ function drawWeightChart() {
 
   const { terms, total } = weightPlot;
   const distances = terms.map((t) => t.distance);
-  const dMin = Math.min(...distances) * 0.5;
+  const curveAt = (d) => (1 / d / total) * 100;
+  // Start the x axis at a clean value just below the nearest station, so the
+  // curve (monotonically decreasing) starts inside the frame at its own max.
+  const dMin = Math.max(1, Math.floor(Math.min(...distances) / 5) * 5);
   const dMax = Math.max(...distances) * 1.3;
-  const yMax = Math.max(...terms.map((t) => t.weightNorm * 100)) * 1.2;
+  const yMax = niceCeil(curveAt(dMin));
 
   const plotW = w - PAD_L - PAD_R;
   const plotH = h - PAD_T - PAD_B;
@@ -308,16 +326,23 @@ function drawWeightChart() {
     ctx.fillText(`${d.toFixed(0)}km`, x - 10, h - 6);
   }
 
-  // theoretical curve: weight share = (1/d) / total
+  // theoretical curve: weight share = (1/d) / total. Clipped to the plot
+  // rect rather than clamped: yMax is derived from the curve's own value at
+  // dMin (its max over the drawn range), so this is a safety net, not a fix.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PAD_L, PAD_T, plotW, plotH);
+  ctx.clip();
+
   ctx.strokeStyle = '#ccc';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   const steps = 100;
   for (let i = 0; i <= steps; i++) {
     const d = dMin + (i / steps) * (dMax - dMin);
-    const pct = (1 / d / total) * 100;
+    const pct = curveAt(d);
     const x = xAt(d);
-    const y = yAt(Math.min(pct, yMax));
+    const y = yAt(pct);
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.stroke();
@@ -331,6 +356,7 @@ function drawWeightChart() {
     ctx.arc(x, y, 3, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
 
   weightCaption.textContent = `share of the final weight (gray: theoretical 1/distance, dots: the ${terms.length} stations used)`;
 }
