@@ -51,7 +51,7 @@ Models are trained using data from these stations, and then they compute an appr
 
 A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
-We show the inference results, explain the calculation method, with the actual data (the kNN weighted average equation, the correction, etc).
+We show the inference results, explain the calculation method, with the actual data (the kNN weighted average equation, the correction, etc...)
 
 <!-- DRAFT (Claude, for TC to rewrite): the calculation method in general terms.
 Each station gets a weight equal to the inverse of its distance to the
@@ -71,7 +71,7 @@ Method after Nalder & Wein (1998); worked out at SenseAI (2015), where
 TC was CTO.
 -->
 
-We can also show that using more stations doesn't help much, by plotting temperature as a function of number of stations used (1 to 23).
+We can also show that using more stations doesn't help much, by plotting temperature as a function of number of stations used (1 -> 23)
 
 We can do the same for each measurement value.
 
