@@ -21,15 +21,22 @@ const locInput = document.getElementById('bw-loc-input');
 const geoBtn = document.getElementById('bw-geo-btn');
 const statusText = document.getElementById('bw-status-text');
 const countLine = document.getElementById('bw-count-line');
-const outputPanel = document.getElementById('bw-output-panel');
-const equationBlock = document.getElementById('bw-equation-block');
 const tableWrap = document.getElementById('bw-table-wrap');
+const plainMeanValue = document.getElementById('bw-plain-mean-value');
+const weightedEq = document.getElementById('bw-weighted-eq');
+const firstMsSpan = document.getElementById('bw-first-ms');
+const firstEstimateValue = document.getElementById('bw-first-estimate-value');
+const finalEq = document.getElementById('bw-final-eq');
+const outputPanel = document.getElementById('bw-output-panel');
+const weightChartCanvas = document.getElementById('bw-weight-chart');
+const weightCaption = document.getElementById('bw-weight-caption');
 const metricGrid = document.getElementById('bw-metric-grid');
 const chartCanvas = document.getElementById('bw-chart');
 const chartCaption = document.getElementById('bw-chart-caption');
 
 let sweep = null; // { temperature: [...], dewpoint: [...], wind: [...], pressure: [...] }
 let activeMetric = 'temperature';
+let weightPlot = null; // { terms, total }
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -120,6 +127,31 @@ function renderTable(rows) {
   tableWrap.innerHTML = `<table class="bw-table">${head}${body}</table>`;
 }
 
+function renderPlainMean(withObs) {
+  const temps = withObs.map((s) => s.obs?.tempC).filter((v) => Number.isFinite(v));
+  if (temps.length === 0) {
+    plainMeanValue.textContent = 'n/a';
+    return;
+  }
+  const mean = temps.reduce((a, b) => a + b, 0) / temps.length;
+  plainMeanValue.textContent = `${mean.toFixed(1)} °C (${temps.length} stations)`;
+}
+
+function renderWeightedEquation(idwResult) {
+  if (!idwResult) {
+    weightedEq.textContent = '';
+    return;
+  }
+  const terms = idwResult.terms
+    .map((t) => `${t.value.toFixed(1)} °C at ${t.distance.toFixed(1)} km, w=1/${t.distance.toFixed(1)}=${t.weight.toFixed(4)} (${(t.weightNorm * 100).toFixed(0)}%)`)
+    .join('\n');
+  weightedEq.textContent = [
+    'T_hat = sum(T_i * w_i) / sum(w_i), with w_i = 1 / distance_i',
+    terms,
+    `T_hat = ${idwResult.value.toFixed(2)} °C`,
+  ].join('\n');
+}
+
 function correctedValueFor(corr) {
   return {
     temperature: corr.temperature.corrected ?? corr.temperature.plain,
@@ -127,6 +159,21 @@ function correctedValueFor(corr) {
     wind: corr.wind.correctedSpeed ?? corr.wind.plainScalarSpeed,
     pressure: corr.pressure.correctedStation ?? corr.pressure.plain,
   };
+}
+
+function renderFinalEquation(corr, plainValue) {
+  const v = correctedValueFor(corr);
+  const wDir = corr.wind.correctedDir;
+  const lines = [
+    `T_hat (distance-weighted, no correction) = ${plainValue.toFixed(2)} °C`,
+  ];
+  if (v.temperature != null) {
+    lines.push(`corrected to this point's elevation${corr.targetElevM != null ? ` (${corr.targetElevM.toFixed(0)} m)` : ''} with a fitted lapse rate of ${corr.lapse.lapseKPerKm.toFixed(1)} K/km: ${v.temperature.toFixed(2)} °C`);
+  }
+  if (v.dewpoint != null) lines.push(`dew point: averaged as vapour pressure, converted back: ${v.dewpoint.toFixed(2)} °C`);
+  if (v.pressure != null) lines.push(`pressure: QNH averaged, reduced to this elevation: ${v.pressure.toFixed(2)} hPa`);
+  if (v.wind != null) lines.push(`wind: averaged as (u, v) vector components: ${v.wind.toFixed(2)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}`);
+  finalEq.textContent = lines.join('\n');
 }
 
 function renderOutput(corr) {
@@ -146,27 +193,82 @@ function renderOutput(corr) {
   `).join('');
 }
 
-function renderEquation(corr, subset) {
-  const tPts = subset
-    .filter((s) => Number.isFinite(s.obs?.tempC))
-    .map((s) => ({ icao: s.icao, distance: s.distance, value: s.obs.tempC }));
-  const result = idw(tPts);
-  if (!result) {
-    equationBlock.textContent = '';
-    return;
+const PAD_L = 48, PAD_R = 8, PAD_T = 10, PAD_B = 20;
+
+function fitCanvas(canvas, ctx) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w: rect.width, h: rect.height };
+}
+
+function drawWeightChart() {
+  if (!weightPlot) return;
+  const ctx = weightChartCanvas.getContext('2d');
+  const { w, h } = fitCanvas(weightChartCanvas, ctx);
+  ctx.clearRect(0, 0, w, h);
+
+  const { terms, total } = weightPlot;
+  const distances = terms.map((t) => t.distance);
+  const dMin = Math.min(...distances) * 0.5;
+  const dMax = Math.max(...distances) * 1.3;
+  const yMax = Math.max(...terms.map((t) => t.weightNorm * 100)) * 1.2;
+
+  const plotW = w - PAD_L - PAD_R;
+  const plotH = h - PAD_T - PAD_B;
+  const xAt = (d) => PAD_L + ((d - dMin) / (dMax - dMin)) * plotW;
+  const yAt = (pct) => PAD_T + plotH - (pct / yMax) * plotH;
+
+  ctx.strokeStyle = '#eee';
+  ctx.fillStyle = '#999';
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= 4; t++) {
+    const pct = (t / 4) * yMax;
+    const y = yAt(pct);
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, y);
+    ctx.lineTo(w - PAD_R, y);
+    ctx.stroke();
+    ctx.fillText(`${pct.toFixed(0)}%`, 2, y + 3);
   }
-  const terms = result.terms
-    .map((t) => `${t.value.toFixed(1)} °C at ${t.distance.toFixed(1)} km, w=1/${t.distance.toFixed(1)}=${t.weight.toFixed(4)} (${(t.weightNorm * 100).toFixed(0)}%)`)
-    .join('\n');
-  const lines = [
-    'T_hat = sum(T_i * w_i) / sum(w_i), with w_i = 1 / distance_i',
-    terms,
-    `plain distance-weighted average: ${result.value.toFixed(2)} °C`,
-  ];
-  if (corr.temperature.corrected != null) {
-    lines.push(`corrected to this point's elevation${corr.targetElevM != null ? ` (${corr.targetElevM.toFixed(0)} m)` : ''} with a fitted lapse rate of ${corr.lapse.lapseKPerKm.toFixed(1)} K/km: ${corr.temperature.corrected.toFixed(2)} °C`);
+  for (let t = 0; t <= 4; t++) {
+    const d = dMin + (t / 4) * (dMax - dMin);
+    const x = xAt(d);
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_T);
+    ctx.lineTo(x, h - PAD_B);
+    ctx.stroke();
+    ctx.fillText(`${d.toFixed(0)}km`, x - 10, h - 6);
   }
-  equationBlock.textContent = lines.join('\n');
+
+  // theoretical curve: weight share = (1/d) / total
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const steps = 100;
+  for (let i = 0; i <= steps; i++) {
+    const d = dMin + (i / steps) * (dMax - dMin);
+    const pct = (1 / d / total) * 100;
+    const x = xAt(d);
+    const y = yAt(Math.min(pct, yMax));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // actual stations as points
+  ctx.fillStyle = '#111';
+  for (const t of terms) {
+    const x = xAt(t.distance);
+    const y = yAt(t.weightNorm * 100);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  weightCaption.textContent = `share of the final weight (grey: theoretical 1/distance, dots: the ${terms.length} stations used)`;
 }
 
 const METRICS = {
@@ -191,17 +293,6 @@ function renderMetricButtons() {
     });
     metricGrid.appendChild(btn);
   }
-}
-
-const PAD_L = 48, PAD_R = 8, PAD_T = 10, PAD_B = 20;
-
-function fitCanvas(canvas, ctx) {
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.max(1, Math.round(rect.width * dpr));
-  canvas.height = Math.max(1, Math.round(rect.height * dpr));
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return { w: rect.width, h: rect.height };
 }
 
 function drawChart() {
@@ -264,10 +355,15 @@ function drawChart() {
 async function run(lat, lon) {
   setStatus('finding nearby stations...');
   countLine.textContent = '';
-  outputPanel.innerHTML = '';
-  equationBlock.textContent = '';
   tableWrap.innerHTML = '';
+  plainMeanValue.textContent = '';
+  weightedEq.textContent = '';
+  firstMsSpan.textContent = '';
+  firstEstimateValue.textContent = '';
+  finalEq.textContent = '';
+  outputPanel.innerHTML = '';
   sweep = null;
+  weightPlot = null;
 
   const wide = await nearest(lat, lon, 60);
   const within100 = wide.filter((s) => s.distance <= RADIUS_KM);
@@ -311,14 +407,36 @@ async function run(lat, lon) {
   setStatus('computing estimate...');
 
   renderTable(withObs);
+  renderPlainMean(withObs);
+
+  // k nearest within 100 km, falling back to the closest available if the
+  // area has fewer than that many stations within range.
+  const within100WithObs = withObs.filter((s) => s.distance <= RADIUS_KM);
+  const mainPool = within100WithObs.length > 0 ? within100WithObs : withObs;
+  const kMain = Math.min(K_MAIN, mainPool.length);
+  const mainSubset = mainPool.slice(0, kMain);
+
+  const tFirst0 = performance.now();
+  const tPtsMain = mainSubset
+    .filter((s) => Number.isFinite(s.obs?.tempC))
+    .map((s) => ({ icao: s.icao, distance: s.distance, value: s.obs.tempC }));
+  const idwMain = idw(tPtsMain);
+  const tFirst1 = performance.now();
+
+  renderWeightedEquation(idwMain);
+  firstMsSpan.textContent = (tFirst1 - tFirst0).toFixed(2);
+  if (idwMain) firstEstimateValue.textContent = `${idwMain.value.toFixed(1)} °C`;
+
+  if (idwMain) {
+    weightPlot = { terms: idwMain.terms, total: idwMain.terms.reduce((a, t) => a + t.weight, 0) };
+    drawWeightChart();
+  }
+
+  const mainCorr = computeCorrections(mainSubset, targetElevM);
+  if (idwMain) renderFinalEquation(mainCorr, idwMain.value);
+  renderOutput(mainCorr);
 
   const kMax = Math.min(K_MAX, withObs.length);
-  const kMain = Math.min(K_MAIN, kMax);
-  const mainSubset = withObs.slice(0, kMain);
-  const mainCorr = computeCorrections(mainSubset, targetElevM);
-  renderOutput(mainCorr);
-  renderEquation(mainCorr, mainSubset);
-
   sweep = { temperature: [], dewpoint: [], wind: [], pressure: [] };
   for (let k = 1; k <= kMax; k++) {
     const subset = withObs.slice(0, k);
@@ -336,7 +454,7 @@ async function run(lat, lon) {
 
 renderCityButtons();
 renderMetricButtons();
-window.addEventListener('resize', drawChart);
+window.addEventListener('resize', () => { drawChart(); drawWeightChart(); });
 
 // Exposed for headless verification.
 window.__bwApp = { run };
