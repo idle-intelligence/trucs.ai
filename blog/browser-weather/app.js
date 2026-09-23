@@ -32,6 +32,7 @@ const outputPanel = document.getElementById('bw-output-panel');
 const weightChartCanvas = document.getElementById('bw-weight-chart');
 const weightCaption = document.getElementById('bw-weight-caption');
 const theoryChartCanvas = document.getElementById('bw-theory-chart');
+const stationsUsedLine = document.getElementById('bw-stations-used-line');
 
 let weightPlot = null; // { terms, total }
 
@@ -152,6 +153,11 @@ function renderPlainMean(recentSet) {
   plainMeanValue.textContent = `${mean.toFixed(1)} °C (${temps.length} stations)`;
 }
 
+function renderStationsUsedLine(n) {
+  const noun = n === 1 ? 'station' : 'stations';
+  stationsUsedLine.textContent = `Here are the ${n} ${noun} used for your place, and the share of the total each one gets:`;
+}
+
 function renderWeightedEquation(idwResult) {
   if (!idwResult) {
     weightedEq.textContent = '';
@@ -238,7 +244,10 @@ function drawAxes(ctx, w, h, xAt, yAt, xTicks, yTicks, xLabel) {
     ctx.moveTo(x, PAD_T);
     ctx.lineTo(x, h - PAD_B);
     ctx.stroke();
-    ctx.fillText(xLabel(d), x - 10, h - 6);
+    // Near the right edge, right-align so the label doesn't run off the canvas.
+    ctx.textAlign = x > w - 40 ? 'right' : 'left';
+    ctx.fillText(xLabel(d), x > w - 40 ? x - 2 : x - 10, h - 6);
+    ctx.textAlign = 'left';
   }
 }
 
@@ -392,6 +401,7 @@ async function run(lat, lon) {
 
   const kMain = Math.min(K_MAIN, recentSet.length);
   const mainSubset = recentSet.slice(0, kMain);
+  renderStationsUsedLine(kMain);
 
   const tFirst0 = performance.now();
   const tPtsMain = mainSubset

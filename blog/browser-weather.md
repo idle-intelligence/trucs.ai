@@ -43,7 +43,7 @@ Of course, we don't average like that. The stations close to you should count mo
 
 The far ones barely count: a station 50 km away weighs a tenth of one 5 km away. So there is no point in fetching many of them. We take the 5 nearest within 100 km, which also keeps the data small.
 
-Here are the 5 stations used for your place, and the share of the total each one gets:
+<p id="bw-stations-used-line">Here are the 5 stations used for your place, and the share of the total each one gets:</p>
 
 <div id="bw-weight-app">
   <canvas id="bw-weight-chart"></canvas>
