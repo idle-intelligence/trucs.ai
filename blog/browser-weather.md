@@ -34,7 +34,21 @@ One very naïve thing we can do, if we want to know the temperature where we are
   <span class="output-value" id="bw-plain-mean-value"></span>
 </div>
 
-Of course, we don't average like that. The stations close to you should count more than the ones far away. So we take the 5 nearest stations within 100 km and weight each one by the inverse of its distance: a station twice as far counts half as much.
+Of course, we don't average like that. The stations close to you should count more than the ones far away, so we weight each one by the inverse of its distance: a station twice as far counts half as much.
+
+<div id="bw-theory-app">
+  <canvas id="bw-theory-chart"></canvas>
+  <p class="bw-caption">weight of a station, relative to one 5 km away</p>
+</div>
+
+The far ones barely count: a station 50 km away weighs a tenth of one 5 km away. So there is no point in fetching many of them. We take the 5 nearest within 100 km, which also keeps the data small.
+
+Here are the 5 stations used for your place, and the share of the total each one gets:
+
+<div id="bw-weight-app">
+  <canvas id="bw-weight-chart"></canvas>
+  <p id="bw-weight-caption" class="bw-caption"></p>
+</div>
 
 <pre id="bw-weighted-eq" class="bw-equation"></pre>
 
@@ -53,13 +67,6 @@ So we correct for a few things. Temperature drops with altitude, so each station
 
 <div id="bw-output-panel"></div>
 
-It's also cheap in data. A station's weight falls with its distance, so the far ones barely count, and adding more of them hardly moves the result. Each dot below is one of the stations used for your point, on the 1/distance curve.
-
-<div id="bw-weight-app">
-  <canvas id="bw-weight-chart"></canvas>
-  <p id="bw-weight-caption" class="bw-caption"></p>
-</div>
-
 Weather models are fed with data from these same stations, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
 <p class="panel-desc">
@@ -67,7 +74,7 @@ Weather models are fed with data from these same stations, then compute an appro
 </p>
 
 <style>
-  #bw-app, #bw-weight-app { margin: 1.25em 0; }
+  #bw-app, #bw-theory-app, #bw-weight-app { margin: 1.25em 0; }
   #bw-app button {
     font-family: inherit;
     font-size: 1rem;
@@ -143,7 +150,7 @@ Weather models are fed with data from these same stations, then compute an appro
     white-space: pre-wrap;
     margin: 0.75em 0;
   }
-  #bw-weight-chart {
+  #bw-theory-chart, #bw-weight-chart {
     display: block;
     width: 100%;
     height: 220px;

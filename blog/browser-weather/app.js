@@ -31,6 +31,7 @@ const finalEq = document.getElementById('bw-final-eq');
 const outputPanel = document.getElementById('bw-output-panel');
 const weightChartCanvas = document.getElementById('bw-weight-chart');
 const weightCaption = document.getElementById('bw-weight-caption');
+const theoryChartCanvas = document.getElementById('bw-theory-chart');
 
 let weightPlot = null; // { terms, total }
 
@@ -218,6 +219,55 @@ function fitCanvas(canvas, ctx) {
   return { w: rect.width, h: rect.height };
 }
 
+function drawTheoryChart() {
+  const ctx = theoryChartCanvas.getContext('2d');
+  const { w, h } = fitCanvas(theoryChartCanvas, ctx);
+  ctx.clearRect(0, 0, w, h);
+
+  const dMin = 5, dMax = 100, yMax = 100;
+  const plotW = w - PAD_L - PAD_R;
+  const plotH = h - PAD_T - PAD_B;
+  const xAt = (d) => PAD_L + ((d - dMin) / (dMax - dMin)) * plotW;
+  const yAt = (pct) => PAD_T + plotH - (pct / yMax) * plotH;
+
+  ctx.strokeStyle = '#eee';
+  ctx.fillStyle = '#999';
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= 4; t++) {
+    const pct = (t / 4) * yMax;
+    const y = yAt(pct);
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, y);
+    ctx.lineTo(w - PAD_R, y);
+    ctx.stroke();
+    ctx.fillText(`${pct.toFixed(0)}%`, 2, y + 3);
+  }
+  for (let t = 0; t <= 4; t++) {
+    const d = dMin + (t / 4) * (dMax - dMin);
+    const x = xAt(d);
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_T);
+    ctx.lineTo(x, h - PAD_B);
+    ctx.stroke();
+    ctx.fillText(`${d.toFixed(0)}km`, x - 10, h - 6);
+  }
+
+  // w(d) = 5 / d, relative to a station 5 km away (100%).
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const steps = 100;
+  for (let i = 0; i <= steps; i++) {
+    const d = dMin + (i / steps) * (dMax - dMin);
+    const pct = (5 / d) * 100;
+    const x = xAt(d);
+    const y = yAt(Math.min(pct, yMax));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
 function drawWeightChart() {
   if (!weightPlot) return;
   const ctx = weightChartCanvas.getContext('2d');
@@ -369,7 +419,8 @@ async function run(lat, lon) {
 }
 
 renderCityButtons();
-window.addEventListener('resize', () => { drawWeightChart(); });
+drawTheoryChart();
+window.addEventListener('resize', () => { drawTheoryChart(); drawWeightChart(); });
 
 // Exposed for headless verification.
 window.__bwApp = { run };
