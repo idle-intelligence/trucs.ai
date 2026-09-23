@@ -61,11 +61,13 @@ We get a first estimation, and it costs us <span id="bw-first-ms"></span> ms.
 
 Now, we only take into account the distance, but other things factor in. Say you live at the top of a mountain and there's an airport down in the valley, just a few kilometers away. You probably have pretty different temperatures, even though you're not that far away.
 
-So we correct for a few things. Temperature drops with altitude, so each station's temperature is brought to the altitude of your point, using the temperature gradient measured across the stations themselves, or the textbook 6.5 °C per kilometer when there aren't enough stations to measure it. Dew point doesn't average well as it is, so we average the water vapor pressure instead and convert back. Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude. Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind. These corrections follow Nalder and Wein (1998). I first wrote this method at SenseAI in 2015, where I was CTO.
+So we correct for a few things. Temperature drops with altitude, so each station's temperature is brought to the altitude of your point, using the temperature gradient measured across the stations themselves, or the textbook 6.5 °C per kilometer when there aren't enough stations to measure it. Dew point doesn't average well as it is, so we average the water vapor pressure instead and convert back. Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude. Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind. It's a simplified cousin of GIDS (Gradient plus Inverse Distance Squared), a method used to interpolate climate data between stations: plain inverse distance, and only the altitude gradient.
 
 <pre id="bw-final-eq" class="bw-equation"></pre>
 
 <div id="bw-output-panel"></div>
+
+This is still a naive approach. Weather services use far more precise methods: physical models of the atmosphere, radar, satellites, and statistical methods that learn how stations relate to each other. But this one needs a handful of reports and a fraction of a millisecond, and it runs entirely in your browser.
 
 Weather models are fed with data from these same stations, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
