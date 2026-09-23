@@ -6,28 +6,11 @@ description: "Weather data straight from your browser, no server, using the kNN 
 
 # Browser weather
 
-<!-- DRAFT (Claude, for TC to rewrite): what METAR is and who publishes it.
-METAR (METeorological Aerodrome Report) is the standard format for
-routine surface weather observations, reported roughly every 30 to 60
-minutes at airports and a smaller number of non-aviation sites worldwide.
-Each report gives temperature, dew point, wind, pressure (as an altimeter
-setting, QNH), visibility and cloud cover as short coded groups, e.g.
-`METAR LFPG 231200Z 24012KT 9999 SCT030 18/11 Q1015`.
-This page uses two live sources of decoded METAR data:
-- the Iowa Environmental Mesonet (IEM) `currents.json` API, a public
-  archive and real-time feed of ASOS/METAR observations run by Iowa
-  State University: https://mesonet.agron.iastate.edu/
-- api.weather.gov, the US National Weather Service's public API, used
-  for US stations because it is fresher than IEM's feed:
-  https://www.weather.gov/documentation/services-web-api
-The station list itself (about 8,100 ICAO stations worldwide, with
-name and elevation) comes from NCAR/RAP's `stations.txt`, maintained by
-Greg Thompson: http://www.rap.ucar.edu/weather/surface/stations.txt
-Elevation for the point you pick (not a station) comes from Open-Meteo:
-https://open-meteo.com/
--->
-
 Do you feel like the weather models aren't very good at predicting temperature near you? That's because in most cases their closest data points are the airports, far from you.
+
+Airports report the weather every half hour or so, in a short coded format called METAR: temperature, dew point, wind, pressure, visibility, clouds. A report looks like `LFPG 231200Z 24012KT 9999 SCT030 18/11 Q1015`. These reports are public, and some services serve them in a way a web page can read directly: the [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) for the whole world, the [US National Weather Service](https://www.weather.gov/documentation/services-web-api) for the US. Everything below is fetched and computed by your browser, no server of ours in between.
+
+Pick a place:
 
 <div id="bw-app">
   <div class="series-grid" id="bw-city-grid"></div>
@@ -42,27 +25,20 @@ Do you feel like the weather models aren't very good at predicting temperature n
   <div id="bw-table-wrap"></div>
 </div>
 
-ok we've got weather stations data, as you can probably see, they are mostly far away from you.
+So we have weather station data. As you can probably see, most of the stations are far away from you.
 
-One very naïve thing we can do, for example if we want to know what's the temperature where we are, is more or less average those values.
+One very naïve thing we can do, if we want to know the temperature where we are, is to average those values.
 
 <div class="output-line">
   <span class="output-label">plain average</span>
   <span class="output-value" id="bw-plain-mean-value"></span>
 </div>
 
-Of course we don't average like that.
-
-<!-- DRAFT (Claude, for TC to rewrite): the kNN distance-weighted average as the
-code computes it. Each of the k nearest stations within 100 km gets a weight
-equal to the inverse of its distance to the target point, w_i = 1 / d_i (this
-is the "distance" weighting of scikit-learn's KNeighborsRegressor, ported
-from SenseAI's original Python model). The estimate is the weighted average
-sum(v_i * w_i) / sum(w_i), so a station twice as far counts half as much. -->
+Of course, we don't average like that. The stations close to you should count more than the ones far away. So we take the 5 nearest stations within 100 km and weight each one by the inverse of its distance: a station twice as far counts half as much.
 
 <pre id="bw-weighted-eq" class="bw-equation"></pre>
 
-We get a first estimation, and it costs us <span id="bw-first-ms"></span>ms.
+We get a first estimation, and it costs us <span id="bw-first-ms"></span> ms.
 
 <div class="output-line">
   <span class="output-label">temperature</span>
@@ -71,63 +47,22 @@ We get a first estimation, and it costs us <span id="bw-first-ms"></span>ms.
 
 Now, we only take into account the distance, but other things factor in. Say you live at the top of a mountain and there's an airport down in the valley, just a few kilometers away. You probably have pretty different temperatures, even though you're not that far away.
 
-<!-- DRAFT (Claude, for TC to rewrite): the corrections the code applies on
-top of the plain distance-weighted average, after Nalder & Wein (1998).
-Temperature is reduced from each station's own elevation to the target
-point's elevation using a lapse rate fitted by least squares across the
-neighbours (falling back to the standard atmosphere, -6.5 K/km, when there
-are fewer than 3 usable stations or the fit is implausible). Dew point is
-averaged as vapour pressure (Magnus formula) rather than directly, because
-dew point itself does not average linearly. Pressure is averaged as the
-altimeter setting (QNH), then reduced to station pressure at the target
-elevation. Wind is averaged as its (u, v) vector components, not as scalar
-speed and direction. Worked out at SenseAI (2015), where TC was CTO. -->
+So we correct for a few things. Temperature drops with altitude, so each station's temperature is brought to the altitude of your point, using the temperature gradient measured across the stations themselves, or the textbook 6.5 °C per kilometer when there aren't enough stations to measure it. Dew point doesn't average well as it is, so we average the water vapor pressure instead and convert back. Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude. Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind. These corrections follow Nalder and Wein (1998). I first wrote this method at SenseAI in 2015, where I was CTO.
 
 <pre id="bw-final-eq" class="bw-equation"></pre>
 
 <div id="bw-output-panel"></div>
 
-<!-- DRAFT (Claude, for TC to rewrite): why adding more stations barely moves
-the estimate. Because each station's weight is 1 / distance, a station's
-share of the total falls off quickly as it gets farther away: doubling the
-distance halves the weight. Past the handful of closest stations, each
-additional one contributes a small enough share that including or excluding
-it changes the estimate by very little. That's what the chart below shows:
-the grey curve is the theoretical 1/distance share for this run's station
-set, and the dots are the actual stations, sitting on that curve at their
-own distance. -->
+It's also cheap in data. A station's weight falls with its distance, so the far ones barely count, and adding more of them hardly moves the result. Each dot below is one of the stations used for your point, on the 1/distance curve.
 
 <div id="bw-weight-app">
   <canvas id="bw-weight-chart"></canvas>
   <p id="bw-weight-caption" class="panel-desc"></p>
 </div>
 
-Models are trained using data from these stations, and then they compute an approached value based on your geolocation.
+Weather models are fed with data from these same stations, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
-A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
-
-We show the inference results, explain the calculation method, with the actual data (the kNN weighted average equation, the correction, etc...)
-
-<!-- DRAFT (Claude, for TC to rewrite): the calculation method in general terms.
-Each station gets a weight equal to the inverse of its distance to the
-target point, w_i = 1 / d_i (this is the "distance" weighting of
-scikit-learn's KNeighborsRegressor, ported from SenseAI's original
-Python model). The estimate is the weighted average sum(v_i * w_i) /
-sum(w_i). Temperature is then reduced from each station's own elevation
-to the target point's elevation using a lapse rate fitted by least
-squares across the neighbours (falls back to the standard atmosphere,
--6.5 K/km, if fewer than 3 stations or an implausible fit). Dew point is
-averaged as vapour pressure (Magnus formula), then converted back, since
-dew point itself is not a linearly averageable quantity. Pressure is
-averaged as the altimeter setting (QNH), then reduced to station pressure
-at the target elevation. Wind is averaged as vector components (u, v),
-not scalar speed and direction. Method after Nalder & Wein (1998); worked
-out at SenseAI (2015), where TC was CTO.
--->
-
-We can also show that using more stations doesn't help much, by plotting temperature as a function of number of stations used (1 -> 23)
-
-We can do the same for each measurement value.
+How much does the number of stations matter? Here is the estimate using the 1 to 23 nearest stations, for each value.
 
 <div id="bw-app-2">
   <div class="series-grid" id="bw-metric-grid"></div>

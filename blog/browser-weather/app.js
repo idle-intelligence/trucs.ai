@@ -104,8 +104,8 @@ function ageMinutes(d) {
   return (Date.now() - d.getTime()) / 60000;
 }
 
-function renderCount(n) {
-  countLine.textContent = `There are ${n} stations under ${RADIUS_KM} km from this location.`;
+function renderCount(n, shown) {
+  countLine.textContent = `There are ${n} stations under ${RADIUS_KM} km from this location. The table shows the nearest ${shown}.`;
 }
 
 function renderTable(rows) {
@@ -367,7 +367,6 @@ async function run(lat, lon) {
 
   const wide = await nearest(lat, lon, 60);
   const within100 = wide.filter((s) => s.distance <= RADIUS_KM);
-  renderCount(within100.length);
 
   setStatus('fetching observations...');
   const pool = wide.slice(0, 30);
@@ -407,6 +406,7 @@ async function run(lat, lon) {
   setStatus('computing estimate...');
 
   renderTable(withObs);
+  renderCount(within100.length, withObs.length);
   renderPlainMean(withObs);
 
   // k nearest within 100 km, falling back to the closest available if the
