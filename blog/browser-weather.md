@@ -57,7 +57,7 @@ It's also cheap in data. A station's weight falls with its distance, so the far 
 
 <div id="bw-weight-app">
   <canvas id="bw-weight-chart"></canvas>
-  <p id="bw-weight-caption" class="panel-desc"></p>
+  <p id="bw-weight-caption" class="bw-caption"></p>
 </div>
 
 Weather models are fed with data from these same stations, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
@@ -149,6 +149,13 @@ Weather models are fed with data from these same stations, then compute an appro
     height: 220px;
     border: 1px solid #ddd;
     background: #fff;
+  }
+  .bw-caption {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    color: #555;
+    margin-top: 0.35em;
   }
 </style>
 

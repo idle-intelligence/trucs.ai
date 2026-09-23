@@ -282,7 +282,7 @@ function drawWeightChart() {
     ctx.fill();
   }
 
-  weightCaption.textContent = `share of the final weight (grey: theoretical 1/distance, dots: the ${terms.length} stations used)`;
+  weightCaption.textContent = `share of the final weight (gray: theoretical 1/distance, dots: the ${terms.length} stations used)`;
 }
 
 async function run(lat, lon) {
