@@ -69,6 +69,12 @@ So we correct for a few things. Temperature drops with altitude, so each station
 
 This is still a naive approach. Weather services use far more precise methods: physical models of the atmosphere, radar, satellites, and statistical methods that learn how stations relate to each other. But this one needs a handful of reports and a fraction of a millisecond, and it runs entirely in your browser.
 
+If you want to go further, here are three methods that climatologists use to fill the gaps between stations:
+
+- **GIDS** (Gradient plus Inverse Distance Squared, Nalder and Wein, 1998). A slightly more complex version of what we do here. It fits how temperature changes with longitude, latitude and altitude across the nearby stations, then weights them by the square of their distance. Still cheap in data and compute: a few stations and a small regression per point.
+- **Thin-plate smoothing splines** (Hutchinson's ANUSPLIN, used for the WorldClim climate maps). It fits one smooth surface through all the stations at once, with altitude as an extra dimension, and chooses how smooth by cross-validation. Smoother and better grounded statistically. But it needs every station at once: the exact fit solves one system as large as the number of stations, fine on a computer once per update, heavy in a phone's browser. It also smooths away local effects.
+- **PRISM** (Parameter-elevation Regressions on Independent Slopes Model, Daly and colleagues, Oregon State University). It fits a temperature-versus-altitude relation for every map cell, weighting stations by distance, altitude, which side of the mountain they're on, and distance to the coast. The most accurate in mountains, and behind the official US climate maps. But it needs a detailed elevation model and a lot of expert tuning, and it's built for long-term averages, not the weather right now.
+
 Weather models are fed with data from these same stations, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
 <p class="panel-desc">
