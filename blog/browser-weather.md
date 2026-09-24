@@ -64,7 +64,7 @@ Now, we only take into account the distance, but other things factor in. Say you
 So we correct for a few things:
 
 - Temperature drops with altitude, so each station's temperature is brought to the altitude of your point, using the temperature gradient measured across the stations themselves, or the textbook 6.5 °C per kilometer when there aren't enough stations to measure it.
-- Dew point doesn't average well as it is, so we average the water vapor pressure instead and convert back.
+- Dew point doesn't average well as it is: the amount of water in the air grows exponentially with the dew point, so the average of two dew points isn't the dew point of the mixed air. We average the water vapor pressure instead, which follows the amount of water, and convert back.
 - Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude.
 - Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind.
 
