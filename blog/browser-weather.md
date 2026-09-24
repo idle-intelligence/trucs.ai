@@ -34,7 +34,7 @@ One very naïve thing we can do, if we want to know the temperature where we are
   <span class="output-value" id="bw-plain-mean-value"></span>
 </div>
 
-Of course, we don't average like that. The stations close to you should count more than the ones far away, so we weight each one by the inverse of its distance: a station twice as far counts half as much.
+A simple improvement we can make is to take into account how far the stations are. The stations close to you should count more than the ones far away, so we weight each one by the inverse of its distance: a station twice as far counts half as much.
 
 <div id="bw-theory-app">
   <canvas id="bw-theory-chart"></canvas>
