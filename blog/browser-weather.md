@@ -74,15 +74,15 @@ Under each value, in grey, is what a weather model says for the same point right
 
 <div id="bw-output-panel"></div>
 
-This is still a naive approach. Weather services use far more precise methods: physical models of the atmosphere, radar, satellites, and statistical methods that learn how stations relate to each other. But this one needs a handful of reports and a fraction of a millisecond, and it runs entirely in your browser.
+This is still a naive approach. Weather models are fed with data from these same stations, amongst many others (radar, satellites, weather balloons), and run physical models of the atmosphere to compute a value for your location. This one needs a handful of reports and a fraction of a millisecond, runs entirely in your browser, and, as the grey lines show, can be pretty close to what they get.
 
-If you want to go further, here are three methods that climatologists use to fill the gaps between stations:
+---
+
+P.S.: if you want to go further, here are three methods that climatologists use to fill the gaps between stations:
 
 - **GIDS** ("gradient-plus-inverse distance squared", Nalder and Wein, 1998), which "combines multiple linear regression and distance-weighting". A slightly more complex version of what we do here. It fits how temperature changes with longitude, latitude and altitude across the nearby stations, then weights them by the inverse square of their distance. Still cheap in data and compute: a few stations and a small regression per point.
 - **Thin-plate smoothing splines** (Hutchinson's ANUSPLIN, used for the WorldClim climate maps). It fits one smooth surface through all the stations at once, with altitude as an extra dimension, and chooses how smooth by cross-validation. Smoother and better grounded statistically. But it needs every station at once: the exact fit solves one system as large as the number of stations, fine on a computer once per update, heavy in a phone's browser. It also smooths away local effects.
 - **PRISM** (Parameter-elevation Regressions on Independent Slopes Model, Daly and colleagues, Oregon State University). It fits a temperature-versus-altitude relation for every map cell, weighting stations by distance, altitude, which side of the mountain they're on, and distance to the coast. The most accurate in mountains, and behind the official US climate maps. But it needs a detailed elevation model and a lot of expert tuning, and it's built for long-term averages, not the weather right now.
-
-Weather models are fed with data from these same stations, amongst many others, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
 <p class="panel-desc">
   Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
