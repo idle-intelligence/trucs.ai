@@ -27,7 +27,7 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd><a href="/sts/">Speech-to-speech</a> (almost)</dd>
 
   <dt>Time series</dt>
-  <dd>Browser <a href="/t0/">forecasting</a> with t0-alpha</dd>
+  <dd>Browser <a href="/t0/">forecasting</a></dd>
 
   <dt>sensors (some)</dt>
   <dd><a href="/knn-weather/">Nearest weather stations</a> (k-NN over the METAR station list)</dd>
