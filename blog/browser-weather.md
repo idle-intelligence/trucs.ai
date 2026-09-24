@@ -68,8 +68,6 @@ So we correct for a few things:
 - Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude.
 - Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind.
 
-It's a simplified cousin of GIDS (Gradient plus Inverse Distance Squared), a method used to interpolate climate data between stations: plain inverse distance, and only the altitude gradient.
-
 <pre id="bw-final-eq" class="bw-equation"></pre>
 
 <div id="bw-output-panel"></div>
