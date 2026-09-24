@@ -52,7 +52,7 @@ The far ones barely count: a station 50 km away weighs a tenth of one 5 km away.
 
 <pre id="bw-weighted-eq" class="bw-equation"></pre>
 
-We get a first estimation, and it costs us <span id="bw-first-ms"></span> ms.
+We get a first estimation, and it costs us <span id="bw-fetch-ms"></span> ms to fetch the reports, then <span id="bw-first-ms"></span> to compute.
 
 <div class="output-line">
   <span class="output-label">temperature</span>

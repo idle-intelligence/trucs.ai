@@ -26,6 +26,7 @@ const tableWrap = document.getElementById('bw-table-wrap');
 const plainMeanValue = document.getElementById('bw-plain-mean-value');
 const weightedEq = document.getElementById('bw-weighted-eq');
 const firstMsSpan = document.getElementById('bw-first-ms');
+const fetchMsSpan = document.getElementById('bw-fetch-ms');
 const firstEstimateValue = document.getElementById('bw-first-estimate-value');
 const finalEq = document.getElementById('bw-final-eq');
 const outputPanel = document.getElementById('bw-output-panel');
@@ -348,6 +349,7 @@ async function run(lat, lon) {
   plainMeanValue.textContent = '';
   weightedEq.textContent = '';
   firstMsSpan.textContent = '';
+  if (fetchMsSpan) fetchMsSpan.textContent = '';
   firstEstimateValue.textContent = '';
   finalEq.textContent = '';
   outputPanel.innerHTML = '';
@@ -360,6 +362,7 @@ async function run(lat, lon) {
   const stationSet = usedFallback ? wide.slice(0, FALLBACK_N) : within100;
 
   setStatus('fetching observations...');
+  const tFetch0 = performance.now();
 
   let iemMap = new Map();
   try {
@@ -387,6 +390,8 @@ async function run(lat, lon) {
     console.log(`elevation fetch failed: ${err.message}`);
   }
 
+  const tFetch1 = performance.now();
+  if (fetchMsSpan) fetchMsSpan.textContent = Math.round(tFetch1 - tFetch0).toString();
   setStatus('computing estimate...');
   const tCompute0 = performance.now();
 
@@ -407,7 +412,8 @@ async function run(lat, lon) {
   const tFirst1 = performance.now();
 
   renderWeightedEquation(idwMain);
-  firstMsSpan.textContent = (tFirst1 - tFirst0).toFixed(2);
+  const firstMs = tFirst1 - tFirst0;
+  firstMsSpan.textContent = firstMs < 0.01 ? 'less than 0.01 ms' : `${firstMs.toFixed(2)} ms`;
   if (idwMain) firstEstimateValue.textContent = `${idwMain.value.toFixed(1)} °C`;
 
   if (idwMain) {
