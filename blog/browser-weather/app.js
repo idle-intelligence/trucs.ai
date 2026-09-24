@@ -5,6 +5,7 @@ import { nearest } from '/knn-weather/knn.js';
 import { fetchIem, fetchNws, fetchOpenMeteoPoint } from '/knn-weather/sources.js';
 import { idw } from '/knn-weather/idw.js';
 import { computeCorrections, MAX_AGE_MIN } from '/knn-weather/corrections.js';
+import { stationPressureHpa } from '/knn-weather/physics.js';
 
 const K_MAIN = 5;
 const RADIUS_KM = 100;
@@ -198,19 +199,43 @@ function renderFinalEquation(corr, plainValue) {
   finalEq.textContent = lines.join('\n');
 }
 
-function renderOutput(corr) {
+// model: fetchOpenMeteoPoint() result (or null), shown under each line for comparison.
+function renderOutput(corr, model) {
   const v = correctedValueFor(corr);
   const wDir = corr.wind.correctedDir;
+  const fin = (x) => Number.isFinite(x);
+  // Open-Meteo gives sea-level pressure; bring it to this point's elevation the
+  // same way our own estimate is, so the two numbers are comparable.
+  const modelPressure = model && fin(model.pressureHpa) && fin(model.elevationM)
+    ? stationPressureHpa(model.pressureHpa, model.elevationM)
+    : null;
   const lines = [
-    { label: 'temperature', value: v.temperature != null ? `${v.temperature.toFixed(1)} °C` : 'n/a' },
-    { label: 'dew point', value: v.dewpoint != null ? `${v.dewpoint.toFixed(1)} °C` : 'n/a' },
-    { label: 'wind', value: v.wind != null ? `${v.wind.toFixed(1)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}` : 'n/a' },
-    { label: 'pressure', value: v.pressure != null ? `${v.pressure.toFixed(1)} hPa` : 'n/a' },
+    {
+      label: 'temperature',
+      value: v.temperature != null ? `${v.temperature.toFixed(1)} °C` : 'n/a',
+      model: model && fin(model.tempC) ? `${model.tempC.toFixed(1)} °C` : null,
+    },
+    {
+      label: 'dew point',
+      value: v.dewpoint != null ? `${v.dewpoint.toFixed(1)} °C` : 'n/a',
+      model: model && fin(model.dewpointC) ? `${model.dewpointC.toFixed(1)} °C` : null,
+    },
+    {
+      label: 'wind',
+      value: v.wind != null ? `${v.wind.toFixed(1)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}` : 'n/a',
+      model: model && fin(model.windMs) ? `${model.windMs.toFixed(1)} m/s${fin(model.windDirDeg) ? ` from ${model.windDirDeg.toFixed(0)}°` : ''}` : null,
+    },
+    {
+      label: 'pressure',
+      value: v.pressure != null ? `${v.pressure.toFixed(1)} hPa` : 'n/a',
+      model: modelPressure != null ? `${modelPressure.toFixed(1)} hPa` : null,
+    },
   ];
   outputPanel.innerHTML = lines.map((l) => `
     <div class="output-line">
       <span class="output-label">${l.label}</span>
       <span class="output-value">${l.value}</span>
+      ${l.model != null ? `<div class="output-model">weather model: ${l.model}</div>` : ''}
     </div>
   `).join('');
 }
@@ -382,12 +407,15 @@ async function run(lat, lon) {
     c.obs = nwsMap.get(c.icao) ?? iemMap.get(c.icao) ?? null;
   }
 
+  // One Open-Meteo call: the point's elevation for the corrections, and the
+  // weather model's current values for comparison.
+  let modelPoint = null;
   let targetElevM = null;
   try {
-    const p = await fetchOpenMeteoPoint(lat, lon);
-    targetElevM = p?.elevationM ?? null;
+    modelPoint = await fetchOpenMeteoPoint(lat, lon);
+    targetElevM = modelPoint?.elevationM ?? null;
   } catch (err) {
-    console.log(`elevation fetch failed: ${err.message}`);
+    console.log(`Open-Meteo fetch failed: ${err.message}`);
   }
 
   const tFetch1 = performance.now();
@@ -425,7 +453,7 @@ async function run(lat, lon) {
 
   const mainCorr = computeCorrections(mainSubset, targetElevM);
   if (idwMain) renderFinalEquation(mainCorr, idwMain.value);
-  renderOutput(mainCorr);
+  renderOutput(mainCorr, modelPoint);
 
   const tCompute1 = performance.now();
   setStatus(`ready (${(tCompute1 - tCompute0).toFixed(2)} ms)`);

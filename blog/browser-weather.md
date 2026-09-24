@@ -70,6 +70,8 @@ So we correct for a few things:
 
 <pre id="bw-final-eq" class="bw-equation"></pre>
 
+Under each value, in grey, is what a weather model says for the same point right now, from [Open-Meteo](https://open-meteo.com/), which picks the best model available for your area:
+
 <div id="bw-output-panel"></div>
 
 This is still a naive approach. Weather services use far more precise methods: physical models of the atmosphere, radar, satellites, and statistical methods that learn how stations relate to each other. But this one needs a handful of reports and a fraction of a millisecond, and it runs entirely in your browser.
@@ -83,7 +85,7 @@ If you want to go further, here are three methods that climatologists use to fil
 Weather models are fed with data from these same stations, amongst many others, then compute an approximate value for your location. A somewhat naive approach, that runs instantly in your browser, can be pretty close to the actual weather _now_.
 
 <p class="panel-desc">
-  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation from <a href="https://open-meteo.com/">Open-Meteo</a>.
+  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
 </p>
 
 <style>
@@ -156,6 +158,7 @@ Weather models are fed with data from these same stations, amongst many others, 
   .output-line { margin: 0.6em 0; }
   .output-label { display: inline-block; width: 7.5em; color: #555; }
   .output-value { font-size: 1.1rem; font-weight: bold; color: #111; }
+  .output-model { color: #999; font-size: 0.85rem; margin-left: 7.5em; }
   .bw-equation {
     font-family: inherit;
     font-size: 0.8rem;
@@ -183,7 +186,6 @@ Weather models are fed with data from these same stations, amongst many others, 
 
 <!--
 PROPOSALS (Claude, for TC to accept or drop; none of this is in the visible post):
-- Compare the estimate against a model forecast (Open-Meteo's gridded value for the same point and hour) to show where the naive kNN and a real model agree or diverge.
 - Show the distance to the nearest airport station as its own fact, since that's the number the intro paragraph is really about.
 - Add uncertainty from station spread (the standard deviation already computed in corrections.js) next to each estimate.
 - Add a note on typical METAR latency (age of the freshest station used) since it changes how "now" the estimate really is.
