@@ -9,7 +9,7 @@
 //   - pressure: the altimeter setting (QNH) is averaged, then reduced to
 //     station pressure at the target elevation.
 //   - wind: averaged as vector components (u, v), not scalar speed/direction.
-// Observations older than 60 minutes are excluded from the corrected average
+// Observations older than 90 minutes are excluded from the corrected average
 // (the plain average does not apply this cutoff, for comparison).
 
 import { idw } from './idw.js';
@@ -25,7 +25,7 @@ import {
   idwAverage,
 } from './physics.js';
 
-export const MAX_AGE_MIN = 60;
+export const MAX_AGE_MIN = 90;
 
 function ageMinutes(obsTime, now) {
   if (!(obsTime instanceof Date) || Number.isNaN(obsTime.getTime())) return null;
