@@ -7,7 +7,6 @@ title: blog
 
 [About astres (ridgeline)](/blog/about-astres)
 
-[Writing for a living](/blog/writing-for-a-living)
 
 
 [Claude and stt-web](/blog/claude-and-stt-web)
