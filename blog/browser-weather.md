@@ -61,7 +61,14 @@ We get a first estimation, and it costs us <span id="bw-fetch-ms"></span> ms to 
 
 Now, we only take into account the distance, but other things factor in. Say you live at the top of a mountain and there's an airport down in the valley, just a few kilometers away. You probably have pretty different temperatures, even though you're not that far away.
 
-So we correct for a few things. Temperature drops with altitude, so each station's temperature is brought to the altitude of your point, using the temperature gradient measured across the stations themselves, or the textbook 6.5 °C per kilometer when there aren't enough stations to measure it. Dew point doesn't average well as it is, so we average the water vapor pressure instead and convert back. Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude. Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind. It's a simplified cousin of GIDS (Gradient plus Inverse Distance Squared), a method used to interpolate climate data between stations: plain inverse distance, and only the altitude gradient.
+So we correct for a few things:
+
+- Temperature drops with altitude, so each station's temperature is brought to the altitude of your point, using the temperature gradient measured across the stations themselves, or the textbook 6.5 °C per kilometer when there aren't enough stations to measure it.
+- Dew point doesn't average well as it is, so we average the water vapor pressure instead and convert back.
+- Pressure is averaged as the sea-level value the airports report, then brought down or up to your altitude.
+- Wind is averaged as direction and strength together, so a north wind and a south wind cancel out instead of averaging to an east wind.
+
+It's a simplified cousin of GIDS (Gradient plus Inverse Distance Squared), a method used to interpolate climate data between stations: plain inverse distance, and only the altitude gradient.
 
 <pre id="bw-final-eq" class="bw-equation"></pre>
 
