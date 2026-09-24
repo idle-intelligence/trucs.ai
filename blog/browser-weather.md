@@ -38,7 +38,7 @@ A simple improvement we can make is to take into account how far the stations ar
 
 <div id="bw-theory-app">
   <canvas id="bw-theory-chart"></canvas>
-  <p class="bw-caption">weight of a station, relative to one 5 km away</p>
+  <p class="bw-caption">weight = 1 / distance (km)</p>
 </div>
 
 The far ones barely count: a station 50 km away weighs a tenth of one 5 km away. So there is no point in fetching many of them. We take the 5 nearest within 100 km, which also keeps the data small.

@@ -225,7 +225,7 @@ function fitCanvas(canvas, ctx) {
   return { w: rect.width, h: rect.height };
 }
 
-function drawAxes(ctx, w, h, xAt, yAt, xTicks, yTicks, xLabel) {
+function drawAxes(ctx, w, h, xAt, yAt, xTicks, yTicks, xLabel, yLabel = (v) => `${v.toFixed(0)}%`) {
   ctx.strokeStyle = '#eee';
   ctx.fillStyle = '#999';
   ctx.font = '10px ui-monospace, monospace';
@@ -236,7 +236,7 @@ function drawAxes(ctx, w, h, xAt, yAt, xTicks, yTicks, xLabel) {
     ctx.moveTo(PAD_L, y);
     ctx.lineTo(w - PAD_R, y);
     ctx.stroke();
-    ctx.fillText(`${pct.toFixed(0)}%`, 2, y + 3);
+    ctx.fillText(yLabel(pct), 2, y + 3);
   }
   for (const d of xTicks) {
     const x = xAt(d);
@@ -256,19 +256,16 @@ function drawTheoryChart() {
   const { w, h } = fitCanvas(theoryChartCanvas, ctx);
   ctx.clearRect(0, 0, w, h);
 
-  // Fixed axes: range unchanged (5 to 100 km), but ticks aligned to the same
-  // 25 km steps as the weight chart below.
-  const dMin = 5, dMax = 100, yMax = 100;
+  // w(d) = 1 / d, d in km, drawn from 1 km (1/d is undefined at 0) to 100 km
+  // on the same 0 to 100 km axis as the weight chart below.
+  const dMin = 0, dMax = 100, yMax = 1;
   const plotW = w - PAD_L - PAD_R;
   const plotH = h - PAD_T - PAD_B;
   const xAt = (d) => PAD_L + ((d - dMin) / (dMax - dMin)) * plotW;
-  const yAt = (pct) => PAD_T + plotH - (pct / yMax) * plotH;
+  const yAt = (v) => PAD_T + plotH - (v / yMax) * plotH;
 
-  drawAxes(ctx, w, h, xAt, yAt, [25, 50, 75, 100], [0, 25, 50, 75, 100], (d) => `${d}km`);
+  drawAxes(ctx, w, h, xAt, yAt, [0, 25, 50, 75, 100], [0, 0.25, 0.5, 0.75, 1], (d) => `${d}km`, (v) => `${v}`);
 
-  // w(d) = 5 / d, relative to a station 5 km away (100%). Clipped to the
-  // plot rect rather than clamped: the curve's own max (100% at d = 5, the
-  // x-axis minimum) always fits, so this is a safety net, not a fix.
   ctx.save();
   ctx.beginPath();
   ctx.rect(PAD_L, PAD_T, plotW, plotH);
@@ -277,12 +274,11 @@ function drawTheoryChart() {
   ctx.strokeStyle = '#111';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  const steps = 100;
+  const steps = 400;
   for (let i = 0; i <= steps; i++) {
-    const d = dMin + (i / steps) * (dMax - dMin);
-    const pct = (5 / d) * 100;
+    const d = 1 + (i / steps) * (dMax - 1);
     const x = xAt(d);
-    const y = yAt(pct);
+    const y = yAt(1 / d);
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.stroke();
