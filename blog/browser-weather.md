@@ -8,7 +8,7 @@ description: "Weather data straight from your browser, no server, using the kNN 
 
 Do you feel like the weather models aren't very good at predicting temperature near you? That's because in most cases their closest data points are the airports, far from you.
 
-Airports report the weather every half hour or so, in a short coded format called METAR: temperature, dew point, wind, pressure, visibility, clouds. A report looks like `LFPG 231200Z 24012KT 9999 SCT030 18/11 Q1015`. These reports are public, and some services serve them in a way a web page can read directly: the [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) for the whole world, the [US National Weather Service](https://www.weather.gov/documentation/services-web-api) for the US. Everything below is fetched and computed by your browser, no server of ours in between.
+Airports report the weather every half hour or so, in a short coded format called METAR: temperature, dew point, wind, pressure, visibility, clouds. A report looks like `LFPG 231200Z 24012KT 9999 SCT030 18/11 Q1015`. These reports are public, and some services serve them in a way a web page can read directly: the [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) for the whole world, the [US National Weather Service](https://www.weather.gov/documentation/services-web-api) for the US. Everything below is fetched and computed by your browser, no server of mine in between.
 
 Pick a place:
 
