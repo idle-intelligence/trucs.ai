@@ -7,7 +7,7 @@ title: blog
 
 [About astres (ridgeline)](/blog/about-astres)
 
-
+[Browser weather](/blog/browser-weather)
 
 [Claude and stt-web](/blog/claude-and-stt-web)
 
