@@ -49,8 +49,11 @@ export async function loadStations() {
   return stationsPromise;
 }
 
-// Returns the k nearest stations to (lat, lon), sorted by ascending distance (km).
-export async function nearest(lat, lon, k = 5) {
+// Selects the station(s) an estimate at (lat, lon) should use: up to 5
+// nearest stations within 100 km (closest first), plus the nearest station
+// overall (for the "no station in range" message). `null` if no stations
+// are loaded.
+export async function select(lat, lon) {
   const stations = await loadStations();
-  return stations.nearest(lat, lon, k);
+  return stations.select(lat, lon);
 }

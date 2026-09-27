@@ -160,9 +160,9 @@
   </main>
 
   <script type="module">
-    import { nearest, loadStations } from './knn.js';
+    import { select } from './knn.js';
     import { fetchIem, fetchNws, fetchOpenMeteoPoint } from './sources.js';
-    import { idw, idwCircularDeg, computeCorrections } from './pkg/weather_wasm.js?v=ae5146e';
+    import { estimate } from './pkg/weather_wasm.js?v=ae5146e';
     import { createMapView } from './map.js';
     import { coordsForTimeZone } from './tz-coords.js';
 
@@ -174,9 +174,6 @@
     const resultDp = document.getElementById('result-dp');
     const resultWind = document.getElementById('result-wind');
     const resultPres = document.getElementById('result-pres');
-
-    const K = 5;
-    const RADIUS_KM = 100;
 
     const mapCanvasEl = document.getElementById('map-canvas');
     const mapView = createMapView(mapCanvasEl, {
@@ -258,11 +255,6 @@
       return fitsOneLineCtx.measureText(text).width <= available;
     }
 
-    function ageMinutes(millis) {
-      if (typeof millis !== 'number' || Number.isNaN(millis)) return null;
-      return (Date.now() - millis) / 60000;
-    }
-
     function titleCase(s) {
       return s.toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
     }
@@ -307,47 +299,45 @@
 
     // ── Output ──
 
-    function correctedValueFor(key, corr) {
-      if (!corr) return null;
-      if (key === 'tempC') return corr.temperature.corrected;
-      if (key === 'dewpointC') return corr.dewpoint.corrected;
-      if (key === 'windMs') return corr.wind.correctedSpeed;
-      if (key === 'pressureHpa') return corr.pressure.correctedQnh;
-      return null;
-    }
-
-    // corr: computeCorrections() result. Renders the small square panel over
-    // the map's top-right corner: the point's coordinates, then temperature,
-    // dew point, wind, pressure as label/value lines.
-    function renderResult(lat, lon, corr) {
-      const tVal = correctedValueFor('tempC', corr) ?? corr.temperature.plain;
-      const dVal = correctedValueFor('dewpointC', corr) ?? corr.dewpoint.plain;
-      const wSpeed = corr.wind.correctedSpeed ?? corr.wind.plainScalarSpeed;
-      const wDir = corr.wind.correctedDir;
-      const pVal = correctedValueFor('pressureHpa', corr) ?? corr.pressure.plain;
-
+    // result: an estimate() result. Renders the small square panel over the
+    // map's top-right corner: the point's coordinates, then temperature, dew
+    // point, wind, pressure as label/value lines. Anything but a fresh
+    // estimate (status "ok") shows the "--" placeholders.
+    function renderResult(lat, lon, result) {
       setResultLatLon(latLonLine(lat, lon), false);
-      resultTemp.textContent = tVal != null ? `${tVal.toFixed(1)} °C` : 'n/a';
-      resultDp.textContent = dVal != null ? `${dVal.toFixed(1)} °C` : 'n/a';
-      resultWind.textContent = wSpeed != null ? `${wSpeed.toFixed(1)} m/s${wDir != null ? ` ${wDir.toFixed(0)}°` : ''}` : 'n/a';
-      resultPres.textContent = pVal != null ? `${pVal.toFixed(0)} hPa` : 'n/a';
+      if (result.status.kind !== 'ok') {
+        resultTemp.textContent = '--';
+        resultDp.textContent = '--';
+        resultWind.textContent = '--';
+        resultPres.textContent = '--';
+        syncOverlayRects();
+        return;
+      }
+      const wDir = result.windDirDeg;
+      resultTemp.textContent = result.temperatureC != null ? `${result.temperatureC.toFixed(1)} °C` : '--';
+      resultDp.textContent = result.dewpointC != null ? `${result.dewpointC.toFixed(1)} °C` : '--';
+      resultWind.textContent = result.windSpeedMs != null ? `${result.windSpeedMs.toFixed(1)} m/s${wDir != null ? ` ${wDir.toFixed(0)}°` : ''}` : '--';
+      resultPres.textContent = result.pressureQnhHpa != null ? `${result.pressureQnhHpa.toFixed(0)} hPa` : '--';
       syncOverlayRects();
     }
 
     // The vertical block map.js draws next to each used station's dot.
-    function stationLabel(c) {
-      const o = c.obs || {};
-      const age = ageMinutes(o.obsTimeMillis);
+    // `sel`: one entry of selection.stations ({ station, distance }). `obs`:
+    // the raw observation for this station, if any. `est`: the matching
+    // entry of estimate()'s `stations` array, for the age/freshness this
+    // page displays but does not itself compute.
+    function stationLabel(sel, obs, est) {
+      const o = obs || {};
       return {
-        name: trimName(c.name, 16),
-        id: c.icao,
-        distanceKm: Math.round(c.distance),
+        name: trimName(sel.station.name, 16),
+        id: sel.station.icao,
+        distanceKm: Math.round(sel.distance),
         tempStr: o.tempC != null ? `${o.tempC.toFixed(1)} °C` : 'n/a',
         dewStr: o.dewpointC != null ? `dp ${o.dewpointC.toFixed(1)} °C` : 'n/a',
         windStr: o.windMs != null ? `${o.windMs.toFixed(1)} m/s` : 'n/a',
         pressureStr: o.pressureHpa != null ? `${o.pressureHpa.toFixed(0)} hPa` : 'n/a',
-        ageStr: age != null ? `${age.toFixed(0)} min ago` : 'n/a',
-        hasObs: !!c.obs,
+        ageStr: est && est.ageMinutes != null ? `${est.ageMinutes.toFixed(0)} min ago` : 'n/a',
+        hasObs: est ? est.hasObservation : !!obs,
       };
     }
 
@@ -364,9 +354,9 @@
       setStatus('computing…');
       const t0 = performance.now();
 
-      let stations;
+      let selection;
       try {
-        stations = await loadStations();
+        selection = await select(lat, lon);
       } catch (err) {
         if (myId !== requestSeq) return;
         setStatus(`failed to load station list: ${err.message}`);
@@ -374,40 +364,41 @@
       }
       if (myId !== requestSeq) return;
 
-      const candidates = await nearest(lat, lon, K + 15);
-      if (myId !== requestSeq) return;
+      if (!selection) {
+        setStatus('no stations loaded');
+        return;
+      }
 
-      const withinRadius = candidates.filter((c) => c.distance <= RADIUS_KM);
-      const noneWithinRadius = withinRadius.length === 0;
-      // The K nearest (within radius, or overall if none are) — always,
-      // regardless of whether they have a usable observation. A station
-      // missing a recent report is still the closest one and stays in the
-      // estimate; it's flagged (hollow dot, status count) rather than
-      // silently swapped for a farther station that happens to have data.
-      const final = (noneWithinRadius ? candidates : withinRadius).slice(0, K);
+      // Station(s) within 100 km, closest first, empty when there are none
+      // (there is no fallback to farther stations; see selection.nearest).
+      const final = selection.stations;
 
       const tFetchStart = performance.now();
       let iemMap = {};
-      try {
-        iemMap = await fetchIem(final.map((c) => c.icao));
-      } catch (err) {
-        console.log(`IEM fetch failed: ${err.message}`);
-      }
-      if (myId !== requestSeq) return;
-
-      const usStations = final.filter((c) => c.country === 'US');
       const nwsMap = new Map();
-      if (usStations.length > 0) {
-        const results = await Promise.allSettled(usStations.map((c) => fetchNws(c.icao)));
+      if (final.length > 0) {
+        try {
+          iemMap = await fetchIem(final.map((s) => s.station.icao));
+        } catch (err) {
+          console.log(`IEM fetch failed: ${err.message}`);
+        }
         if (myId !== requestSeq) return;
-        results.forEach((r, i) => {
-          if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].icao, r.value);
-        });
+
+        const usStations = final.filter((s) => s.station.country === 'US');
+        if (usStations.length > 0) {
+          const results = await Promise.allSettled(usStations.map((s) => fetchNws(s.station.icao)));
+          if (myId !== requestSeq) return;
+          results.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].station.icao, r.value);
+          });
+        }
       }
 
       // Prefer NWS (fresher, direct) then IEM.
-      for (const c of final) {
-        c.obs = nwsMap.get(c.icao) ?? iemMap[c.icao] ?? null;
+      const observations = {};
+      for (const s of final) {
+        const obs = nwsMap.get(s.station.icao) ?? iemMap[s.station.icao] ?? null;
+        if (obs) observations[s.station.icao] = obs;
       }
 
       // Elevation only, for the temperature/pressure corrections below - not
@@ -421,17 +412,34 @@
       if (myId !== requestSeq) return;
       const tFetchEnd = performance.now();
 
-      const corr = computeCorrections(final, targetPoint?.elevationM ?? null, Date.now());
-      renderResult(lat, lon, corr);
+      const result = estimate(selection, observations, targetPoint?.elevationM ?? null, Date.now());
+      renderResult(lat, lon, result);
       const tCalcEnd = performance.now();
 
-      for (const c of final) c.label = stationLabel(c);
-      if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, final);
-      else mapView.setSelection(lat, lon, final);
+      if (result.status.kind === 'noStationWithinRadius') {
+        if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, []);
+        else mapView.setSelection(lat, lon, []);
+        const km = Math.round(result.status.nearestKm);
+        setStatus(`${latLonLine(lat, lon)}, no weather station within 100 km; the nearest, ${result.status.nearestId}, is ${km} km away`);
+        return;
+      }
 
-      const noObsCount = final.filter((c) => !c.obs).length;
-      const withObs = final.filter((c) => c.obs);
-      const sourceCount = new Set(withObs.map((c) => c.obs.source)).size;
+      const used = final.map((s) => ({
+        icao: s.station.icao,
+        lat: s.station.lat,
+        lon: s.station.lon,
+        label: stationLabel(s, observations[s.station.icao], result.stations.find((e) => e.icao === s.station.icao)),
+      }));
+      if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, used);
+      else mapView.setSelection(lat, lon, used);
+
+      if (result.status.kind === 'noFreshObservation') {
+        setStatus(`${latLonLine(lat, lon)}, no recent report from the 5 nearest stations within 100 km`);
+        return;
+      }
+
+      const withObs = final.filter((s) => observations[s.station.icao]);
+      const sourceCount = new Set(withObs.map((s) => observations[s.station.icao].source)).size;
       const fetchMs = (tFetchEnd - tFetchStart).toFixed(0);
       const calcMs = (tCalcEnd - tFetchEnd).toFixed(0);
 
@@ -442,25 +450,22 @@
       // ", N no report" note is dropped rather than let it wrap to two
       // visual lines.
       if (mapCanvasEl.getBoundingClientRect().width < 480) {
-        const stnPhrase = noneWithinRadius ? `${final.length} nearest stn` : `${final.length} stn < 100 km`;
-        const noObsShort = noObsCount > 0 ? `, ${noObsCount} no report` : '';
-        let line1 = `${latLonLine(lat, lon)}, ${stnPhrase}${noObsShort}`;
-        if (noObsShort && !fitsOneLine(line1)) line1 = `${latLonLine(lat, lon)}, ${stnPhrase}`;
+        const noObsShort = result.missingCount > 0 ? `, ${result.missingCount} no report` : '';
+        let line1 = `${latLonLine(lat, lon)}, ${final.length} stn < 100 km${noObsShort}`;
+        if (noObsShort && !fitsOneLine(line1)) line1 = `${latLonLine(lat, lon)}, ${final.length} stn < 100 km`;
         setStatus(line1, `fetched ${withObs.length} obs in ${fetchMs} ms, computed in ${calcMs} ms`);
         return;
       }
 
-      const noObsNote = noObsCount > 0 ? `, ${noObsCount} had no recent report` : '';
-      const resultSentence = noneWithinRadius
-        ? `no weather stations within 100 km, calculated from ${plural(final.length, 'nearest station')} in ${(tCalcEnd - t0).toFixed(0)} ms${noObsNote}`
-        : `calculated from ${plural(final.length, 'weather station')} within 100 km in ${(tCalcEnd - t0).toFixed(0)} ms${noObsNote}`;
+      const noObsNote = result.missingCount > 0 ? `, ${result.missingCount} had no recent report` : '';
+      const resultSentence = `calculated from ${plural(final.length, 'weather station')} within 100 km in ${(tCalcEnd - t0).toFixed(0)} ms${noObsNote}`;
       const perfLine = `fetched ${plural(withObs.length, 'observation')} from ${plural(sourceCount, 'source')} in ${fetchMs} ms, calculated in ${calcMs} ms`;
 
       setStatus(`${latLonLine(lat, lon)}, ${resultSentence}`, perfLine);
     }
 
-    // Exposed for reuse (t0-web) and for headless verification.
-    window.__app = { nearest, idw, idwCircularDeg, setLocation, compute, mapView };
+    // Exposed for headless verification.
+    window.__app = { select, estimate, fetchIem, fetchNws, fetchOpenMeteoPoint, setLocation, compute, mapView };
   </script>
 </body>
 </html>

@@ -9,7 +9,7 @@
 // aviationweather.gov sends no Access-Control-Allow-Origin header, so it is
 // not used here.
 
-import { parseIemCurrents } from './pkg/weather_wasm.js?v=ae5146e';
+import { parseIemCurrents, parseNwsLatest, nwsStationId } from './pkg/weather_wasm.js?v=ae5146e';
 
 // Iowa Environmental Mesonet — global ASOS/METAR current observations, one call
 // for any number of stations via repeated `station=` query params. Parsing
@@ -24,32 +24,14 @@ export async function fetchIem(icaos) {
 }
 
 // NWS api.weather.gov — US stations only, called with the station's own id
-// (as IEM and the metar-stations dataset carry it). NWS needs the full
-// 4-letter ICAO id: CONUS state networks carry a bare 3-character id there
-// (e.g. "JFK", "00U") and need a "K" prefix; Alaska, Hawaii, Puerto Rico,
-// Guam and the US Virgin Islands already carry their real 4-letter ICAO id
-// (e.g. "PANC", "PHNL") and are used as-is (checked against
-// stations.parquet's source_network column, 2026-09-27: every non-AK/HI/
-// GU/PR/VI US network is 3-character, every AK/HI/GU/PR/VI one is already
-// 4-character).
-function nwsId(icao) {
-  return icao.length === 3 ? `K${icao}` : icao;
-}
-
+// (as IEM and the metar-stations dataset carry it). Id mapping and body
+// parsing (unit conversion, field normalization) happen in the wasm package.
 export async function fetchNws(icao) {
-  const res = await fetch(`https://api.weather.gov/stations/${nwsId(icao)}/observations/latest`);
+  const res = await fetch(`https://api.weather.gov/stations/${nwsStationId(icao)}/observations/latest`);
   if (res.status === 404) return null; // station not in NWS network (non-US, etc.)
   if (!res.ok) throw new Error(`NWS ${res.status}`);
-  const body = await res.json();
-  const p = body.properties;
-  const obs = { source: 'NWS' };
-  if (typeof p.temperature?.value === 'number') obs.tempC = p.temperature.value;
-  if (typeof p.dewpoint?.value === 'number') obs.dewpointC = p.dewpoint.value;
-  if (typeof p.windSpeed?.value === 'number') obs.windMs = p.windSpeed.value / 3.6; // km/h -> m/s
-  if (typeof p.windDirection?.value === 'number') obs.windDirDeg = p.windDirection.value;
-  if (typeof p.barometricPressure?.value === 'number') obs.pressureHpa = p.barometricPressure.value / 100; // Pa -> hPa
-  if (p.timestamp) obs.obsTimeMillis = new Date(p.timestamp).getTime();
-  return Object.keys(obs).length > 1 ? obs : null;
+  const text = await res.text();
+  return parseNwsLatest(text);
 }
 
 // Open-Meteo — gridded forecast model sampled at the exact point. NOT an observation;
