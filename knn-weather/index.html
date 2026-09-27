@@ -103,7 +103,7 @@
       cursor: crosshair;
     }
     @media (orientation: portrait) {
-      #map-canvas { aspect-ratio: 2 / 3; }
+      #map-canvas { aspect-ratio: 2 / 3; max-height: 75svh; }
     }
   </style>
 </head>
@@ -312,7 +312,7 @@
       if (key === 'tempC') return corr.temperature.corrected;
       if (key === 'dewpointC') return corr.dewpoint.corrected;
       if (key === 'windMs') return corr.wind.correctedSpeed;
-      if (key === 'pressureHpa') return corr.pressure.correctedStation;
+      if (key === 'pressureHpa') return corr.pressure.correctedQnh;
       return null;
     }
 
@@ -327,10 +327,10 @@
       const pVal = correctedValueFor('pressureHpa', corr) ?? corr.pressure.plain;
 
       setResultLatLon(latLonLine(lat, lon), false);
-      resultTemp.textContent = tVal != null ? `${tVal.toFixed(1)}C` : 'n/a';
-      resultDp.textContent = dVal != null ? `${dVal.toFixed(1)}C` : 'n/a';
-      resultWind.textContent = wSpeed != null ? `${wSpeed.toFixed(1)}m/s${wDir != null ? ` ${wDir.toFixed(0)}°` : ''}` : 'n/a';
-      resultPres.textContent = pVal != null ? `${pVal.toFixed(1)}hPa` : 'n/a';
+      resultTemp.textContent = tVal != null ? `${tVal.toFixed(1)} °C` : 'n/a';
+      resultDp.textContent = dVal != null ? `${dVal.toFixed(1)} °C` : 'n/a';
+      resultWind.textContent = wSpeed != null ? `${wSpeed.toFixed(1)} m/s${wDir != null ? ` ${wDir.toFixed(0)}°` : ''}` : 'n/a';
+      resultPres.textContent = pVal != null ? `${pVal.toFixed(0)} hPa` : 'n/a';
       syncOverlayRects();
     }
 
@@ -342,11 +342,11 @@
         name: trimName(c.name, 16),
         id: c.icao,
         distanceKm: Math.round(c.distance),
-        tempStr: o.tempC != null ? `${o.tempC.toFixed(1)}C` : 'n/a',
-        dewStr: o.dewpointC != null ? `${o.dewpointC.toFixed(1)}dp` : 'n/a',
-        windStr: o.windMs != null ? `${o.windMs.toFixed(1)}ms` : 'n/a',
-        pressureStr: o.pressureHpa != null ? `${o.pressureHpa.toFixed(0)}h` : 'n/a',
-        ageStr: age != null ? `${age.toFixed(0)}m` : 'n/a',
+        tempStr: o.tempC != null ? `${o.tempC.toFixed(1)} °C` : 'n/a',
+        dewStr: o.dewpointC != null ? `dp ${o.dewpointC.toFixed(1)} °C` : 'n/a',
+        windStr: o.windMs != null ? `${o.windMs.toFixed(1)} m/s` : 'n/a',
+        pressureStr: o.pressureHpa != null ? `${o.pressureHpa.toFixed(0)} hPa` : 'n/a',
+        ageStr: age != null ? `${age.toFixed(0)} min ago` : 'n/a',
         hasObs: !!c.obs,
       };
     }
