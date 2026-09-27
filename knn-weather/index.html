@@ -113,7 +113,7 @@
     <p>
       Weather at any point on the map, from the nearest stations.<br>
       No server. Your location never leaves your browser.<br>
-      ~8,100 METAR stations, live observations.
+      ~5,600 METAR stations, live observations.
     </p>
 
     <hr>
@@ -151,7 +151,7 @@
 
     <p class="panel-desc">
       Distance-weighted average (kNN / IDW) of up to 5 nearest METAR stations within 100 km, corrected for elevation, pressure and wind direction (Nalder &amp; Wein, 1998); method from SenseAI's weather tools (2015), where I was CTO.<br>
-      Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation from <a href="https://open-meteo.com/">Open-Meteo</a>. Map: country borders and cities from <a href="https://www.naturalearthdata.com/">Natural Earth</a> (public domain).<br>
+      Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation from <a href="https://open-meteo.com/">Open-Meteo</a>. Map: country borders and cities from <a href="https://www.naturalearthdata.com/">Natural Earth</a> (public domain).<br>
       Source: <a href="https://github.com/idle-intelligence/trucs.ai/tree/main/knn-weather">github.com/idle-intelligence/trucs.ai/tree/main/knn-weather</a>.
     </p>
 
