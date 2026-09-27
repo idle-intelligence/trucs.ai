@@ -1,0 +1,11 @@
+Content License
+
+The written content of this site (the Markdown posts under `blog/` and the
+prose on other pages) is licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0):
+
+https://creativecommons.org/licenses/by/4.0/
+
+This scope covers text only. Code (site glue, demo page scripts, and compiled
+WASM) is licensed under MIT, see LICENSE. Third-party files retain their own
+licenses, see THIRD-PARTY-NOTICES.md.
