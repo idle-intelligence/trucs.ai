@@ -944,10 +944,11 @@ export function createMapView(canvas, { onTap } = {}) {
     },
     // Same, but also fits the view to the point + stations — used for "use
     // my location", where the point could otherwise land off-screen.
-    setSelectionAndFit(lat, lon, used) {
+    // alsoFrame: extra stations to keep in view without drawing them as used.
+    setSelectionAndFit(lat, lon, used, alsoFrame = []) {
       point = { lat, lon };
       usedStations = used;
-      fitTo(lat, lon, used);
+      fitTo(lat, lon, [...used, ...alsoFrame]);
     },
     // rects: array of {x1, y1, x2, y2} in canvas-local CSS px, already
     // filtered by the caller to only those that actually overlap the

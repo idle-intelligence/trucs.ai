@@ -417,7 +417,7 @@
       const tCalcEnd = performance.now();
 
       if (result.status.kind === 'noStationWithinRadius') {
-        if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, []);
+        if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, [], selection.nearest ? [selection.nearest.station] : []);
         else mapView.setSelection(lat, lon, []);
         const km = Math.round(result.status.nearestKm);
         setStatus(`${latLonLine(lat, lon)}, no weather station within 100 km; the nearest, ${result.status.nearestId}, is ${km} km away`);
