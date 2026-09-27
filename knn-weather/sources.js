@@ -1,6 +1,6 @@
 // sources.js — live observation fetchers.
 // Each returns a normalized observation: { tempC, dewpointC, windMs, windDirDeg,
-// pressureHpa, obsTime (Date), source } with missing fields left undefined
+// pressureHpa, obsTimeMillis, source } with missing fields left undefined
 // (never zero-filled). CORS verified 2026-09-19 with:
 //   curl -sI -H 'Origin: https://trucs.ai' <url>
 // IEM currents.json           -> Access-Control-Allow-Origin: *
@@ -9,32 +9,18 @@
 // aviationweather.gov sends no Access-Control-Allow-Origin header, so it is
 // not used here.
 
-const F_TO_C = (f) => ((f - 32) * 5) / 9;
-const KT_TO_MS = (kt) => kt * 0.514444;
-const INHG_TO_HPA = (inhg) => inhg * 33.8639;
+import { parseIemCurrents } from './pkg/weather_wasm.js?v=aa27f02';
 
 // Iowa Environmental Mesonet — global ASOS/METAR current observations, one call
-// for any number of stations via repeated `station=` query params.
+// for any number of stations via repeated `station=` query params. Parsing
+// (unit conversion, field normalization) happens in the wasm package.
 export async function fetchIem(icaos) {
   const url = new URL('https://mesonet.agron.iastate.edu/api/1/currents.json');
   for (const icao of icaos) url.searchParams.append('station', icao);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`IEM ${res.status}`);
-  const body = await res.json();
-  const out = new Map();
-  for (const row of body.data ?? []) {
-    const obs = {};
-    if (typeof row.tmpf === 'number') obs.tempC = F_TO_C(row.tmpf);
-    if (typeof row.dwpf === 'number') obs.dewpointC = F_TO_C(row.dwpf);
-    if (typeof row.sknt === 'number') obs.windMs = KT_TO_MS(row.sknt);
-    if (typeof row.drct === 'number') obs.windDirDeg = row.drct;
-    if (typeof row.alti === 'number') obs.pressureHpa = INHG_TO_HPA(row.alti);
-    else if (typeof row.mslp === 'number') obs.pressureHpa = row.mslp;
-    if (row.utc_valid) obs.obsTime = new Date(row.utc_valid);
-    obs.source = 'IEM';
-    if (Object.keys(obs).length > 1) out.set(row.station, obs);
-  }
-  return out;
+  const text = await res.text();
+  return parseIemCurrents(text);
 }
 
 // NWS api.weather.gov — US stations only. One call per station (no batch endpoint).
@@ -50,7 +36,7 @@ export async function fetchNws(icao) {
   if (typeof p.windSpeed?.value === 'number') obs.windMs = p.windSpeed.value / 3.6; // km/h -> m/s
   if (typeof p.windDirection?.value === 'number') obs.windDirDeg = p.windDirection.value;
   if (typeof p.barometricPressure?.value === 'number') obs.pressureHpa = p.barometricPressure.value / 100; // Pa -> hPa
-  if (p.timestamp) obs.obsTime = new Date(p.timestamp);
+  if (p.timestamp) obs.obsTimeMillis = new Date(p.timestamp).getTime();
   return Object.keys(obs).length > 1 ? obs : null;
 }
 

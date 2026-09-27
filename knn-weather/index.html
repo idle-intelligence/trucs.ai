@@ -162,8 +162,7 @@
   <script type="module">
     import { nearest, loadStations } from './knn.js';
     import { fetchIem, fetchNws, fetchOpenMeteoPoint } from './sources.js';
-    import { idw, idwCircularDeg } from './idw.js';
-    import { computeCorrections } from './corrections.js';
+    import { idw, idwCircularDeg, computeCorrections } from './pkg/weather_wasm.js?v=aa27f02';
     import { createMapView } from './map.js';
     import { coordsForTimeZone } from './tz-coords.js';
 
@@ -259,9 +258,9 @@
       return fitsOneLineCtx.measureText(text).width <= available;
     }
 
-    function ageMinutes(d) {
-      if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
-      return (Date.now() - d.getTime()) / 60000;
+    function ageMinutes(millis) {
+      if (typeof millis !== 'number' || Number.isNaN(millis)) return null;
+      return (Date.now() - millis) / 60000;
     }
 
     function titleCase(s) {
@@ -338,7 +337,7 @@
     // The vertical block map.js draws next to each used station's dot.
     function stationLabel(c) {
       const o = c.obs || {};
-      const age = ageMinutes(o.obsTime);
+      const age = ageMinutes(o.obsTimeMillis);
       return {
         name: trimName(c.name, 16),
         id: c.icao,
@@ -388,7 +387,7 @@
       const final = (noneWithinRadius ? candidates : withinRadius).slice(0, K);
 
       const tFetchStart = performance.now();
-      let iemMap = new Map();
+      let iemMap = {};
       try {
         iemMap = await fetchIem(final.map((c) => c.icao));
       } catch (err) {
@@ -408,7 +407,7 @@
 
       // Prefer NWS (fresher, direct) then IEM.
       for (const c of final) {
-        c.obs = nwsMap.get(c.icao) ?? iemMap.get(c.icao) ?? null;
+        c.obs = nwsMap.get(c.icao) ?? iemMap[c.icao] ?? null;
       }
 
       // Elevation only, for the temperature/pressure corrections below - not
@@ -422,7 +421,7 @@
       if (myId !== requestSeq) return;
       const tFetchEnd = performance.now();
 
-      const corr = computeCorrections(final, targetPoint?.elevationM ?? null);
+      const corr = computeCorrections(final, targetPoint?.elevationM ?? null, Date.now());
       renderResult(lat, lon, corr);
       const tCalcEnd = performance.now();
 
