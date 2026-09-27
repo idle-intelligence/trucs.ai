@@ -9,7 +9,7 @@
 // aviationweather.gov sends no Access-Control-Allow-Origin header, so it is
 // not used here.
 
-import { parseIemCurrents, parseNwsLatest, nwsStationId } from './pkg/weather_wasm.js?v=ae5146e';
+import { parseIemCurrents, parseNwsLatest, nwsStationId } from './pkg/weather_wasm.js?v=87d4962';
 
 // Iowa Environmental Mesonet — global ASOS/METAR current observations, one call
 // for any number of stations via repeated `station=` query params. Parsing
