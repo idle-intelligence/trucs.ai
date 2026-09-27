@@ -5,9 +5,9 @@
 // rows [icao, lat, lon, elevM, name, country]. `?local=1` in the page URL
 // loads a local dev copy instead (the dataset is not uploaded yet).
 
-import init, { Stations } from './pkg/weather_wasm.js?v=aa27f02';
+import init, { Stations } from './pkg/weather_wasm.js?v=ae5146e';
 
-const wasmReady = init(new URL('./pkg/weather_wasm_bg.wasm?v=aa27f02', import.meta.url));
+const wasmReady = init(new URL('./pkg/weather_wasm_bg.wasm?v=ae5146e', import.meta.url));
 
 const HF_STATIONS_URL = 'https://huggingface.co/datasets/idle-intelligence/metar-stations/resolve/main/stations.json';
 

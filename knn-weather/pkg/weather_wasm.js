@@ -78,6 +78,31 @@ export class Stations {
             wasm.__wbindgen_add_to_stack_pointer(16);
         }
     }
+    /**
+     * Selects the station(s) an estimate at (lat, lon) should use: up to 5
+     * nearest stations within 100 km (closest first), plus the nearest
+     * station overall (for the "no station in range" message). Returns
+     * `null` if no stations are loaded. There is no fallback to farther
+     * stations when none are within range.
+     * @param {number} lat
+     * @param {number} lon
+     * @returns {any}
+     */
+    select(lat, lon) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.stations_select(retptr, this.__wbg_ptr, lat, lon);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
 }
 if (Symbol.dispose) Stations.prototype[Symbol.dispose] = Stations.prototype.free;
 
@@ -97,6 +122,41 @@ export function computeCorrections(rows, target_elev_m, now_millis) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         wasm.computeCorrections(retptr, addHeapObject(rows), !isLikeNone(target_elev_m), isLikeNone(target_elev_m) ? 0 : target_elev_m, now_millis);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * `selection`: the `{ stations, nearest }` object `Stations.select`
+ * returns. `observations`: a map from ICAO id to observation (the same
+ * shape `parseIemCurrents`/`parseNwsLatest` return), already merged
+ * NWS-first per station by the caller. `targetElevM`: the target point's
+ * elevation, or undefined/null if unavailable. `nowMillis`: epoch
+ * milliseconds (`Date.now()`).
+ *
+ * Returns `{ status, temperatureC, dewpointC, windSpeedMs, windDirDeg,
+ * pressureQnhHpa, pressureStationHpa, stations, stationsUsed, freshCount,
+ * staleCount, missingCount }`, where `status` is one of
+ * `{ kind: "ok" }`, `{ kind: "noStationWithinRadius", nearestId, nearestKm }`
+ * or `{ kind: "noFreshObservation" }`.
+ * @param {any} selection
+ * @param {any} observations
+ * @param {number | null | undefined} target_elev_m
+ * @param {number} now_millis
+ * @returns {any}
+ */
+export function estimate(selection, observations, target_elev_m, now_millis) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.estimate(retptr, addHeapObject(selection), addHeapObject(observations), !isLikeNone(target_elev_m), isLikeNone(target_elev_m) ? 0 : target_elev_m, now_millis);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -178,6 +238,32 @@ export function maxAgeMin() {
 }
 
 /**
+ * NWS station id for an ICAO id: 3-character ids (CONUS) get a "K" prefix,
+ * 4-character ids (Alaska, Hawaii, Puerto Rico, Guam, US Virgin Islands)
+ * are kept as-is.
+ * @param {string} icao
+ * @returns {string}
+ */
+export function nwsStationId(icao) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(icao, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.nwsStationId(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred2_0 = r0;
+        deferred2_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * Parses an IEM currents.json body (as text) into a map from ICAO station
  * id to observation: `{ tempC?, dewpointC?, windMs?, windDirDeg?,
  * pressureHpa?, obsTimeMillis?, source }`.
@@ -190,6 +276,33 @@ export function parseIemCurrents(currents_json_text) {
         const ptr0 = passStringToWasm0(currents_json_text, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         wasm.parseIemCurrents(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Parses one api.weather.gov `/stations/{id}/observations/latest` response
+ * body (as text) into an observation: `{ tempC?, dewpointC?, windMs?,
+ * windDirDeg?, pressureHpa?, obsTimeMillis?, source }`, or `null` if it
+ * carries no usable field. Units are converted from whatever `unitCode`
+ * NWS reports (degC, km/h or m/s, Pa, …), not assumed.
+ * @param {string} json_text
+ * @returns {any}
+ */
+export function parseNwsLatest(json_text) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(json_text, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.parseNwsLatest(retptr, ptr0, len0);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -306,10 +419,18 @@ function __wbg_get_imports() {
             const ret = getObject(arg0).done;
             return ret;
         },
+        __wbg_entries_fb6397112b1de25f: function(arg0) {
+            const ret = Object.entries(getObject(arg0));
+            return addHeapObject(ret);
+        },
         __wbg_get_658f6698067d9515: function() { return handleError(function (arg0, arg1) {
             const ret = Reflect.get(getObject(arg0), getObject(arg1));
             return addHeapObject(ret);
         }, arguments); },
+        __wbg_get_6c896e0571ddae51: function(arg0, arg1) {
+            const ret = getObject(arg0)[arg1 >>> 0];
+            return addHeapObject(ret);
+        },
         __wbg_get_unchecked_288889d017702237: function(arg0, arg1) {
             const ret = getObject(arg0)[arg1 >>> 0];
             return addHeapObject(ret);
