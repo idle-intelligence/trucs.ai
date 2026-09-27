@@ -458,7 +458,7 @@
       }
 
       const noObsNote = result.missingCount > 0 ? `, ${result.missingCount} had no recent report` : '';
-      const resultSentence = `calculated from ${plural(final.length, 'weather station')} within 100 km in ${(tCalcEnd - t0).toFixed(0)} ms${noObsNote}`;
+      const resultSentence = `calculated from ${plural(final.length, 'weather station')} within 100 km${noObsNote}`;
       const perfLine = `fetched ${plural(withObs.length, 'observation')} from ${plural(sourceCount, 'source')} in ${fetchMs} ms, calculated in ${calcMs} ms`;
 
       setStatus(`${latLonLine(lat, lon)}, ${resultSentence}`, perfLine);
