@@ -1,16 +1,14 @@
 // app.js — interactive widget for blog/browser-weather.md.
 // Imports the kNN weather modules from /knn-weather/ (never modifies them).
+// Selection, radius, fallback, age cutoff, NWS parsing and physics
+// corrections all live in the weather-web wasm package; this file only
+// wires fetches to it and renders what it returns.
 
-import { nearest } from '/knn-weather/knn.js';
+import { select } from '/knn-weather/knn.js';
 import { fetchIem, fetchNws, fetchOpenMeteoPoint } from '/knn-weather/sources.js';
-import { idw } from '/knn-weather/idw.js';
-import { computeCorrections, MAX_AGE_MIN } from '/knn-weather/corrections.js';
-import { stationPressureHpa } from '/knn-weather/physics.js';
+import { idw, computeCorrections, estimate } from '/knn-weather/pkg/weather_wasm.js?v=ae5146e';
 
-const K_MAIN = 5;
 const RADIUS_KM = 100;
-const FALLBACK_N = 5;
-const NEAREST_POOL = 100;
 
 const CITIES = [
   { name: 'Paris', lat: 48.8566, lon: 2.3522 },
@@ -99,54 +97,44 @@ geoBtn.addEventListener('click', () => {
   );
 });
 
-function ageMinutes(d) {
-  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
-  return (Date.now() - d.getTime()) / 60000;
+function renderCount(final, result) {
+  countLine.textContent = `There are ${final.length} stations within ${RADIUS_KM} km of this location, ${result.freshCount} with a recent report.`;
 }
 
-function hasRecentReport(s) {
-  const age = ageMinutes(s.obs?.obsTime);
-  return age != null && age <= MAX_AGE_MIN;
-}
-
-function renderCount(stationSet, recentSet, usedFallback) {
-  if (usedFallback) {
-    countLine.textContent = `No station within ${RADIUS_KM} km of this location. Using the nearest ${stationSet.length} instead, ${recentSet.length} with a recent report.`;
-    return;
-  }
-  countLine.textContent = `There are ${stationSet.length} stations within ${RADIUS_KM} km of this location, ${recentSet.length} with a recent report.`;
-}
-
-function renderTable(rows) {
-  const head = '<tr><th>id</th><th>name</th><th>distance (km)</th><th>temp (C)</th><th>dew point (C)</th><th>wind</th><th>pressure (hPa)</th><th>obs age (min)</th></tr>';
-  const body = rows.map((s) => {
-    const o = s.obs || {};
-    const age = ageMinutes(o.obsTime);
-    if (!hasRecentReport(s)) {
+// final: selection.stations ({ station, distance }). observations: icao ->
+// obs. estStations: estimate()'s per-station array (ageMinutes, fresh,
+// hasObservation), parallel to final.
+function renderTable(final, observations, estStations) {
+  const head = '<tr><th>id</th><th>name</th><th>distance (km)</th><th>temp (C)</th><th>dew point (C)</th><th>wind</th><th>pressure (hPa)</th><th>obs age</th></tr>';
+  const body = final.map((s, i) => {
+    const o = observations[s.station.icao] || {};
+    const est = estStations[i];
+    const ageStr = est.ageMinutes != null ? `${est.ageMinutes.toFixed(0)} min ago` : '-';
+    if (!est.fresh) {
       return `<tr>
-        <td>${s.icao}</td>
-        <td>${s.name ?? ''}</td>
+        <td>${s.station.icao}</td>
+        <td>${s.station.name ?? ''}</td>
         <td>${s.distance.toFixed(1)}</td>
         <td colspan="4" class="bw-no-report">no recent report</td>
-        <td>${age != null ? age.toFixed(0) : '-'}</td>
+        <td>${ageStr}</td>
       </tr>`;
     }
     return `<tr>
-      <td>${s.icao}</td>
-      <td>${s.name ?? ''}</td>
+      <td>${s.station.icao}</td>
+      <td>${s.station.name ?? ''}</td>
       <td>${s.distance.toFixed(1)}</td>
       <td>${Number.isFinite(o.tempC) ? o.tempC.toFixed(1) : '-'}</td>
       <td>${Number.isFinite(o.dewpointC) ? o.dewpointC.toFixed(1) : '-'}</td>
       <td>${Number.isFinite(o.windMs) ? `${o.windMs.toFixed(1)} m/s${Number.isFinite(o.windDirDeg) ? ` @${o.windDirDeg.toFixed(0)}°` : ''}` : '-'}</td>
-      <td>${Number.isFinite(o.pressureHpa) ? o.pressureHpa.toFixed(1) : '-'}</td>
-      <td>${age != null ? age.toFixed(0) : '-'}</td>
+      <td>${Number.isFinite(o.pressureHpa) ? o.pressureHpa.toFixed(0) : '-'}</td>
+      <td>${ageStr}</td>
     </tr>`;
   }).join('');
   tableWrap.innerHTML = `<table class="bw-table">${head}${body}</table>`;
 }
 
-function renderPlainMean(recentSet) {
-  const temps = recentSet.map((s) => s.obs?.tempC).filter((v) => Number.isFinite(v));
+function renderPlainMean(freshStations, observations) {
+  const temps = freshStations.map((s) => observations[s.station.icao]?.tempC).filter((v) => Number.isFinite(v));
   if (temps.length === 0) {
     plainMeanValue.textContent = 'n/a';
     return;
@@ -180,7 +168,7 @@ function correctedValueFor(corr) {
     temperature: corr.temperature.corrected ?? corr.temperature.plain,
     dewpoint: corr.dewpoint.corrected ?? corr.dewpoint.plain,
     wind: corr.wind.correctedSpeed ?? corr.wind.plainScalarSpeed,
-    pressure: corr.pressure.correctedStation ?? corr.pressure.plain,
+    pressure: corr.pressure.correctedQnh ?? corr.pressure.plain,
   };
 }
 
@@ -194,41 +182,39 @@ function renderFinalEquation(corr, plainValue) {
     lines.push(`corrected to this point's elevation${corr.targetElevM != null ? ` (${corr.targetElevM.toFixed(0)} m)` : ''} with a fitted lapse rate of ${corr.lapse.lapseKPerKm.toFixed(1)} K/km: ${v.temperature.toFixed(2)} °C`);
   }
   if (v.dewpoint != null) lines.push(`dew point: averaged as vapour pressure, converted back: ${v.dewpoint.toFixed(2)} °C`);
-  if (v.pressure != null) lines.push(`pressure: QNH averaged, reduced to this elevation: ${v.pressure.toFixed(2)} hPa`);
+  if (v.pressure != null) lines.push(`pressure: averaged as QNH (sea level): ${v.pressure.toFixed(2)} hPa`);
   if (v.wind != null) lines.push(`wind: averaged as (u, v) vector components: ${v.wind.toFixed(2)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}`);
   finalEq.textContent = lines.join('\n');
 }
 
-// model: fetchOpenMeteoPoint() result (or null), shown under each line for comparison.
-function renderOutput(corr, model) {
-  const v = correctedValueFor(corr);
-  const wDir = corr.wind.correctedDir;
+// result: estimate() result. model: fetchOpenMeteoPoint() result (or null),
+// shown under each line for comparison. Both report sea-level (QNH)
+// pressure, so the two pressure numbers are directly comparable. Anything
+// but a fresh estimate (status "ok") shows "n/a", matching the map's "--".
+function renderOutput(result, model) {
   const fin = (x) => Number.isFinite(x);
-  // Open-Meteo gives sea-level pressure; bring it to this point's elevation the
-  // same way our own estimate is, so the two numbers are comparable.
-  const modelPressure = model && fin(model.pressureHpa) && fin(model.elevationM)
-    ? stationPressureHpa(model.pressureHpa, model.elevationM)
-    : null;
+  const ok = result.status.kind === 'ok';
+  const wDir = result.windDirDeg;
   const lines = [
     {
       label: 'temperature',
-      value: v.temperature != null ? `${v.temperature.toFixed(1)} °C` : 'n/a',
+      value: ok && fin(result.temperatureC) ? `${result.temperatureC.toFixed(1)} °C` : 'n/a',
       model: model && fin(model.tempC) ? `${model.tempC.toFixed(1)} °C` : null,
     },
     {
       label: 'dew point',
-      value: v.dewpoint != null ? `${v.dewpoint.toFixed(1)} °C` : 'n/a',
+      value: ok && fin(result.dewpointC) ? `${result.dewpointC.toFixed(1)} °C` : 'n/a',
       model: model && fin(model.dewpointC) ? `${model.dewpointC.toFixed(1)} °C` : null,
     },
     {
       label: 'wind',
-      value: v.wind != null ? `${v.wind.toFixed(1)} m/s${wDir != null ? ` from ${wDir.toFixed(0)}°` : ''}` : 'n/a',
+      value: ok && fin(result.windSpeedMs) ? `${result.windSpeedMs.toFixed(1)} m/s${fin(wDir) ? ` from ${wDir.toFixed(0)}°` : ''}` : 'n/a',
       model: model && fin(model.windMs) ? `${model.windMs.toFixed(1)} m/s${fin(model.windDirDeg) ? ` from ${model.windDirDeg.toFixed(0)}°` : ''}` : null,
     },
     {
       label: 'pressure',
-      value: v.pressure != null ? `${v.pressure.toFixed(1)} hPa` : 'n/a',
-      model: modelPressure != null ? `${modelPressure.toFixed(1)} hPa` : null,
+      value: ok && fin(result.pressureQnhHpa) ? `${result.pressureQnhHpa.toFixed(0)} hPa` : 'n/a',
+      model: model && fin(model.pressureHpa) ? `${model.pressureHpa.toFixed(0)} hPa` : null,
     },
   ];
   outputPanel.innerHTML = lines.map((l) => `
@@ -381,30 +367,45 @@ async function run(lat, lon) {
   weightCaption.textContent = '';
   weightPlot = null;
 
-  const wide = await nearest(lat, lon, NEAREST_POOL);
-  const within100 = wide.filter((s) => s.distance <= RADIUS_KM);
-  const usedFallback = within100.length === 0;
-  const stationSet = usedFallback ? wide.slice(0, FALLBACK_N) : within100;
+  let selection;
+  try {
+    selection = await select(lat, lon);
+  } catch (err) {
+    setStatus(`failed to load station list: ${err.message}`);
+    return;
+  }
+  if (!selection) {
+    setStatus('no stations loaded');
+    return;
+  }
+
+  // Up to 5 nearest stations within 100 km, closest first — no fallback to
+  // farther stations when none are in range.
+  const final = selection.stations;
 
   setStatus('fetching observations...');
   const tFetch0 = performance.now();
 
-  let iemMap = new Map();
-  try {
-    iemMap = await fetchIem(stationSet.map((c) => c.icao));
-  } catch (err) {
-    console.log(`IEM fetch failed: ${err.message}`);
-  }
-  const usStations = stationSet.filter((c) => c.country === 'US');
+  let iemMap = {};
   const nwsMap = new Map();
-  if (usStations.length > 0) {
-    const results = await Promise.allSettled(usStations.map((c) => fetchNws(c.icao)));
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].icao, r.value);
-    });
+  if (final.length > 0) {
+    try {
+      iemMap = await fetchIem(final.map((s) => s.station.icao));
+    } catch (err) {
+      console.log(`IEM fetch failed: ${err.message}`);
+    }
+    const usStations = final.filter((s) => s.station.country === 'US');
+    if (usStations.length > 0) {
+      const results = await Promise.allSettled(usStations.map((s) => fetchNws(s.station.icao)));
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].station.icao, r.value);
+      });
+    }
   }
-  for (const c of stationSet) {
-    c.obs = nwsMap.get(c.icao) ?? iemMap.get(c.icao) ?? null;
+  const observations = {};
+  for (const s of final) {
+    const obs = nwsMap.get(s.station.icao) ?? iemMap[s.station.icao] ?? null;
+    if (obs) observations[s.station.icao] = obs;
   }
 
   // One Open-Meteo call: the point's elevation for the corrections, and the
@@ -423,37 +424,50 @@ async function run(lat, lon) {
   setStatus('computing estimate...');
   const tCompute0 = performance.now();
 
-  renderTable(stationSet);
-  const recentSet = stationSet.filter(hasRecentReport);
-  renderCount(stationSet, recentSet, usedFallback);
-  renderPlainMean(recentSet);
+  const now = Date.now();
+  const result = estimate(selection, observations, targetElevM, now);
 
-  const kMain = Math.min(K_MAIN, recentSet.length);
-  const mainSubset = recentSet.slice(0, kMain);
-  renderStationsUsedLine(kMain);
+  renderTable(final, observations, result.stations);
 
-  const tFirst0 = performance.now();
-  const tPtsMain = mainSubset
-    .filter((s) => Number.isFinite(s.obs?.tempC))
-    .map((s) => ({ icao: s.icao, distance: s.distance, value: s.obs.tempC }));
-  const idwMain = idw(tPtsMain);
-  const tFirst1 = performance.now();
+  if (result.status.kind === 'noStationWithinRadius') {
+    const km = Math.round(result.status.nearestKm);
+    countLine.textContent = `No weather station within ${RADIUS_KM} km of this location. The nearest, ${result.status.nearestId}, is ${km} km away.`;
+  } else {
+    renderCount(final, result);
+  }
 
-  renderWeightedEquation(idwMain);
-  const firstMs = tFirst1 - tFirst0;
-  firstMsSpan.textContent = firstMs < 0.01 ? 'less than 0.01 ms' : `${firstMs.toFixed(2)} ms`;
-  if (idwMain) firstEstimateValue.textContent = `${idwMain.value.toFixed(1)} °C`;
+  const freshStations = final.filter((s, i) => result.stations[i].fresh);
+  renderPlainMean(freshStations, observations);
+  renderStationsUsedLine(freshStations.length);
 
-  if (idwMain) {
-    weightPlot = { terms: idwMain.terms, total: idwMain.terms.reduce((a, t) => a + t.weight, 0) };
-    drawWeightChart();
+  if (freshStations.length > 0) {
+    const tFirst0 = performance.now();
+    const tPtsMain = freshStations
+      .filter((s) => Number.isFinite(observations[s.station.icao]?.tempC))
+      .map((s) => ({ icao: s.station.icao, distance: s.distance, value: observations[s.station.icao].tempC }));
+    const idwMain = idw(tPtsMain);
+    const tFirst1 = performance.now();
+
+    renderWeightedEquation(idwMain);
+    const firstMs = tFirst1 - tFirst0;
+    firstMsSpan.textContent = firstMs < 0.01 ? 'less than 0.01 ms' : `${firstMs.toFixed(2)} ms`;
+    if (idwMain) firstEstimateValue.textContent = `${idwMain.value.toFixed(1)} °C`;
+
+    if (idwMain) {
+      weightPlot = { terms: idwMain.terms, total: idwMain.terms.reduce((a, t) => a + t.weight, 0) };
+      drawWeightChart();
+    } else {
+      weightCaption.textContent = 'not enough stations with a recent report to plot this';
+    }
+
+    const rows = freshStations.map((s) => ({ icao: s.station.icao, distance: s.distance, elevM: s.station.elevM, obs: observations[s.station.icao] ?? null }));
+    const mainCorr = computeCorrections(rows, targetElevM, now);
+    if (idwMain) renderFinalEquation(mainCorr, idwMain.value);
   } else {
     weightCaption.textContent = 'not enough stations with a recent report to plot this';
   }
 
-  const mainCorr = computeCorrections(mainSubset, targetElevM);
-  if (idwMain) renderFinalEquation(mainCorr, idwMain.value);
-  renderOutput(mainCorr, modelPoint);
+  renderOutput(result, modelPoint);
 
   const tCompute1 = performance.now();
   setStatus(`ready (${(tCompute1 - tCompute0).toFixed(2)} ms)`);

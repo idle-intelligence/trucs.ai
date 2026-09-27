@@ -84,8 +84,10 @@ P.S.: if you want to go further, here are three methods that climatologists use 
 - **Thin-plate smoothing splines** (Hutchinson's ANUSPLIN, used for the WorldClim climate maps). It fits one smooth surface through all the stations at once, with altitude as an extra dimension, and chooses how smooth by cross-validation. Smoother and better grounded statistically. But it needs every station at once: the exact fit solves one system as large as the number of stations, fine on a computer once per update, heavy in a phone's browser. It also smooths away local effects.
 - **PRISM** (Parameter-elevation Regressions on Independent Slopes Model, Daly and colleagues, Oregon State University). It fits a temperature-versus-altitude relation for every map cell, weighting stations by distance, altitude, which side of the mountain they're on, and distance to the coast. The most accurate in mountains, and behind the official US climate maps. But it needs a detailed elevation model and a lot of expert tuning, and it's built for long-term averages, not the weather right now.
 
+I also ran a check on how good this actually is: a leave-one-out test on one snapshot of the station list. For each of the 4,077 stations that had both a fresh report and a neighbour within 100 km, I hid its report, estimated its temperature from its neighbours the same way this page does, and compared the estimate to what it actually reported. The average error was 1.19 °C. What drives that error is mostly the height gap to the nearest neighbour, not the distance: stations whose nearest neighbour is within 100 m of their own elevation average 1.02 °C off, while stations whose nearest neighbour is more than 1,000 m higher or lower average 3.36 °C off. Three things I haven't built yet would probably help: clamping the fitted lapse rate to a physically reasonable range so a bad fit can't run away, fitting that lapse rate on a wider pool of stations than just the ones being averaged, and weighting neighbours by height difference as well as distance.
+
 <p class="panel-desc">
-  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="http://www.rap.ucar.edu/weather/surface/stations.txt">NCAR/RAP stations.txt</a> (Greg Thompson, NCAR/RAP). Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
+  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
 </p>
 
 <style>
@@ -183,11 +185,3 @@ P.S.: if you want to go further, here are three methods that climatologists use 
 </style>
 
 <script type="module" src="/blog/browser-weather/app.js"></script>
-
-<!--
-PROPOSALS (Claude, for TC to accept or drop; none of this is in the visible post):
-- Show the distance to the nearest airport station as its own fact, since that's the number the intro paragraph is really about.
-- Add uncertainty from station spread (the standard deviation already computed in corrections.js) next to each estimate.
-- Add a note on typical METAR latency (age of the freshest station used) since it changes how "now" the estimate really is.
-- Replace manual city buttons with a click-anywhere map once the map experiment is ready.
--->
