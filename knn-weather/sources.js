@@ -23,9 +23,21 @@ export async function fetchIem(icaos) {
   return parseIemCurrents(text);
 }
 
-// NWS api.weather.gov — US stations only. One call per station (no batch endpoint).
+// NWS api.weather.gov — US stations only, called with the station's own id
+// (as IEM and the metar-stations dataset carry it). NWS needs the full
+// 4-letter ICAO id: CONUS state networks carry a bare 3-character id there
+// (e.g. "JFK", "00U") and need a "K" prefix; Alaska, Hawaii, Puerto Rico,
+// Guam and the US Virgin Islands already carry their real 4-letter ICAO id
+// (e.g. "PANC", "PHNL") and are used as-is (checked against
+// stations.parquet's source_network column, 2026-09-27: every non-AK/HI/
+// GU/PR/VI US network is 3-character, every AK/HI/GU/PR/VI one is already
+// 4-character).
+function nwsId(icao) {
+  return icao.length === 3 ? `K${icao}` : icao;
+}
+
 export async function fetchNws(icao) {
-  const res = await fetch(`https://api.weather.gov/stations/${icao}/observations/latest`);
+  const res = await fetch(`https://api.weather.gov/stations/${nwsId(icao)}/observations/latest`);
   if (res.status === 404) return null; // station not in NWS network (non-US, etc.)
   if (!res.ok) throw new Error(`NWS ${res.status}`);
   const body = await res.json();
