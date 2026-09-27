@@ -44,17 +44,11 @@ const LAND_50M_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-ve
 const BOUNDARY_50M_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_boundary_lines_land.geojson';
 const CITIES_110M_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_populated_places_simple.geojson';
 const CITIES_50M_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson';
-// Station id/lat/lon/elev only, [icao, lat, lon, elev] rows instead of
-// objects with repeated key names, rounded to 4 decimals (~11m, far tighter
-// than a station's own position error). Derived once from stations.json
-// (TC, 2026-09-23: "8k 4 letter id, 4 digits lat/lon should fit easily").
-// stations.json itself is untouched — knn.js's nearest-neighbor search
-// still reads the full file; this is only for drawing every station's dot
-// and id on the map. Measured 2026-09-23: stations.json 947,591 B raw /
-// 159,632 B gzip; stations-map.json 228,015 B raw / 80,613 B gzip — about
-// half the gzip size, mostly from dropping name/state/country and the
-// repeated JSON keys.
-const STATIONS_MAP_URL = './stations-map.json';
+// The background dots and ids drawn at every zoom come from the same
+// station list knn.js already loads for the nearest-neighbor search (one
+// fetch, one list — a separate derived file drifted out of sync with the
+// search list once the search list changed source).
+import { loadStationRowsParsed } from './knn.js';
 
 let countries110Promise = null;
 let land50Promise = null;
@@ -65,8 +59,7 @@ let stationsMapPromise = null;
 
 function loadStationsMap() {
   if (!stationsMapPromise) {
-    stationsMapPromise = fetch(STATIONS_MAP_URL)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`stationsMap ${r.status}`))))
+    stationsMapPromise = loadStationRowsParsed()
       .then((rows) => rows.map(([id, lat, lon, elev]) => ({ id, lat, lon, elev })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
   }
   return stationsMapPromise;
@@ -178,7 +171,7 @@ export function createMapView(canvas, { onTap } = {}) {
   let countries110 = null;
   let land50 = null;
   let boundary50 = null;
-  let stationGrid = null; // Map<"cx,cy", station[]>, built once from stations-map.json
+  let stationGrid = null; // Map<"cx,cy", station[]>, built once from the station list
   let overlayRects = []; // real DOM rects (canvas-local px) of the status/panel overlays
   let visibleStations = [];
   let usedStations = [];

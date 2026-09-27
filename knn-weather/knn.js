@@ -18,17 +18,33 @@ function stationsUrl() {
   return HF_STATIONS_URL;
 }
 
-let stationsPromise = null;
+// The raw station rows (one fetch, shared by the search index below and by
+// map.js's background station dots — both need the same list, so there is
+// only one place that loads it).
+let rowsPromise = null;
 
-export async function loadStations() {
-  if (!stationsPromise) {
-    stationsPromise = wasmReady
+function loadStationRows() {
+  if (!rowsPromise) {
+    rowsPromise = wasmReady
       .then(() => fetch(stationsUrl()))
       .then((r) => {
         if (!r.ok) throw new Error(`failed to load stations: ${r.status}`);
         return r.text();
-      })
-      .then((text) => new Stations(text));
+      });
+  }
+  return rowsPromise;
+}
+
+// The parsed rows, [icao, lat, lon, elevM, name, country] each — for map.js.
+export async function loadStationRowsParsed() {
+  return JSON.parse(await loadStationRows());
+}
+
+let stationsPromise = null;
+
+export async function loadStations() {
+  if (!stationsPromise) {
+    stationsPromise = loadStationRows().then((text) => new Stations(text));
   }
   return stationsPromise;
 }
