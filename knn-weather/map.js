@@ -262,15 +262,7 @@ export function createMapView(canvas, { onTap } = {}) {
     schedule();
   }
 
-  function drawRing(ring) {
-    ring.forEach(([lon, lat], i) => {
-      const p = screenOf(lat, lon);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-  }
-
-  function drawLine(coords) {
+  function drawPath(coords) {
     coords.forEach(([lon, lat], i) => {
       const p = screenOf(lat, lon);
       if (i === 0) ctx.moveTo(p.x, p.y);
@@ -305,11 +297,11 @@ export function createMapView(canvas, { onTap } = {}) {
     const useFine = view.zoom > FIFTY_M_ZOOM && land50 && boundary50;
     if (useFine) {
       ctx.beginPath();
-      forEachPolygon(land50, drawRing);
+      forEachPolygon(land50, drawPath);
       ctx.fillStyle = LAND;
       ctx.fill();
       ctx.beginPath();
-      forEachLine(boundary50, drawLine);
+      forEachLine(boundary50, drawPath);
       ctx.strokeStyle = BORDER;
       ctx.lineWidth = 1;
       ctx.stroke();
@@ -317,7 +309,7 @@ export function createMapView(canvas, { onTap } = {}) {
     }
     if (!countries110) return;
     ctx.beginPath();
-    forEachPolygon(countries110, drawRing);
+    forEachPolygon(countries110, drawPath);
     ctx.fillStyle = LAND;
     ctx.fill();
     ctx.strokeStyle = BORDER;
@@ -956,20 +948,6 @@ export function createMapView(canvas, { onTap } = {}) {
     setOverlayRects(rects) {
       overlayRects = rects;
       schedule();
-    },
-    clear() {
-      point = null;
-      usedStations = [];
-      schedule();
-    },
-    getZoom() {
-      return view.zoom;
-    },
-    _lonLatAt(sx, sy) {
-      return lonLatOfScreen(sx, sy);
-    },
-    _debug() {
-      return { cssW, cssH, dpr, view: { ...view }, canvasW: canvas.width, canvasH: canvas.height };
     },
   };
 }
