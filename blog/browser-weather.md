@@ -84,7 +84,15 @@ P.S.: if you want to go further, here are three methods that climatologists use 
 - **Thin-plate smoothing splines** (Hutchinson's ANUSPLIN, used for the WorldClim climate maps). It fits one smooth surface through all the stations at once, with altitude as an extra dimension, and chooses how smooth by cross-validation. Smoother and better grounded statistically. But it needs every station at once: the exact fit solves one system as large as the number of stations, fine on a computer once per update, heavy in a phone's browser. It also smooths away local effects.
 - **PRISM** (Parameter-elevation Regressions on Independent Slopes Model, Daly and colleagues, Oregon State University). It fits a temperature-versus-altitude relation for every map cell, weighting stations by distance, altitude, which side of the mountain they're on, and distance to the coast. The most accurate in mountains, and behind the official US climate maps. But it needs a detailed elevation model and a lot of expert tuning, and it's built for long-term averages, not the weather right now.
 
-I also ran a check on how good this actually is: a leave-one-out test on one snapshot of the station list. For each of the 4,077 stations that had both a fresh report and a neighbour within 100 km, I hid its report, estimated its temperature from its neighbours the same way this page does, and compared the estimate to what it actually reported. The average error was 1.19 °C. What drives that error is mostly the height gap to the nearest neighbour, not the distance: stations whose nearest neighbour is within 100 m of their own elevation average 1.02 °C off, while stations whose nearest neighbour is more than 1,000 m higher or lower average 3.36 °C off. There are a few ways we could improve this:
+You are probably wondering how good this is on more than just the one location you just tried.
+
+For each station, we mask its own value, keep it as ground truth. We then run our naive method here at the Ground Truth Station location we just masked.
+
+Doing this for all stations (the ones with fresh reports, and enough neighboring stations), we can measure:
+
+The average error was 1.19 °C. What drives that error is mostly the height gap to the nearest neighbour, not the distance: stations whose nearest neighbour is within 100 m of their own elevation average 1.02 °C off, while stations whose nearest neighbour is more than 1,000 m higher or lower average 3.36 °C off.
+
+There are a few ways we could improve our approach here:
 
 1. making sure the fit can't run away, by limiting our correction rate to values that have a physical sense.
 2. fitting those rates on more stations.
