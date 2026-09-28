@@ -101,9 +101,7 @@ There are a few ways we could improve our approach here:
 <hr>
 
 <p class="panel-desc">
-  Distance-weighted average (kNN / IDW) of the nearest stations within 100 km, temperature corrected for elevation, dew point averaged as vapor pressure, wind averaged as direction and strength together; method from SenseAI's weather tools (2015), where I was CTO.<br>
-  Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.<br>
-  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>.
+  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
 </p>
 
 <style>
