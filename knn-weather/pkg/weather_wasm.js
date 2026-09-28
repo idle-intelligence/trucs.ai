@@ -81,17 +81,18 @@ export class Stations {
     /**
      * Like `select`, but with a caller-chosen station count and radius
      * (km), e.g. listing 12 stations within 100 km including ones that
-     * never report (their `active` field is false).
+     * never report (their `active` field is false). `k: null`/`undefined`
+     * lists every station within `max_radius_km`, with no count limit.
      * @param {number} lat
      * @param {number} lon
-     * @param {number} k
+     * @param {number | null | undefined} k
      * @param {number} max_radius_km
      * @returns {any}
      */
     selectWithParams(lat, lon, k, max_radius_km) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.stations_selectWithParams(retptr, this.__wbg_ptr, lat, lon, k, max_radius_km);
+            wasm.stations_selectWithParams(retptr, this.__wbg_ptr, lat, lon, isLikeNone(k) ? Number.MAX_SAFE_INTEGER : (k) >>> 0, max_radius_km);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
