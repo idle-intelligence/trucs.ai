@@ -79,6 +79,8 @@ P.S.: if you want to go further, here are three methods that climatologists use 
 - **Thin-plate smoothing splines** (Hutchinson's ANUSPLIN, used for the WorldClim climate maps). It fits one smooth surface through all the stations at once, with altitude as an extra dimension, and chooses how smooth by cross-validation. Smoother and better grounded statistically. But it needs every station at once: the exact fit solves one system as large as the number of stations, fine on a computer once per update, heavy in a phone's browser. It also smooths away local effects.
 - **PRISM** (Parameter-elevation Regressions on Independent Slopes Model, Daly and colleagues, Oregon State University). It fits a temperature-versus-altitude relation for every map cell, weighting stations by distance, altitude, which side of the mountain they're on, and distance to the coast. The most accurate in mountains, and behind the official US climate maps. But it needs a detailed elevation model and a lot of expert tuning, and it's built for long-term averages, not the weather right now.
 
+<hr>
+
 You are probably wondering how good this is on more than just the one location you just tried.
 
 For each station, we mask its own value, keep it as ground truth. We then run our naive method here at the Ground Truth Station location we just masked.
