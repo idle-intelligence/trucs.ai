@@ -157,9 +157,9 @@ function renderWeightedEquation(idwResult) {
     .map((t) => `${t.value.toFixed(1)} °C at ${t.distance.toFixed(1)} km, w=1/${t.distance.toFixed(1)}=${t.weight.toFixed(4)} (${(t.weightNorm * 100).toFixed(0)}%)`)
     .join('\n');
   weightedEq.textContent = [
-    'T_hat = sum(T_i * w_i) / sum(w_i), with w_i = 1 / distance_i',
+    'estimate = sum(T_i * w_i) / sum(w_i), with w_i = 1 / distance_i',
     terms,
-    `T_hat = ${idwResult.value.toFixed(2)} °C`,
+    `estimate = ${idwResult.value.toFixed(2)} °C`,
   ].join('\n');
 }
 
@@ -176,7 +176,7 @@ function renderFinalEquation(corr, plainValue) {
   const v = correctedValueFor(corr);
   const wDir = corr.wind.correctedDir;
   const lines = [
-    `T_hat (distance-weighted, no correction) = ${plainValue.toFixed(2)} °C`,
+    `estimate (distance-weighted, no correction) = ${plainValue.toFixed(2)} °C`,
   ];
   if (v.temperature != null) {
     lines.push(`corrected to this point's elevation${corr.targetElevM != null ? ` (${corr.targetElevM.toFixed(0)} m)` : ''} with a fitted lapse rate of ${corr.lapse.lapseKPerKm.toFixed(1)} K/km: ${v.temperature.toFixed(2)} °C`);
