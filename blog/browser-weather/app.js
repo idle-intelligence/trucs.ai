@@ -103,8 +103,11 @@ function renderCount(withinCount, final, result) {
 // final: selection.stations ({ station, distance }). observations: icao ->
 // obs. estStations: estimate()'s per-station array (ageMinutes, fresh,
 // hasObservation), parallel to final.
+const TABLE_HEAD = '<tr><th>id</th><th>name</th><th>distance (km)</th><th>temp (C)</th><th>dew point (C)</th><th>wind</th><th>pressure (hPa)</th><th>obs age</th></tr>';
+const emptyTable = () => { tableWrap.innerHTML = `<table class="bw-table">${TABLE_HEAD}</table>`; };
+
 function renderTable(final, observations, estStations) {
-  const head = '<tr><th>id</th><th>name</th><th>distance (km)</th><th>temp (C)</th><th>dew point (C)</th><th>wind</th><th>pressure (hPa)</th><th>obs age</th></tr>';
+  const head = TABLE_HEAD;
   const body = final.map((s, i) => {
     const o = observations[s.station.icao] || {};
     const est = estStations[i];
@@ -263,12 +266,12 @@ function drawAxes(ctx, w, h, xAt, yAt, xTicks, yTicks, xLabel, yLabel = (v) => `
 }
 
 function drawWeightChart() {
-  if (!weightPlot) return;
   const ctx = weightChartCanvas.getContext('2d');
   const { w, h } = fitCanvas(weightChartCanvas, ctx);
   ctx.clearRect(0, 0, w, h);
-
-  const { terms, total } = weightPlot;
+  // Before a location is fetched there are no stations: plain 1/distance
+  // curve, no dots.
+  const { terms, total } = weightPlot ?? { terms: [], total: 1 };
   const curveAt = (d) => (1 / d / total) * 100;
   // Fixed axes for every selection, so the chart is directly comparable
   // across places: x is the search radius (0 to 100 km), y is 0 to 100%.
@@ -321,7 +324,7 @@ function drawWeightChart() {
 async function run(lat, lon) {
   setStatus('finding nearby stations...');
   countLine.textContent = '';
-  tableWrap.innerHTML = '';
+  emptyTable();
   plainMeanValue.textContent = '';
   weightedEq.textContent = '';
   firstMsSpan.textContent = '';
@@ -331,6 +334,7 @@ async function run(lat, lon) {
   outputPanel.innerHTML = '';
   weightCaption.textContent = '';
   weightPlot = null;
+  drawWeightChart();
 
   let selection;
   try {
@@ -440,6 +444,8 @@ async function run(lat, lon) {
 }
 
 renderCityButtons();
+emptyTable();
+drawWeightChart();
 window.addEventListener('resize', () => { drawWeightChart(); });
 
 // Exposed for headless verification.

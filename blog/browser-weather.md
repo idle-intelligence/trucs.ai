@@ -102,6 +102,7 @@ There are a few ways we could improve our approach here:
 
 <style>
   .panel-desc { color: #999; font-size: 0.8rem; }
+  #bw-final-eq:empty { display: none; }
   #bw-app, #bw-weight-app { margin: 1.25em 0; }
   #bw-app button {
     font-family: inherit;
