@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kNN weather — trucs.ai</title>
+  <meta name="description" content="Weather at any point on Earth, estimated from the 5 nearest live METAR stations. Runs entirely in your browser.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover:not(:disabled) { background: #111; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #status-text {
+      position: absolute;
+      left: 0.6em;
+      bottom: 0.5em;
+      max-width: calc(100% - 1.2em);
+      font-family: "Courier New", Courier, monospace;
+      font-size: 0.72rem;
+      line-height: 1.5;
+      color: #111;
+      white-space: pre-line;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 3px;
+    }
+    #result-panel {
+      position: absolute;
+      top: 0.6em;
+      right: 0.6em;
+      width: 150px;
+      background: #fff;
+      border: 1px solid #ddd;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      color: #111;
+      padding: 0.5em 0.6em;
+    }
+    .result-first-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5em;
+      margin-bottom: 0.4em;
+    }
+    #result-latlon.placeholder { color: #999; }
+    .geo-btn {
+      border: none;
+      background: none;
+      padding: 2px;
+      margin: 0;
+      line-height: 0;
+      cursor: pointer;
+      color: #111;
+      border-radius: 2px;
+      flex: 0 0 auto;
+    }
+    .geo-btn:hover { background: #111; color: #fff; }
+    .result-line { display: flex; justify-content: space-between; gap: 0.5em; }
+    .result-line .result-label { color: #555; }
+    @media (max-width: 680px) {
+      #result-panel { position: static; width: 100%; margin-top: 0.5em; }
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    .map-wrap {
+      width: 100vw;
+      position: relative;
+      left: 50%;
+      margin-left: -50vw;
+      display: flex;
+      justify-content: center;
+      margin-top: 1em;
+    }
+    .map-wrap-inner {
+      width: min(100vw - 32px, 900px);
+    }
+    .map-frame {
+      position: relative;
+    }
+    .canvas-frame {
+      position: relative;
+    }
+    #map-canvas {
+      width: 100%;
+      aspect-ratio: 2 / 1;
+      border: 1px solid #ddd;
+      display: block;
+      touch-action: none;
+      cursor: crosshair;
+    }
+    @media (orientation: portrait) {
+      #map-canvas { aspect-ratio: 2 / 3; max-height: 75svh; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>kNN weather</h1>
+    <p>
+      Weather at any point on the map, from the nearest stations.<br>
+      No server. Your location never leaves your browser.<br>
+      ~7,500 METAR stations listed; the ~5,600 that reported in the last 7 days are used, with live observations.
+    </p>
+
+    <hr>
+
+    <div class="map-wrap">
+      <div class="map-wrap-inner">
+        <div class="map-frame">
+          <div class="canvas-frame">
+            <canvas id="map-canvas"></canvas>
+            <span id="status-text">choose a location, or tap the map</span>
+          </div>
+          <div id="result-panel">
+            <div class="result-first-line">
+              <span id="result-latlon" class="placeholder">tap the map</span>
+              <button id="geo-btn" class="geo-btn" type="button" aria-label="use my location" title="use my location">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="6"></circle>
+                  <line x1="12" y1="1" x2="12" y2="4"></line>
+                  <line x1="12" y1="20" x2="12" y2="23"></line>
+                  <line x1="1" y1="12" x2="4" y2="12"></line>
+                  <line x1="20" y1="12" x2="23" y2="12"></line>
+                </svg>
+              </button>
+            </div>
+            <div class="result-line"><span class="result-label">temp</span><span class="result-value" id="result-temp">--</span></div>
+            <div class="result-line"><span class="result-label">dp</span><span class="result-value" id="result-dp">--</span></div>
+            <div class="result-line"><span class="result-label">wind</span><span class="result-value" id="result-wind">--</span></div>
+            <div class="result-line"><span class="result-label">pres</span><span class="result-value" id="result-pres">--</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr>
+
+    <p class="panel-desc">
+      Distance-weighted average (kNN / IDW) of the nearest stations within 100 km, temperature corrected for elevation, dew point averaged as vapor pressure, wind averaged as direction and strength together; method from SenseAI's weather tools (2015), where I was CTO.<br>
+      Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation from <a href="https://open-meteo.com/">Open-Meteo</a>. Map: country borders and cities from <a href="https://www.naturalearthdata.com/">Natural Earth</a> (public domain).<br>
+      Source: <a href="https://github.com/idle-intelligence/weather-web">github.com/idle-intelligence/weather-web</a>, compiled to WebAssembly for this page.<br>
+      How it works: <a href="/blog/browser-weather">Browser weather</a>, the blog post.
+    </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    import { select } from './knn.js';
+    import { fetchIem, fetchNws, fetchOpenMeteoPoint } from './sources.js';
+    import { estimate } from './pkg/weather_wasm.js?v=9f05f31';
+    import { createMapView } from './map.js';
+    import { coordsForTimeZone } from './tz-coords.js';
+
+    const geoBtn = document.getElementById('geo-btn');
+    const statusText = document.getElementById('status-text');
+    const resultPanelEl = document.getElementById('result-panel');
+    const resultLatLon = document.getElementById('result-latlon');
+    const resultTemp = document.getElementById('result-temp');
+    const resultDp = document.getElementById('result-dp');
+    const resultWind = document.getElementById('result-wind');
+    const resultPres = document.getElementById('result-pres');
+
+    const mapCanvasEl = document.getElementById('map-canvas');
+    const mapView = createMapView(mapCanvasEl, {
+      onTap: (lat, lon) => setLocation(lat, lon),
+    });
+
+    // The status line and result panel are real HTML/CSS elements, not
+    // canvas-drawn — map.js needs their actual on-screen rects (not a
+    // guess) so it never places a station id underneath one. Measured
+    // fresh on resize/orientation change and after every status/result
+    // update, since both overlays' size changes with their content and,
+    // below 680px, the panel moves entirely below the map.
+    function syncOverlayRects() {
+      const canvasRect = mapCanvasEl.getBoundingClientRect();
+      const rects = [];
+      for (const el of [statusText, resultPanelEl]) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        if (r.right <= canvasRect.left || r.left >= canvasRect.right || r.bottom <= canvasRect.top || r.top >= canvasRect.bottom) continue;
+        rects.push({
+          x1: Math.max(0, r.left - canvasRect.left),
+          y1: Math.max(0, r.top - canvasRect.top),
+          x2: Math.min(canvasRect.width, r.right - canvasRect.left),
+          y2: Math.min(canvasRect.height, r.bottom - canvasRect.top),
+        });
+      }
+      mapView.setOverlayRects(rects);
+    }
+
+    // The map's shape follows the screen via plain CSS (see #map-canvas /
+    // the portrait media query below) — width: 100% of its wrapper plus a
+    // fixed aspect-ratio, no JS height computation of any kind (TC,
+    // 2026-09-23: "without any complicated dynamic vertical scaffolding
+    // and scaling. Simple stuff"). The canvas's backing store still
+    // follows whatever CSS size results, through map.js's existing
+    // ResizeObserver — that's just pixel-buffer bookkeeping, not layout.
+    window.addEventListener('resize', syncOverlayRects);
+    window.addEventListener('orientationchange', syncOverlayRects);
+
+    // On load: a coarse, permission-free starting view centered on the
+    // browser's own time zone (no IP geolocation — that would send the
+    // visitor's IP to a third party). No point is selected yet.
+    {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const [regionLat, regionLon] = coordsForTimeZone(tz);
+      mapView.showRegion(regionLat, regionLon);
+    }
+    syncOverlayRects();
+
+    // ── STATUS: one element, printed on the map; two lines inside it. Line 1
+    // is the point and the result, line 2 is the performance breakdown. ──
+
+    function setStatus(line1, line2 = '') {
+      statusText.textContent = line2 ? `${line1}\n${line2}` : line1;
+      syncOverlayRects();
+    }
+
+    function latLonLine(lat, lon) {
+      const ns = lat >= 0 ? 'N' : 'S';
+      const ew = lon >= 0 ? 'E' : 'W';
+      return `${Math.abs(lat).toFixed(2)} ${ns} ${Math.abs(lon).toFixed(2)} ${ew}`;
+    }
+
+    function plural(n, word) {
+      return `${n} ${word}${n === 1 ? '' : 's'}`;
+    }
+
+    // Measures `text` against #status-text's actual computed max-width (its
+    // CSS is "calc(100% - 1.2em)", resolved here to a real px value) using
+    // a canvas 2d context with the element's real computed font — so
+    // "does this line wrap" is measured, not guessed.
+    let fitsOneLineCtx = null;
+    function fitsOneLine(text) {
+      if (!fitsOneLineCtx) fitsOneLineCtx = document.createElement('canvas').getContext('2d');
+      const cs = getComputedStyle(statusText);
+      fitsOneLineCtx.font = cs.font || `${cs.fontSize} ${cs.fontFamily}`;
+      const padding = parseFloat(cs.paddingLeft || '0') + parseFloat(cs.paddingRight || '0');
+      const available = parseFloat(cs.maxWidth) - padding;
+      return fitsOneLineCtx.measureText(text).width <= available;
+    }
+
+    function titleCase(s) {
+      return s.toLowerCase().replace(/\b\w/g, (m) => m.toUpperCase());
+    }
+
+    function trimName(s, n) {
+      const t = titleCase(s);
+      return t.length > n ? t.slice(0, n) : t;
+    }
+
+    // ── Location: map tap or "use my location" only; both auto-compute. ──
+
+    let currentLocation = null; // { lat, lon, fit }
+
+    // fit: whether the map view should move to frame the point and its
+    // stations. A map tap leaves the view exactly where it was; "use my
+    // location" fits it, since the point could otherwise land off-screen.
+    function setLocation(lat, lon, fit = false) {
+      currentLocation = { lat, lon, fit };
+      compute();
+    }
+
+    // The panel's first line doubles as geolocation feedback: placeholder
+    // text ("tap the map") until a selection, "locating…" while waiting,
+    // "location refused" on denial — all in the same gray placeholder style.
+    function setResultLatLon(text, placeholder) {
+      resultLatLon.textContent = text;
+      resultLatLon.classList.toggle('placeholder', !!placeholder);
+      syncOverlayRects();
+    }
+
+    geoBtn.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        setResultLatLon('geolocation not supported', true);
+        return;
+      }
+      setResultLatLon('locating…', true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setLocation(pos.coords.latitude, pos.coords.longitude, true),
+        () => setResultLatLon('location refused', true),
+      );
+    });
+
+    // ── Output ──
+
+    // result: an estimate() result. Renders the small square panel over the
+    // map's top-right corner: the point's coordinates, then temperature, dew
+    // point, wind, pressure as label/value lines. Anything but a fresh
+    // estimate (status "ok") shows the "--" placeholders.
+    function renderResult(lat, lon, result) {
+      setResultLatLon(latLonLine(lat, lon), false);
+      if (result.status.kind !== 'ok') {
+        resultTemp.textContent = '--';
+        resultDp.textContent = '--';
+        resultWind.textContent = '--';
+        resultPres.textContent = '--';
+        syncOverlayRects();
+        return;
+      }
+      const wDir = result.windDirDeg;
+      resultTemp.textContent = result.temperatureC != null ? `${result.temperatureC.toFixed(1)} °C` : '--';
+      resultDp.textContent = result.dewpointC != null ? `${result.dewpointC.toFixed(1)} °C` : '--';
+      resultWind.textContent = result.windSpeedMs != null ? `${result.windSpeedMs.toFixed(1)} m/s${wDir != null ? ` ${wDir.toFixed(0)}°` : ''}` : '--';
+      resultPres.textContent = result.pressureQnhHpa != null ? `${result.pressureQnhHpa.toFixed(0)} hPa` : '--';
+      syncOverlayRects();
+    }
+
+    // The vertical block map.js draws next to each used station's dot.
+    // `sel`: one entry of selection.stations ({ station, distance }). `obs`:
+    // the raw observation for this station, if any. `est`: the matching
+    // entry of estimate()'s `stations` array, for the age/freshness this
+    // page displays but does not itself compute.
+    function stationLabel(sel, obs, est) {
+      const o = obs || {};
+      return {
+        name: trimName(sel.station.name, 16),
+        id: sel.station.icao,
+        distanceKm: Math.round(sel.distance),
+        tempStr: o.tempC != null ? `${o.tempC.toFixed(1)} °C` : 'n/a',
+        dewStr: o.dewpointC != null ? `dp ${o.dewpointC.toFixed(1)} °C` : 'n/a',
+        windStr: o.windMs != null ? `${o.windMs.toFixed(1)} m/s` : 'n/a',
+        pressureStr: o.pressureHpa != null ? `${o.pressureHpa.toFixed(0)} hPa` : 'n/a',
+        ageStr: est && est.ageMinutes != null ? `${est.ageMinutes.toFixed(0)} min ago` : 'n/a',
+        hasObs: est ? est.hasObservation : !!obs,
+      };
+    }
+
+    // -- Compute: find stations, fetch observations, apply corrections. Runs
+    // on every selection (map tap, "use my location"); a new selection while
+    // one is in flight supersedes it via requestSeq. ──
+
+    let requestSeq = 0;
+
+    async function compute() {
+      if (!currentLocation) return;
+      const { lat, lon } = currentLocation;
+      const myId = ++requestSeq;
+      setStatus('computing…');
+      const t0 = performance.now();
+
+      let selection;
+      try {
+        selection = await select(lat, lon);
+      } catch (err) {
+        if (myId !== requestSeq) return;
+        setStatus(`failed to load station list: ${err.message}`);
+        return;
+      }
+      if (myId !== requestSeq) return;
+
+      if (!selection) {
+        setStatus('no stations loaded');
+        return;
+      }
+
+      // Station(s) within 100 km, closest first, empty when there are none
+      // (there is no fallback to farther stations; see selection.nearest).
+      const final = selection.stations;
+
+      const tFetchStart = performance.now();
+      let iemMap = {};
+      const nwsMap = new Map();
+      if (final.length > 0) {
+        try {
+          iemMap = await fetchIem(final.map((s) => s.station.icao));
+        } catch (err) {
+          console.log(`IEM fetch failed: ${err.message}`);
+        }
+        if (myId !== requestSeq) return;
+
+        const usStations = final.filter((s) => s.station.country === 'US');
+        if (usStations.length > 0) {
+          const results = await Promise.allSettled(usStations.map((s) => fetchNws(s.station.icao)));
+          if (myId !== requestSeq) return;
+          results.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value) nwsMap.set(usStations[i].station.icao, r.value);
+          });
+        }
+      }
+
+      // Prefer NWS (fresher, direct) then IEM.
+      const observations = {};
+      for (const s of final) {
+        const obs = nwsMap.get(s.station.icao) ?? iemMap[s.station.icao] ?? null;
+        if (obs) observations[s.station.icao] = obs;
+      }
+
+      // Elevation only, for the temperature/pressure corrections below - not
+      // displayed or compared against.
+      let targetPoint = null;
+      try {
+        targetPoint = await fetchOpenMeteoPoint(lat, lon);
+      } catch (err) {
+        console.log(`elevation fetch failed: ${err.message}`);
+      }
+      if (myId !== requestSeq) return;
+      const tFetchEnd = performance.now();
+
+      const result = estimate(selection, observations, targetPoint?.elevationM ?? null, Date.now());
+      renderResult(lat, lon, result);
+      const tCalcEnd = performance.now();
+
+      if (result.status.kind === 'noStationWithinRadius') {
+        if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, [], selection.nearest ? [selection.nearest.station] : []);
+        else mapView.setSelection(lat, lon, []);
+        const km = Math.round(result.status.nearestKm);
+        setStatus(`${latLonLine(lat, lon)}, no weather station within 100 km; the nearest, ${result.status.nearestId}, is ${km} km away`);
+        return;
+      }
+
+      const used = final.map((s) => ({
+        icao: s.station.icao,
+        lat: s.station.lat,
+        lon: s.station.lon,
+        label: stationLabel(s, observations[s.station.icao], result.stations.find((e) => e.icao === s.station.icao)),
+      }));
+      if (currentLocation.fit) mapView.setSelectionAndFit(lat, lon, used);
+      else mapView.setSelection(lat, lon, used);
+
+      if (result.status.kind === 'noFreshObservation') {
+        setStatus(`${latLonLine(lat, lon)}, no recent report from the 5 nearest stations within 100 km`);
+        return;
+      }
+
+      const withObs = final.filter((s) => observations[s.station.icao]);
+      const sourceCount = new Set(withObs.map((s) => observations[s.station.icao].source)).size;
+      const fetchMs = (tFetchEnd - tFetchStart).toFixed(0);
+      const calcMs = (tCalcEnd - tFetchEnd).toFixed(0);
+
+      // Below 480 CSS px (matching the map's own compact station-block
+      // breakpoint) the full sentence takes up a third of the map, so it
+      // shortens to the two lines TC gave verbatim — and if line 1 still
+      // wraps at the current canvas width (measured, not guessed), the
+      // ", N no report" note is dropped rather than let it wrap to two
+      // visual lines.
+      if (mapCanvasEl.getBoundingClientRect().width < 480) {
+        const noObsShort = result.missingCount > 0 ? `, ${result.missingCount} no report` : '';
+        let line1 = `${latLonLine(lat, lon)}, ${final.length} stn < 100 km${noObsShort}`;
+        if (noObsShort && !fitsOneLine(line1)) line1 = `${latLonLine(lat, lon)}, ${final.length} stn < 100 km`;
+        setStatus(line1, `fetched ${withObs.length} obs in ${fetchMs} ms, computed in ${calcMs} ms`);
+        return;
+      }
+
+      const noObsNote = result.missingCount > 0 ? `, ${result.missingCount} had no recent report` : '';
+      const resultSentence = `calculated from ${plural(final.length, 'weather station')} within 100 km${noObsNote}`;
+      const perfLine = `fetched ${plural(withObs.length, 'observation')} from ${plural(sourceCount, 'source')} in ${fetchMs} ms, calculated in ${calcMs} ms`;
+
+      setStatus(`${latLonLine(lat, lon)}, ${resultSentence}`, perfLine);
+    }
+
+    // Exposed for headless verification.
+    window.__app = { select, estimate, fetchIem, fetchNws, fetchOpenMeteoPoint, setLocation, compute, mapView };
+  </script>
+</body>
+</html>
