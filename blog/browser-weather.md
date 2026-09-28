@@ -30,16 +30,11 @@ So we have weather station data. As you can probably see, most of the stations a
 One very naïve thing we can do, if we want to know the temperature where we are, is to average those values.
 
 <div class="output-line">
-  <span class="output-label">plain average</span>
+  <span class="output-label output-label-wide">average temperature</span>
   <span class="output-value" id="bw-plain-mean-value"></span>
 </div>
 
 A simple improvement we can make is to take into account how far the stations are. The stations close to you should count more than the ones far away, so we weight each one by the inverse of its distance: a station twice as far counts half as much.
-
-<div id="bw-theory-app">
-  <canvas id="bw-theory-chart"></canvas>
-  <p class="bw-caption">weight = 1 / distance (km)</p>
-</div>
 
 The far ones barely count: a station 50 km away weighs a tenth of one 5 km away. So there is no point in fetching many of them. We take the 5 nearest within 100 km, which also keeps the data small.
 
@@ -107,7 +102,7 @@ There are a few ways we could improve our approach here:
 
 <style>
   .panel-desc { color: #999; font-size: 0.8rem; }
-  #bw-app, #bw-theory-app, #bw-weight-app { margin: 1.25em 0; }
+  #bw-app, #bw-weight-app { margin: 1.25em 0; }
   #bw-app button {
     font-family: inherit;
     font-size: 1rem;
@@ -175,6 +170,8 @@ There are a few ways we could improve our approach here:
   .bw-no-report { color: #999; }
   .output-line { margin: 0.6em 0; }
   .output-label { display: inline-block; width: 7.5em; color: #555; }
+  .output-label-wide { width: auto; margin-right: 1.5em; white-space: nowrap; }
+  #bw-plain-mean-value { white-space: nowrap; display: inline-block; }
   .output-value { font-size: 1.1rem; font-weight: bold; color: #111; }
   .output-model { color: #999; font-size: 0.85rem; margin-left: 7.5em; }
   .bw-equation {
@@ -184,7 +181,7 @@ There are a few ways we could improve our approach here:
     white-space: pre-wrap;
     margin: 0.75em 0;
   }
-  #bw-theory-chart, #bw-weight-chart {
+  #bw-weight-chart {
     display: block;
     width: 100%;
     height: 220px;

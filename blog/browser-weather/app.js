@@ -31,7 +31,6 @@ const finalEq = document.getElementById('bw-final-eq');
 const outputPanel = document.getElementById('bw-output-panel');
 const weightChartCanvas = document.getElementById('bw-weight-chart');
 const weightCaption = document.getElementById('bw-weight-caption');
-const theoryChartCanvas = document.getElementById('bw-theory-chart');
 const stationsUsedLine = document.getElementById('bw-stations-used-line');
 
 let weightPlot = null; // { terms, total }
@@ -263,40 +262,6 @@ function drawAxes(ctx, w, h, xAt, yAt, xTicks, yTicks, xLabel, yLabel = (v) => `
   }
 }
 
-function drawTheoryChart() {
-  const ctx = theoryChartCanvas.getContext('2d');
-  const { w, h } = fitCanvas(theoryChartCanvas, ctx);
-  ctx.clearRect(0, 0, w, h);
-
-  // w(d) = 1 / d, d in km, drawn from 1 km (1/d is undefined at 0) to 100 km
-  // on the same 0 to 100 km axis as the weight chart below.
-  const dMin = 0, dMax = 100, yMax = 1;
-  const plotW = w - PAD_L - PAD_R;
-  const plotH = h - PAD_T - PAD_B;
-  const xAt = (d) => PAD_L + ((d - dMin) / (dMax - dMin)) * plotW;
-  const yAt = (v) => PAD_T + plotH - (v / yMax) * plotH;
-
-  drawAxes(ctx, w, h, xAt, yAt, [0, 25, 50, 75, 100], [0, 0.25, 0.5, 0.75, 1], (d) => `${d}km`, (v) => `${v}`);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(PAD_L, PAD_T, plotW, plotH);
-  ctx.clip();
-
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  const steps = 400;
-  for (let i = 0; i <= steps; i++) {
-    const d = 1 + (i / steps) * (dMax - 1);
-    const x = xAt(d);
-    const y = yAt(1 / d);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.restore();
-}
-
 function drawWeightChart() {
   if (!weightPlot) return;
   const ctx = weightChartCanvas.getContext('2d');
@@ -475,8 +440,7 @@ async function run(lat, lon) {
 }
 
 renderCityButtons();
-drawTheoryChart();
-window.addEventListener('resize', () => { drawTheoryChart(); drawWeightChart(); });
+window.addEventListener('resize', () => { drawWeightChart(); });
 
 // Exposed for headless verification.
 window.__bwApp = { run };
