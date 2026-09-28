@@ -6,7 +6,7 @@
 
 import { select } from '/knn-weather/knn.js';
 import { fetchIem, fetchNws, fetchOpenMeteoPoint } from '/knn-weather/sources.js';
-import { idw, computeCorrections, estimate } from '/knn-weather/pkg/weather_wasm.js?v=2603ecc';
+import { idw, computeCorrections, estimate } from '/knn-weather/pkg/weather_wasm.js?v=9f05f31';
 
 const RADIUS_KM = 100;
 
