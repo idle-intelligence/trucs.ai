@@ -98,11 +98,14 @@ There are a few ways we could improve our approach here:
 2. fitting those rates on more stations.
 3. Also weight the neighbours by height difference as well as distance.
 
+<hr>
+
 <p class="panel-desc">
   Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
 </p>
 
 <style>
+  .panel-desc { color: #999; font-size: 0.8rem; }
   #bw-app, #bw-theory-app, #bw-weight-app { margin: 1.25em 0; }
   #bw-app button {
     font-family: inherit;
