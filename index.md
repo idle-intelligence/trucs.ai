@@ -29,8 +29,8 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dt>Time series</dt>
   <dd>Browser <a href="/t0/">forecasting</a></dd>
 
-  <dt>sensors (some)</dt>
-  <dd><a href="/knn-weather/">Nearest weather stations</a> (k-NN over the METAR station list)</dd>
+  <dt>Weather</dt>
+  <dd>Browser <a href="/knn-weather/">weather</a></dd>
 </dl>
   
 ---
