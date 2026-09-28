@@ -4,7 +4,7 @@
 // corrections all live in the weather-web wasm package; this file only
 // wires fetches to it and renders what it returns.
 
-import { select } from '/knn-weather/knn.js';
+import { select, loadStations } from '/knn-weather/knn.js';
 import { fetchIem, fetchNws, fetchOpenMeteoPoint } from '/knn-weather/sources.js';
 import { idw, computeCorrections, estimate } from '/knn-weather/pkg/weather_wasm.js?v=9f05f31';
 
@@ -97,8 +97,8 @@ geoBtn.addEventListener('click', () => {
   );
 });
 
-function renderCount(final, result) {
-  countLine.textContent = `There are ${final.length} stations within ${RADIUS_KM} km of this location, ${result.freshCount} with a recent report.`;
+function renderCount(withinCount, final, result) {
+  countLine.textContent = `There are ${withinCount} stations within ${RADIUS_KM} km of this location; we use the ${final.length} nearest, ${result.freshCount} of them with a recent report.`;
 }
 
 // final: selection.stations ({ station, distance }). observations: icao ->
@@ -433,7 +433,8 @@ async function run(lat, lon) {
     const km = Math.round(result.status.nearestKm);
     countLine.textContent = `No weather station within ${RADIUS_KM} km of this location. The nearest, ${result.status.nearestId}, is ${km} km away.`;
   } else {
-    renderCount(final, result);
+    const all = (await loadStations()).selectWithParams(lat, lon, null, RADIUS_KM);
+    renderCount(all ? all.stations.length : final.length, final, result);
   }
 
   const freshStations = final.filter((s, i) => result.stations[i].fresh);
