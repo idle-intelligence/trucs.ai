@@ -79,6 +79,31 @@ export class Stations {
         }
     }
     /**
+     * Like `select`, but with a caller-chosen station count and radius
+     * (km), e.g. listing 12 stations within 100 km including ones that
+     * never report (their `active` field is false).
+     * @param {number} lat
+     * @param {number} lon
+     * @param {number} k
+     * @param {number} max_radius_km
+     * @returns {any}
+     */
+    selectWithParams(lat, lon, k, max_radius_km) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.stations_selectWithParams(retptr, this.__wbg_ptr, lat, lon, k, max_radius_km);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
      * Selects the station(s) an estimate at (lat, lon) should use: up to 5
      * nearest stations within 100 km (closest first), plus the nearest
      * station overall (for the "no station in range" message). Returns
@@ -116,12 +141,13 @@ if (Symbol.dispose) Stations.prototype[Symbol.dispose] = Stations.prototype.free
  * @param {any} rows
  * @param {number | null | undefined} target_elev_m
  * @param {number} now_millis
+ * @param {number | null} [max_age_min]
  * @returns {any}
  */
-export function computeCorrections(rows, target_elev_m, now_millis) {
+export function computeCorrections(rows, target_elev_m, now_millis, max_age_min) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        wasm.computeCorrections(retptr, addHeapObject(rows), !isLikeNone(target_elev_m), isLikeNone(target_elev_m) ? 0 : target_elev_m, now_millis);
+        wasm.computeCorrections(retptr, addHeapObject(rows), !isLikeNone(target_elev_m), isLikeNone(target_elev_m) ? 0 : target_elev_m, now_millis, !isLikeNone(max_age_min), isLikeNone(max_age_min) ? 0 : max_age_min);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -157,6 +183,36 @@ export function estimate(selection, observations, target_elev_m, now_millis) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         wasm.estimate(retptr, addHeapObject(selection), addHeapObject(observations), !isLikeNone(target_elev_m), isLikeNone(target_elev_m) ? 0 : target_elev_m, now_millis);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Like `estimate`, but with a caller-chosen `estimateK` (how many of the
+ * selected stations to average over) and `maxAgeMin` (how old an
+ * observation may be to still count): only stations flagged active with an
+ * observation no older than `maxAgeMin` are used, nearest first, up to
+ * `estimateK` of them.
+ * @param {any} selection
+ * @param {any} observations
+ * @param {number | null | undefined} target_elev_m
+ * @param {number} now_millis
+ * @param {number} estimate_k
+ * @param {number} max_age_min
+ * @returns {any}
+ */
+export function estimateWithParams(selection, observations, target_elev_m, now_millis, estimate_k, max_age_min) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.estimateWithParams(retptr, addHeapObject(selection), addHeapObject(observations), !isLikeNone(target_elev_m), isLikeNone(target_elev_m) ? 0 : target_elev_m, now_millis, estimate_k, max_age_min);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
