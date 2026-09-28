@@ -101,7 +101,8 @@ There are a few ways we could improve our approach here:
 <hr>
 
 <p class="panel-desc">
-  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.
+  Reuses the kNN, IDW, correction and source-fetching modules from <a href="/knn-weather/">/knn-weather/</a>. Stations: <a href="https://huggingface.co/datasets/idle-intelligence/metar-stations">idle-intelligence/metar-stations</a>, built from Iowa Environmental Mesonet rosters. Observations: <a href="https://mesonet.agron.iastate.edu/">Iowa Environmental Mesonet</a>, <a href="https://www.weather.gov/documentation/services-web-api">api.weather.gov</a>; elevation and weather model values from <a href="https://open-meteo.com/">Open-Meteo</a>.<br>
+  Source: <a href="https://github.com/idle-intelligence/weather-web">github.com/idle-intelligence/weather-web</a>, compiled to WebAssembly for this page.
 </p>
 
 <style>
