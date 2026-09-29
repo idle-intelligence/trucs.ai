@@ -200,6 +200,8 @@
       ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
 
     let mobileMode = false;
+    let llmLight = false;
+    let gpuAdapter = null;
     if (modeParam === 'mobile') {
       mobileMode = true;
     } else if (modeParam === 'full') {
@@ -213,20 +215,21 @@
         mobileMode = true;
       } else {
         try {
-          const adapter = await navigator.gpu.requestAdapter();
-          if (!adapter) {
+          gpuAdapter = await navigator.gpu.requestAdapter();
+          if (!gpuAdapter) {
             mobileMode = true;
-          } else if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) {
+          } else if (gpuAdapter.limits.maxBufferSize < 256 * 1024 * 1024) {
             mobileMode = true;
-          } else if (adapter.limits.maxStorageBuffersPerShaderStage < 10) {
-            // WebLLM's prebuilt SmolLM2 kernels bind 10 storage buffers (Firefox allows 9)
-            mobileMode = true;
+          } else if (gpuAdapter.limits.maxStorageBuffersPerShaderStage < 10) {
+            // WebLLM's prebuilt SmolLM2 kernels bind 10 storage buffers (Firefox allows 9) — STT stays full, only the LLM falls back
+            llmLight = true;
           }
         } catch (_) {
           mobileMode = true;
         }
       }
     }
+    llmLight = llmLight || mobileMode;
 
     // Console toggle: setMode('mobile') or setMode('full')
     window.setMode = (mode) => { location.href = `?mode=${mode}`; };
@@ -261,10 +264,15 @@
     const ttsVoiceOutput = document.getElementById('tts-voice-output');
     const ttsMetricsEl = document.getElementById('tts-metrics');
 
-    // ── Update bottom description for mobile mode ──
+    // ── Update bottom description for mobile mode / LLM fallback ──
     if (mobileMode) {
       document.getElementById('bottom-desc').innerHTML =
         'STT: <a href="https://huggingface.co/ggerganov/whisper.cpp">Whisper Tiny Q5_1</a> (~31MB) via <a href="https://github.com/idle-intelligence/stt-web">whisper.cpp</a> compiled to WebAssembly.<br>' +
+        'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M Q4_K_M</a> (~271MB) via <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> compiled to WebAssembly with <a href="https://github.com/ngxson/wllama">wllama</a>.<br>' +
+        'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
+    } else if (llmLight) {
+      document.getElementById('bottom-desc').innerHTML =
+        'STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.<br>' +
         'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M Q4_K_M</a> (~271MB) via <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> compiled to WebAssembly with <a href="https://github.com/ngxson/wllama">wllama</a>.<br>' +
         'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
     }
@@ -307,7 +315,17 @@
         const cache = await caches.open('whisper-model-v1');
         if (await cache.match('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin')) sttCached = true;
       } catch (_) {}
+    } else {
+      // Full mode: Kyutai STT cache
+      const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
+      try {
+        const cache = await caches.open('stt-model-v1');
+        const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
+        if (cached) sttCached = true;
+      } catch (_) {}
+    }
 
+    if (llmLight) {
       // LLM: check if wllama model is cached (wllama uses OPFS, not Cache API)
       try {
         const opfsRoot = await navigator.storage.getDirectory();
@@ -320,14 +338,6 @@
         }
       } catch (_) {}
     } else {
-      // Full mode: Kyutai STT cache
-      const HF_BASE = 'https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu/resolve/main';
-      try {
-        const cache = await caches.open('stt-model-v1');
-        const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
-        if (cached) sttCached = true;
-      } catch (_) {}
-
       // Full mode: WebLLM model selection
       const isMobile = navigator.userAgentData?.mobile
         ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
@@ -341,7 +351,7 @@
         selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
         modelSize = '~2.7GB';
         try {
-          const adapter = await navigator.gpu.requestAdapter();
+          const adapter = gpuAdapter || await navigator.gpu.requestAdapter();
           if (adapter?.features.has('shader-f16')) {
             selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
             modelSize = '~1GB';
@@ -380,16 +390,18 @@
 
     if (mobileMode) {
       sttStatusText.textContent = sttCached ? 'cached (~31MB)' : '~31MB';
-      llmStatusText.textContent = llmCached ? 'cached (~271MB)' : '~271MB';
-      ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
-      const label = document.getElementById('llm-model-label');
-      if (label) label.textContent = '360M (mobile)';
       sttRecordBtn.textContent = 'start';
     } else {
       sttStatusText.textContent = sttCached ? 'cached (~600MB)' : '~600MB';
-      llmStatusText.textContent = llmCached ? `cached (${modelSize})` : modelSize;
-      ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
     }
+    if (llmLight) {
+      llmStatusText.textContent = llmCached ? 'cached (~271MB)' : '~271MB';
+      const label = document.getElementById('llm-model-label');
+      if (label) label.textContent = mobileMode ? '360M (mobile)' : '360M';
+    } else {
+      llmStatusText.textContent = llmCached ? `cached (${modelSize})` : modelSize;
+    }
+    ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
 
     // ════════════════════════════════════════════
     // Full-mode STT (Kyutai)
@@ -794,7 +806,7 @@
       }
       autoRestartEnabled = false;
       llmAbort = true;
-      if (mobileMode && wllamaAbortSignal) {
+      if (llmLight && wllamaAbortSignal) {
         try { wllamaAbortSignal(); } catch (_) {}
         wllamaAbortSignal = null;
       }
@@ -911,7 +923,7 @@
 
       const start = performance.now();
 
-      if (mobileMode) {
+      if (llmLight) {
         await generateMobile(text, start);
       } else {
         await generateFull(text, start);
@@ -1361,11 +1373,11 @@
       sttRecordBtn.disabled = false;
 
       // Abort wllama if generating
-      if (mobileMode && wllamaAbortSignal) {
+      if (llmLight && wllamaAbortSignal) {
         try { wllamaAbortSignal(); } catch (_) {}
         wllamaAbortSignal = null;
       }
-      if (!mobileMode && engine && llmReady) engine.resetChat();
+      if (!llmLight && engine && llmReady) engine.resetChat();
 
       handleTtsMessage('clear');
 
@@ -1375,7 +1387,7 @@
       sttMetricsEl.textContent = '';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
-      if (llmReady || (!mobileMode && engine) || (mobileMode && wllama)) {
+      if (llmReady || (!llmLight && engine) || (llmLight && wllama)) {
         llmStatusText.textContent = 'ready';
       }
       ttsMetricsEl.textContent = '';
@@ -1389,11 +1401,9 @@
 
     async function loadAll() {
       loadBtn.disabled = true;
-      if (mobileMode) {
-        await Promise.all([loadSttMobile(), loadLlmMobile(), initTts()]);
-      } else {
-        await Promise.all([loadSttFull(), loadLlmFull(), initTts()]);
-      }
+      const sttPromise = mobileMode ? loadSttMobile() : loadSttFull();
+      const llmPromise = llmLight ? loadLlmMobile() : loadLlmFull();
+      await Promise.all([sttPromise, llmPromise, initTts()]);
       resetBtn.disabled = false;
       if (llmReady && pendingLlmText) generate();
     }
