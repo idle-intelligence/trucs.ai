@@ -218,6 +218,9 @@
             mobileMode = true;
           } else if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) {
             mobileMode = true;
+          } else if (adapter.limits.maxStorageBuffersPerShaderStage < 10) {
+            // WebLLM's prebuilt SmolLM2 kernels bind 10 storage buffers (Firefox allows 9)
+            mobileMode = true;
           }
         } catch (_) {
           mobileMode = true;
