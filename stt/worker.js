@@ -89,10 +89,7 @@ self.onmessage = (e) => {
 
     // Handle direct audio port setup (not queued — one-time wiring).
     if (type === 'audio-port') {
-        if (audioPort) {
-            audioPort.onmessage = null;
-            audioPort.close();
-        }
+        closeAudioPort();
         audioPort = data.port;
         audioPort.onmessage = (ev) => {
             // Audio and done messages arrive here from the AudioWorklet,
@@ -109,6 +106,22 @@ self.onmessage = (e) => {
     msgQueue.push({ type, data });
     drainQueue();
 };
+
+// Stop accepting audio on the current direct port. Called once a session is
+// considered over (on 'stop' and defensively on 'reset'). Audio chunks are
+// delivered over a *separate* MessageChannel from control messages ('stop',
+// 'reset'), so their relative arrival order at the worker isn't guaranteed —
+// a chunk already in flight from the old AudioWorklet session can otherwise
+// land after this session has flushed and the next one has reset, feeding
+// stale audio into the freshly-reset engine. Nulling onmessage here makes any
+// such straggler arrive too late to be delivered at all (the browser has
+// nothing to dispatch it to), rather than being queued and processed.
+function closeAudioPort() {
+    if (!audioPort) return;
+    audioPort.onmessage = null;
+    audioPort.close();
+    audioPort = null;
+}
 
 // ---------------------------------------------------------------------------
 // Cache helpers
@@ -306,6 +319,11 @@ async function handleAudio({ samples }) {
 }
 
 async function handleStop() {
+    // Stop taking audio for this session before doing anything else — see
+    // closeAudioPort() for why this must happen at the top of handleStop(),
+    // not after the flush.
+    closeAudioPort();
+
     if (!engine) return;
 
     if (totalSamples === 0) {
@@ -363,6 +381,9 @@ async function handleStop() {
 }
 
 function handleReset() {
+    // Defense-in-depth: a reset can in principle arrive without a preceding
+    // stop (e.g. future callers), so make sure no stale port is left open.
+    closeAudioPort();
     totalSamples = 0;
     lastMetricsSent = 0;
     audioChunkCount = 0;
