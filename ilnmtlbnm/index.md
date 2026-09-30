@@ -1,6 +1,6 @@
 ---
 layout: default
-title: ilnmtlbnm
+title: ilnmtlbnm (Thomas Cambau)
 ---
   
 # ilnmtlbnm  
@@ -21,7 +21,7 @@ and seeing what more could emerge from the scale of many of those.
   
 Currently [writing for a living](/blog/writing-for-a-living) and playing with Claude.  
   
-[linkedin](https://www.linkedin.com/in/thomascambau/) \| [GitHub](https://github.com/ilnmtlbnm)  
+[linkedin](https://www.linkedin.com/in/thomascambau/) \| [GitHub](https://github.com/ilnmtlbnm) \| [Hugging Face](https://huggingface.co/ilnmtlbnm)  
 
 ---
 
