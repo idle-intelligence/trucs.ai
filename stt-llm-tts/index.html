@@ -245,7 +245,9 @@
       tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const LLM_MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+    // Best guess for what to show before the worker reports back which
+    // backend (and therefore which model) it actually picked.
+    const LLM_MODEL_GUESS = mobileMode ? MODEL_360M : MODEL_1_7B;
 
     // Console toggle: setMode('mobile') or setMode('full')
     window.setMode = (mode) => { location.href = `?mode=${mode}`; };
@@ -333,8 +335,8 @@
     }
 
     try {
-      const cache = await caches.open(LLM_MODEL.cache);
-      llmCached = !!(await cache.match(LLM_MODEL.gguf));
+      const cache = await caches.open(LLM_MODEL_GUESS.cache);
+      llmCached = !!(await cache.match(LLM_MODEL_GUESS.gguf));
     } catch (_) {}
 
     // TTS cache (same for both modes)
@@ -356,7 +358,7 @@
     } else {
       sttStatusText.textContent = sttCached ? 'cached (~600MB)' : '~600MB';
     }
-    llmStatusText.textContent = llmCached ? `cached (${LLM_MODEL.size})` : LLM_MODEL.size;
+    llmStatusText.textContent = llmCached ? `cached (${LLM_MODEL_GUESS.size})` : LLM_MODEL_GUESS.size;
     ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
 
     // ════════════════════════════════════════════
@@ -801,7 +803,7 @@
       } else if (msg.type === 'ready') {
         llmLoaded = true;
         llmReady = true;
-        llmStatusText.textContent = 'ready';
+        llmStatusText.textContent = `ready, ${msg.label}`;
         if (llmResolveReady) { llmResolveReady(); llmResolveReady = null; llmRejectReady = null; }
       } else if (msg.type === 'token') {
         llmOutput.textContent += msg.text;
@@ -854,7 +856,7 @@
 
     function loadLlm() {
       llmStatusText.textContent = 'loading...';
-      llmWorker.postMessage({ type: 'load', model: LLM_MODEL });
+      llmWorker.postMessage({ type: 'load', models: { webgpu: MODEL_1_7B, cpu: MODEL_360M } });
       return new Promise((resolve, reject) => { llmResolveReady = resolve; llmRejectReady = reject; });
     }
 
