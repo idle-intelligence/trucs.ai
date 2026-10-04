@@ -326,14 +326,21 @@
         sendBtn.disabled = false;
       } else if (msg.type === 'error') {
         const text = msg.message || '';
-        if (/network|cache|fetch|HTTP/i.test(text)) {
-          statusText.textContent = 'download failed, check your connection and try again';
+        if (msg.phase === 'load') {
+          if (/network|cache|fetch|HTTP/i.test(text)) {
+            statusText.textContent = 'download failed, check your connection and try again';
+          } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
+            statusText.textContent = 'WebGPU is not stable enough on this device yet.';
+          } else {
+            statusText.textContent = 'failed to load: ' + text;
+          }
+          loadBtn.disabled = false;
+          sendBtn.disabled = true;
         } else {
-          statusText.textContent = 'failed: ' + text;
+          output.textContent = 'error: ' + text;
+          if (backend !== 'webgpu') statusText.textContent = 'ready';
+          sendBtn.disabled = false;
         }
-        output.textContent = ready ? 'error: ' + text : output.textContent;
-        loadBtn.disabled = false;
-        sendBtn.disabled = !ready;
         console.error(text);
       }
     };
