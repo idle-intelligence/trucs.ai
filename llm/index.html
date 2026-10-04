@@ -98,7 +98,7 @@
       No server, no API key. Your prompt never leaves your machine.<br>
       <span id="model-name">SmolLM2-1.7B</span>, single-turn chat.
     </p>
-    <p id="mobile-warning" class="panel-desc" hidden>Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try the desktop version for a much better experience with WebGPU acceleration.</p>
+    <p id="mobile-warning" class="panel-desc" hidden>Running a smaller model on the CPU. Expect slower responses.</p>
 
     <div id="model-status">
       <button id="load-btn">download</button>
@@ -188,40 +188,6 @@
       resetVoiceTimeout();
     };
 
-    // ── Mode detection ──
-
-    const modeParam = new URLSearchParams(location.search).get('mode');
-    const isMobile = navigator.userAgentData?.mobile
-      ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
-
-    let mobileMode = false;
-    if (modeParam === 'mobile') {
-      mobileMode = true;
-    } else if (modeParam === 'full') {
-      mobileMode = false;
-    } else if (isMobile) {
-      // Always use wllama on mobile — smaller model, better experience
-      mobileMode = true;
-    } else {
-      if (!navigator.gpu) {
-        mobileMode = true;
-      } else {
-        try {
-          const adapter = await navigator.gpu.requestAdapter();
-          if (!adapter) mobileMode = true;
-          else if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) mobileMode = true;
-        } catch (_) { mobileMode = true; }
-      }
-    }
-
-    if (mobileMode) {
-      descFull.hidden = true;
-      descMobile.hidden = false;
-      document.getElementById('model-name').textContent = 'SmolLM2-360M';
-      document.getElementById('mobile-warning').hidden = false;
-      document.getElementById('voice-link').hidden = true;
-    }
-
     // ── Voice helper ──
 
     function sendVoiceChunks(text) {
@@ -230,34 +196,53 @@
     }
 
     // ════════════════════════════════════════════
-    // lean engine: WebGPU on desktop, CPU (threads or single) on mobile
-    // or when there's no usable WebGPU adapter.
+    // lean engine, in a Worker. Model size follows backend capability:
+    // a WebGPU adapter loads SmolLM2-1.7B, CPU (threads or single) loads
+    // SmolLM2-360M. Backend/model choice happens inside the worker
+    // (lean-chat-worker.js); this page only asks for a capability probe
+    // up front to pick which model to request.
     // ════════════════════════════════════════════
 
-    const { getModel } = await import('../lib/model-cache.js');
-    const { createLeanEngine, chatOnce } = await import('./lean-chat-client.js');
+    const MODEL_1_7B = {
+      size: '~1GB',
+      cache: 'llm-smollm2-1.7b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+      name: 'SmolLM2-1.7B',
+    };
+    const MODEL_360M = {
+      size: '~271MB',
+      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+      name: 'SmolLM2-360M',
+    };
 
-    const MODEL = mobileMode
-      ? {
-          size: '~271MB',
-          cache: 'llm-smollm2-360m-q4_0-gguf-v1',
-          gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
-          tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
-          tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
-          maxCtx: 2048,
-        }
-      : {
-          size: '~1GB',
-          cache: 'llm-smollm2-1.7b-q4_0-gguf-v1',
-          gguf: 'https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_0.gguf',
-          tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer.json',
-          tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
-          maxCtx: 2048,
-        };
+    let hasAdapter = false;
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        hasAdapter = !!adapter;
+      } catch (_) { hasAdapter = false; }
+    }
+    const MODEL = hasAdapter ? MODEL_1_7B : MODEL_360M;
 
-    let engine = null;
+    if (!hasAdapter) {
+      descFull.hidden = true;
+      descMobile.hidden = false;
+      document.getElementById('model-name').textContent = MODEL.name;
+      document.getElementById('mobile-warning').hidden = false;
+      document.getElementById('voice-link').hidden = true;
+    }
+
+    const worker = new Worker(new URL('./lean-chat-worker.js', import.meta.url), { type: 'module' });
+
+    let ready = false;
     let isCached = false;
-
     try {
       const cache = await caches.open(MODEL.cache);
       isCached = !!(await cache.match(MODEL.gguf));
@@ -267,92 +252,73 @@
       ? `model cached locally: ${MODEL.size}`
       : `model download: ${MODEL.size}`;
 
-    async function loadModel() {
+    let sentenceBuffer = '';
+    let genStart = 0;
+    let genTokens = 0;
+
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'status') {
+        statusText.textContent = msg.text;
+      } else if (msg.type === 'ready') {
+        ready = true;
+        statusText.textContent = `ready, ${msg.label}`;
+        loadBtn.disabled = true;
+        sendBtn.disabled = false;
+      } else if (msg.type === 'token') {
+        output.textContent += msg.text;
+        sentenceBuffer += msg.text;
+        let boundary;
+        while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+          const ch = sentenceBuffer[boundary];
+          const cutAt = ch === '\n' ? boundary : boundary + 1;
+          const sentence = sentenceBuffer.slice(0, cutAt).trim();
+          sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
+          if (sentence) sendVoiceChunks(sentence);
+        }
+        if (sentenceBuffer.length > 200) {
+          const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
+          const cut = spaceAt > 0 ? spaceAt : 200;
+          sendVoiceChunks(sentenceBuffer.slice(0, cut).trim());
+          sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+        }
+      } else if (msg.type === 'done') {
+        if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
+        if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
+        const elapsed = (performance.now() - genStart) / 1000;
+        const tokSec = (msg.tokens / elapsed).toFixed(1);
+        stats.textContent = `${msg.tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+        sendBtn.disabled = false;
+      } else if (msg.type === 'error') {
+        const text = msg.message || '';
+        if (/network|cache|fetch|HTTP/i.test(text)) {
+          statusText.textContent = 'download failed, check your connection and try again';
+        } else {
+          statusText.textContent = 'failed: ' + text;
+        }
+        output.textContent = ready ? 'error: ' + text : output.textContent;
+        loadBtn.disabled = false;
+        sendBtn.disabled = !ready;
+        console.error(text);
+      }
+    };
+
+    function loadModel() {
       loadBtn.disabled = true;
       statusText.textContent = 'loading...';
-      try {
-        const picked = await createLeanEngine();
-        engine = picked.engine;
-        window.__debugEngine = engine;
-        let tokenizerJson, tokenizerCfgJson;
-        const [ggufBytes] = await getModel([MODEL.gguf], {
-          cache: MODEL.cache,
-          onProgress: (loaded, total) => {
-            if (total > 0) {
-              const mb = (loaded / 1024 / 1024).toFixed(0);
-              const pct = ((loaded / total) * 100).toFixed(0);
-              const verb = isCached ? 'loading' : 'downloading';
-              statusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
-            }
-          },
-        });
-        [tokenizerJson, tokenizerCfgJson] = (
-          await Promise.all([fetch(MODEL.tokenizer), fetch(MODEL.tokenizerCfg)])
-        );
-        tokenizerJson = await tokenizerJson.text();
-        tokenizerCfgJson = await tokenizerCfgJson.text();
-
-        statusText.textContent = `loading ${picked.label}...`;
-        engine.load(ggufBytes, tokenizerJson, tokenizerCfgJson, MODEL.maxCtx);
-
-        statusText.textContent = `ready, ${picked.label}`;
-        sendBtn.disabled = false;
-      } catch (err) {
-        const msg = err.message || String(err);
-        if (/network|cache|fetch|HTTP/i.test(msg)) {
-          statusText.textContent = 'download failed — check your connection and try again';
-        } else {
-          statusText.textContent = 'failed to load: ' + msg;
-        }
-        loadBtn.disabled = false;
-        console.error(err);
-      }
+      worker.postMessage({ type: 'load', model: MODEL });
     }
 
-    async function generate() {
+    function generate() {
       const text = input.value.trim().slice(0, 2000);
-      if (!text || !engine) return;
-
+      if (!text || !ready) return;
       sendBtn.disabled = true;
       output.textContent = '';
       stats.textContent = '';
+      sentenceBuffer = '';
+      genStart = performance.now();
       if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
-
-      const start = performance.now();
-      let sentenceBuffer = '';
-      try {
-        const { tokens } = await chatOnce(engine, text, {
-          onPiece: (piece) => {
-            output.textContent += piece;
-            sentenceBuffer += piece;
-            let boundary;
-            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-              const ch = sentenceBuffer[boundary];
-              const cutAt = ch === '\n' ? boundary : boundary + 1;
-              const sentence = sentenceBuffer.slice(0, cutAt).trim();
-              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-              if (sentence) sendVoiceChunks(sentence);
-            }
-            if (sentenceBuffer.length > 200) {
-              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-              const cut = spaceAt > 0 ? spaceAt : 200;
-              sendVoiceChunks(sentenceBuffer.slice(0, cut).trim());
-              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-            }
-          },
-        });
-        if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
-        if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
-
-        const elapsed = (performance.now() - start) / 1000;
-        const tokSec = (tokens / elapsed).toFixed(1);
-        stats.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
-      } catch (err) {
-        output.textContent = 'error: ' + err.message;
-        console.error(err);
-      }
-
-      sendBtn.disabled = false;
+      worker.postMessage({ type: 'chat', text });
     }
 
     if (isCached) {

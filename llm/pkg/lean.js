@@ -118,33 +118,18 @@ export class LeanEngine {
         return v2;
     }
     /**
-     * Multi-turn chat: appends `prompt` as a user turn onto the existing
-     * conversation and KV cache, streams the generated reply through
-     * `on_token`, then appends the assistant turn's own closing template
-     * text back onto the KV cache so the next call's turn starts from an
-     * exact match to what a full re-render of the conversation would
-     * tokenize to.
+     * Multi-turn chat: adds `prompt` as a user turn, streams the reply
+     * through `on_token(id, text)` (see `TokenSink`) and returns it. The
+     * reply joins the conversation for the next call. Same signature and,
+     * greedy (`temperature == 0`), the same tokens on `LeanEngineCpu` -
+     * `tests/chat_api.rs`.
      *
-     * How the "append, don't re-prefill" part works: `chat_history` plus
-     * the new user `prompt` is rendered through the *full* chat template
-     * (`chat_template::render_conversation`, `add_generation_prompt =
-     * true`) - this is cheap, pure-CPU jinja+tokenizer work, not a GPU
-     * forward pass. That full rendering is tokenized once, and only the
-     * suffix past `cache.kv_len` (i.e. the tokens this exact turn's
-     * template text adds - previous turns' tokens are already resident in
-     * the cache, byte-for-byte, because this same process built them) is
-     * run through the model (`forward_prefill_suffix`, or `forward_prefill`
-     * on the very first turn when `cache.kv_len == 0`). This is what makes
-     * `chatGenerate`'s KV state, after N turns, identical to what a single
-     * from-scratch `forward_prefill` over the entire rendered conversation
-     * would have produced - see
+     * Each turn re-renders the whole conversation through the model's chat
+     * template and runs only the ids past the longest prefix already in
+     * the KV cache (`chat::ChatSession`), so the cache after N turns is
+     * what one prefill of the rendered conversation would build - see
      * `tests/streaming_sampling.rs::multi_turn_append_matches_full_reprefill`.
-     * After the reply is generated, the same full-render-and-diff step
-     * happens again (`add_generation_prompt = false` this time) to append
-     * the assistant turn's closing template text (e.g. `<|im_end|>\n`) that
-     * wasn't part of the generated token stream itself (generation stops
-     * the moment an eos token is *predicted*, before it's ever fed back
-     * into the cache).
+     * Sampling, `mask_bits` and `abort` work as in `generateStream`.
      * @param {string} prompt
      * @param {number} max_new_tokens
      * @param {number} temperature
@@ -171,11 +156,9 @@ export class LeanEngine {
         return ret;
     }
     /**
-     * Clears the multi-turn chat history and resets the KV cache to
-     * position 0 - call before starting a new conversation. `generate()`/
-     * `generateStream()` never touch `chat_history` (they reset the cache
-     * themselves every call), so this only needs to be called around
-     * `chatGenerate` use.
+     * Clears the multi-turn conversation and resets the KV cache to
+     * position 0 - call before starting a new conversation. Same call on
+     * `LeanEngineCpu`.
      */
     chatReset() {
         const ret = wasm.leanengine_chatReset(this.__wbg_ptr);
@@ -250,6 +233,20 @@ export class LeanEngine {
      */
     debugVerifyUploads() {
         const ret = wasm.leanengine_debugVerifyUploads(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Greedy decode of `steps` forward steps from `token_id` (no EOS stop),
+     * pipelined: each step is submitted before the previous step's id is
+     * read back (see `model::decode_greedy_pipelined`). Returns the ids the
+     * steps produced, the same as `steps` calls of `decodeStepArgmax`
+     * chained on their own outputs.
+     * @param {number} token_id
+     * @param {number} steps
+     * @returns {Promise<Uint32Array>}
+     */
+    decodeGreedy(token_id, steps) {
+        const ret = wasm.leanengine_decodeGreedy(this.__wbg_ptr, token_id, steps);
         return ret;
     }
     /**
@@ -387,7 +384,7 @@ export class LeanEngine {
      * per-step `mask_bits` (this crate's mask-bitset format, same
      * convention as `decodeStepArgmax` - empty vec means unmasked),
      * applied identically whether sampling or greedy. `on_token` is called
-     * exactly as `generate()`'s is - `on_token(id: number)` - once per
+     * exactly as `generate()`'s is - `on_token(id, text)` - once per
      * token, as soon as it's chosen, before that token's own forward step
      * runs.
      * @param {string} prompt
@@ -420,10 +417,9 @@ export class LeanEngine {
      * turn, `add_generation_prompt = true` - same shape as `lean-cli`'s
      * `--prompt` path), tokenizes it, prefills, then greedily decodes up to
      * `max_new_tokens` tokens (stopping early on any of the model's
-     * `eos_token_ids`). Every decoded token id is passed to `on_token`
-     * (called as `on_token(id: number)`) as soon as it's produced - a
-     * no-op if `on_token` isn't a JS function. Returns the decoded
-     * continuation text and prefill/decode timing.
+     * `eos_token_ids`). Each token goes to `on_token(id, text)` as soon as
+     * it's produced (see `TokenSink`; a no-op if `on_token` isn't a JS
+     * function). Returns the decoded continuation text.
      * @param {string} prompt
      * @param {number} max_new_tokens
      * @param {any} on_token
@@ -619,17 +615,16 @@ export class LeanEngine {
 if (Symbol.dispose) LeanEngine.prototype[Symbol.dispose] = LeanEngine.prototype.free;
 
 /**
- * The CPU rung's wasm-bindgen surface (`cpu.rs`): same method names/
- * argument shapes as `LeanEngine` wherever a CPU equivalent exists, so a
- * harness or a rung-selection loader can hold either behind the same call
- * sites (`create`/`load`/`generate`/`tokenize`/`prefillTokens`/
- * `decodeStepArgmax`) - see this crate's CPU-fallback plan, "same public
- * API shape so a caller can pick the rung at run time". No mask/LoRA/KV-
- * snapshot surface yet (`cpu.rs` doesn't implement those - out of scope
- * for the first CPU-rung pass). Every method here is synchronous: there is
- * no GPU readback to await, so unlike `LeanEngine` these block the calling
- * thread for the duration of the forward pass (acceptable inside a Web
- * Worker, which owns no UI work of its own).
+ * The CPU backend's wasm-bindgen surface (`cpu.rs`, one thread or a
+ * rayon pool in the `wasm-mt` build): same method names and argument
+ * shapes as `LeanEngine` wherever a CPU equivalent exists, so a page holds
+ * either behind the same call sites (`create`/`load`/`generate`/
+ * `chatGenerate`/`chatReset`/`tokenize`/`decodeIds`/`prefillTokens`/
+ * `decodeStepArgmax`). `chatGenerate` is async like the GPU one and yields
+ * to the event loop between tokens so an `AbortFlag` can be flipped; the
+ * other methods are synchronous and block the calling thread for the
+ * forward pass (run them in a Web Worker). No LoRA or KV-snapshot surface
+ * yet.
  */
 export class LeanEngineCpu {
     static __wrap(ptr) {
@@ -647,6 +642,45 @@ export class LeanEngineCpu {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_leanenginecpu_free(ptr, 0);
+    }
+    /**
+     * Same signature and behavior as `LeanEngine::chatGenerate`, on the
+     * CPU KV cache (`chat::cpu_chat_turn`); greedy replies are the GPU's
+     * tokens (`tests/chat_api.rs`). `mask_bits` is applied to the logits on
+     * the CPU exactly as `mask_logits.wgsl` does on the GPU.
+     * @param {string} prompt
+     * @param {number} max_new_tokens
+     * @param {number} temperature
+     * @param {number} top_k
+     * @param {number} top_p
+     * @param {number} repetition_penalty
+     * @param {number} seed
+     * @param {Uint32Array} mask_bits
+     * @param {any} on_token
+     * @param {AbortFlag | null} [abort]
+     * @returns {Promise<string>}
+     */
+    chatGenerate(prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, mask_bits, on_token, abort) {
+        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        let ptr2 = 0;
+        if (!isLikeNone(abort)) {
+            _assertClass(abort, AbortFlag);
+            ptr2 = abort.__destroy_into_raw();
+        }
+        const ret = wasm.leanenginecpu_chatGenerate(this.__wbg_ptr, ptr0, len0, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, ptr1, len1, on_token, ptr2);
+        return ret;
+    }
+    /**
+     * Same as `LeanEngine::chatReset`.
+     */
+    chatReset() {
+        const ret = wasm.leanenginecpu_chatReset(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * No adapter/device to request (unlike `LeanEngine::create`) - kept as
@@ -710,8 +744,8 @@ export class LeanEngineCpu {
     }
     /**
      * Same contract as `LeanEngine::generate` (render -> tokenize ->
-     * prefill -> greedy decode, one `on_token` callback per token), no
-     * mask support, synchronous (no `.await` inside the loop).
+     * prefill -> greedy decode, `on_token(id, text)` per token), no mask
+     * support, synchronous (no `.await` inside the loop).
      * @param {string} prompt
      * @param {number} max_new_tokens
      * @param {any} on_token
@@ -898,8 +932,20 @@ function __wbg_get_imports() {
             const ret = arg0.buffer;
             return ret;
         },
+        __wbg_call_269c5566fbede3eb: function() { return handleError(function (arg0, arg1) {
+            const ret = arg0.call(arg1);
+            return ret;
+        }, arguments); },
         __wbg_call_6bcf8d3e20937e46: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.call(arg1, arg2);
+            return ret;
+        }, arguments); },
+        __wbg_call_7bbd9cceba9949ad: function() { return handleError(function (arg0, arg1, arg2, arg3) {
+            const ret = arg0.call(arg1, arg2, arg3);
+            return ret;
+        }, arguments); },
+        __wbg_construct_69525de4bcbd615c: function() { return handleError(function (arg0, arg1) {
+            const ret = Reflect.construct(arg0, arg1);
             return ret;
         }, arguments); },
         __wbg_copyBufferToBuffer_55e9540007aef863: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
@@ -976,12 +1022,26 @@ function __wbg_get_imports() {
         __wbg_getRandomValues_a608c4436c19407a: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
+        __wbg_get_989d0a1309644f2b: function() { return handleError(function (arg0, arg1) {
+            const ret = Reflect.get(arg0, arg1);
+            return ret;
+        }, arguments); },
         __wbg_gpu_ac6dc8fb638a26c3: function(arg0) {
             const ret = arg0.gpu;
             return ret;
         },
         __wbg_has_ffcf0ac839d1b8fb: function(arg0, arg1, arg2) {
             const ret = arg0.has(getStringFromWasm0(arg1, arg2));
+            return ret;
+        },
+        __wbg_instanceof_Error_fe6fa771c78ee4cf: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof Error;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
             return ret;
         },
         __wbg_instanceof_GpuAdapter_fb230cdccb184887: function(arg0) {
@@ -1132,6 +1192,10 @@ function __wbg_get_imports() {
             const ret = arg0.maxVertexBuffers;
             return ret;
         },
+        __wbg_message_1cbc5bc03dcf1dee: function(arg0) {
+            const ret = arg0.message;
+            return ret;
+        },
         __wbg_minStorageBufferOffsetAlignment_58fcc139ce14bbb9: function(arg0) {
             const ret = arg0.minStorageBufferOffsetAlignment;
             return ret;
@@ -1151,6 +1215,24 @@ function __wbg_get_imports() {
         __wbg_new_227d7c05414eb861: function() {
             const ret = new Error();
             return ret;
+        },
+        __wbg_new_8f72ed7c652bf5a2: function(arg0, arg1) {
+            try {
+                var state0 = {a: arg0, b: arg1};
+                var cb0 = (arg0, arg1) => {
+                    const a = state0.a;
+                    state0.a = 0;
+                    try {
+                        return wasm_bindgen__convert__closures_____invoke__h5e04af5e06f34f8a(a, state0.b, arg0, arg1);
+                    } finally {
+                        state0.a = a;
+                    }
+                };
+                const ret = new Promise(cb0);
+                return ret;
+            } finally {
+                state0.a = 0;
+            }
         },
         __wbg_new_bebc3f4757acf305: function() {
             const ret = new Object();
@@ -1384,12 +1466,12 @@ function __wbg_get_imports() {
             arg0.writeBuffer(arg1, arg2, arg3, arg4, arg5);
         }, arguments); },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1609, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 681, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h12a810cacdbc5648);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1638, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 709, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hd28a537dae1e99b1);
             return ret;
         },
@@ -1416,6 +1498,13 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000007: function(arg0, arg1) {
+            var v0 = getArrayU32FromWasm0(arg0, arg1).slice();
+            wasm.__wbindgen_free(arg0, arg1 * 4, 4);
+            // Cast intrinsic for `Vector(U32) -> Externref`.
+            const ret = v0;
+            return ret;
+        },
+        __wbindgen_generic_0000000000000008: function(arg0, arg1) {
             var v0 = getArrayU8FromWasm0(arg0, arg1).slice();
             wasm.__wbindgen_free(arg0, arg1 * 1, 1);
             // Cast intrinsic for `Vector(U8) -> Externref`.
