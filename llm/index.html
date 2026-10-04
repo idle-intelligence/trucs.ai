@@ -222,10 +222,13 @@
     }
 
     // ════════════════════════════════════════════
-    // lean engine, in a Worker. mobileMode picks the model (1.7B desktop,
-    // 360M mobile/no-WebGPU); lean itself still picks the best backend it
-    // can run that model on (WebGPU, then CPU threads, then single-thread —
-    // see lean-chat-worker.js).
+    // lean engine, in a Worker. The worker picks the backend (WebGPU, then
+    // CPU threads, then single-thread) and the model follows the backend,
+    // not a desktop/mobile guess: WebGPU loads SmolLM2-1.7B, either CPU
+    // backend loads SmolLM2-360M (1.7B Q4_0 traps - out of memory - on the
+    // CPU-threads build). mobileMode here only picks what the page shows
+    // before the worker reports back (initial download-size guess, the
+    // mobile warning, hiding the voice link) - see lean-chat-worker.js.
     // ════════════════════════════════════════════
 
     const MODEL_1_7B = {
@@ -247,12 +250,14 @@
       name: 'SmolLM2-360M',
     };
 
-    const MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+    // Best guess for what to show before the worker reports back which
+    // backend (and therefore which model) it actually picked.
+    const MODEL_GUESS = mobileMode ? MODEL_360M : MODEL_1_7B;
 
     if (mobileMode) {
       descFull.hidden = true;
       descMobile.hidden = false;
-      document.getElementById('model-name').textContent = MODEL.name;
+      document.getElementById('model-name').textContent = MODEL_GUESS.name;
       document.getElementById('mobile-warning').hidden = false;
       document.getElementById('voice-link').hidden = true;
     }
@@ -262,18 +267,19 @@
     let ready = false;
     let isCached = false;
     try {
-      const cache = await caches.open(MODEL.cache);
-      isCached = !!(await cache.match(MODEL.gguf));
+      const cache = await caches.open(MODEL_GUESS.cache);
+      isCached = !!(await cache.match(MODEL_GUESS.gguf));
       if (isCached) loadBtn.textContent = 'load';
     } catch (_) {}
     statusText.textContent = isCached
-      ? `model cached locally: ${MODEL.size}`
-      : `model download: ${MODEL.size}`;
+      ? `model cached locally: ${MODEL_GUESS.size}`
+      : `model download: ${MODEL_GUESS.size}`;
 
     let sentenceBuffer = '';
     let genStart = 0;
     let firstTokenTime = null;
     let backend = null;
+    let backendLabel = '';
 
     worker.onmessage = (e) => {
       const msg = e.data;
@@ -282,14 +288,21 @@
       } else if (msg.type === 'ready') {
         ready = true;
         backend = msg.backend;
+        backendLabel = msg.label;
         console.log(`[llm] backend: ${msg.backend} (${msg.label})`);
-        statusText.textContent = 'ready';
+        statusText.textContent = `ready, ${backendLabel}`;
         loadBtn.disabled = true;
         sendBtn.disabled = false;
+        const onGpu = backend === 'webgpu';
+        descFull.hidden = !onGpu;
+        descMobile.hidden = onGpu;
+        document.getElementById('model-name').textContent = msg.modelName;
+        document.getElementById('mobile-warning').hidden = onGpu;
+        document.getElementById('voice-link').hidden = !onGpu;
       } else if (msg.type === 'token') {
         if (firstTokenTime === null) {
           firstTokenTime = performance.now();
-          if (backend !== 'webgpu') statusText.textContent = 'ready';
+          if (backend !== 'webgpu') statusText.textContent = `ready, ${backendLabel}`;
         }
         output.textContent += msg.text;
         sentenceBuffer += msg.text;
@@ -322,7 +335,7 @@
         } else {
           stats.textContent = 'no tokens generated';
         }
-        statusText.textContent = 'ready';
+        statusText.textContent = `ready, ${backendLabel}`;
         sendBtn.disabled = false;
       } else if (msg.type === 'error') {
         const text = msg.message || '';
@@ -338,7 +351,7 @@
           sendBtn.disabled = true;
         } else {
           output.textContent = 'error: ' + text;
-          if (backend !== 'webgpu') statusText.textContent = 'ready';
+          if (backend !== 'webgpu') statusText.textContent = `ready, ${backendLabel}`;
           sendBtn.disabled = false;
         }
         console.error(text);
@@ -348,7 +361,7 @@
     function loadModel() {
       loadBtn.disabled = true;
       statusText.textContent = 'loading...';
-      worker.postMessage({ type: 'load', model: MODEL });
+      worker.postMessage({ type: 'load', models: { webgpu: MODEL_1_7B, cpu: MODEL_360M } });
     }
 
     function generate() {
