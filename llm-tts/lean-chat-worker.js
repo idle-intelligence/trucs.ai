@@ -71,7 +71,7 @@ async function load(model) {
   const candidates = [caps.hasAdapter && 'webgpu', caps.threadsCapable && 'threads', 'single'].filter(Boolean);
   console.log(`[lean] capabilities: crossOriginIsolated=${caps.crossOriginIsolated} sharedArrayBuffer=${caps.sharedArrayBuffer} hardwareConcurrency=${caps.hardwareConcurrency} hasAdapter=${caps.hasAdapter} -> candidates: ${candidates.join(', ')}`);
 
-  const { getModel } = await import('../lib/model-cache.js');
+  const { getModel } = await import('../lib/model-cache.js?v=2026-10-04-cache-01');
   const [ggufBytes, tokenizerBytes, tokenizerCfgBytes] = await getModel(
     [model.gguf, model.tokenizer, model.tokenizerCfg],
     {
