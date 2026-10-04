@@ -179,7 +179,7 @@
 
     <p class="panel-desc" id="bottom-desc">
       STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.<br>
-      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a> (~1GB), multi-turn chat on <a href="https://github.com/idle-intelligence/llm-web">lean</a>, a WebGPU/WebAssembly inference engine.<br>
+      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
@@ -200,7 +200,6 @@
       ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
 
     let mobileMode = false;
-    let gpuAdapter = null;
     if (modeParam === 'mobile') {
       mobileMode = true;
     } else if (modeParam === 'full') {
@@ -214,28 +213,22 @@
         mobileMode = true;
       } else {
         try {
-          gpuAdapter = await navigator.gpu.requestAdapter();
-          if (!gpuAdapter) mobileMode = true;
-          else if (gpuAdapter.limits.maxBufferSize < 256 * 1024 * 1024) mobileMode = true;
+          const adapter = await navigator.gpu.requestAdapter();
+          if (!adapter) {
+            mobileMode = true;
+          } else if (adapter.limits.maxBufferSize < 256 * 1024 * 1024) {
+            mobileMode = true;
+          }
         } catch (_) {
           mobileMode = true;
         }
       }
     }
 
-    // LLM model choice (lean): WebGPU adapter -> SmolLM2-1.7B, else CPU -> SmolLM2-360M.
-    // Independent of mobileMode, which only picks the STT model/UX above. lean's own
-    // backend selection (webgpu/threads/single, in lean-chat-worker.js) replaces the old
-    // WebLLM storage-buffer-count workaround this page used to need.
-    let hasAdapter = false;
-    if (!mobileMode && gpuAdapter) {
-      hasAdapter = true;
-    } else if (navigator.gpu) {
-      try {
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-        hasAdapter = !!adapter;
-      } catch (_) { hasAdapter = false; }
-    }
+    // LLM model choice: same mobileMode split as the STT model/UX above (1.7B desktop,
+    // 360M mobile/no-WebGPU). lean's own backend selection (webgpu/threads/single, in
+    // lean-chat-worker.js) replaces the old WebLLM storage-buffer-count workaround this
+    // page used to need.
     const MODEL_1_7B = {
       size: '~1GB',
       cache: 'llm-smollm2-1.7b-q4_0-gguf-v1',
@@ -252,7 +245,7 @@
       tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const LLM_MODEL = hasAdapter ? MODEL_1_7B : MODEL_360M;
+    const LLM_MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
 
     // Console toggle: setMode('mobile') or setMode('full')
     window.setMode = (mode) => { location.href = `?mode=${mode}`; };
@@ -287,14 +280,14 @@
     const ttsVoiceOutput = document.getElementById('tts-voice-output');
     const ttsMetricsEl = document.getElementById('tts-metrics');
 
-    // ── Bottom description: STT line follows mobileMode, LLM line follows hasAdapter ──
+    // ── Bottom description: both lines follow mobileMode ──
     {
       const sttLine = mobileMode
         ? 'STT: <a href="https://huggingface.co/ggerganov/whisper.cpp">Whisper Tiny Q5_1</a> (~31MB) via <a href="https://github.com/idle-intelligence/stt-web">whisper.cpp</a> compiled to WebAssembly.'
         : 'STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.';
-      const llmLine = hasAdapter
-        ? 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a> (~1GB), multi-turn chat on <a href="https://github.com/idle-intelligence/llm-web">lean</a>, a WebGPU/WebAssembly inference engine.'
-        : 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB), multi-turn chat on <a href="https://github.com/idle-intelligence/llm-web">lean</a>, a WebGPU/WebAssembly inference engine.';
+      const llmLine = mobileMode
+        ? 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.'
+        : 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.';
       const ttsLine = 'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
       document.getElementById('bottom-desc').innerHTML = `${sttLine}<br>${llmLine}<br>${ttsLine}`;
     }

@@ -64,11 +64,10 @@ function backendLabel(backend, threads) {
 }
 
 async function load(model) {
-  status('checking capabilities...');
   const caps = await capabilities();
   const candidates = [caps.hasAdapter && 'webgpu', caps.threadsCapable && 'threads', 'single'].filter(Boolean);
+  console.log(`[lean] capabilities: crossOriginIsolated=${caps.crossOriginIsolated} sharedArrayBuffer=${caps.sharedArrayBuffer} hardwareConcurrency=${caps.hardwareConcurrency} hasAdapter=${caps.hasAdapter} -> candidates: ${candidates.join(', ')}`);
 
-  status(`model download: ${model.size}`);
   const { getModel } = await import('../lib/model-cache.js');
   const [ggufBytes, tokenizerBytes, tokenizerCfgBytes] = await getModel(
     [model.gguf, model.tokenizer, model.tokenizerCfg],
@@ -86,20 +85,21 @@ async function load(model) {
   const tokenizerJson = new TextDecoder().decode(tokenizerBytes);
   const tokenizerCfgJson = new TextDecoder().decode(tokenizerCfgBytes);
 
+  status('loading...');
   const skipped = [];
   let backend = null;
   for (const c of candidates) {
     try {
-      status(`starting ${c} backend...`);
       const r = await createEngine(c);
-      status('loading weights...');
       r.engine.load(ggufBytes, tokenizerJson, tokenizerCfgJson, model.maxCtx);
       engine = r.engine;
       AbortFlagCtor = r.AbortFlag;
       backend = c;
       break;
     } catch (e) {
-      skipped.push(`${c}: ${e && e.message ? e.message : e}`);
+      const reason = e && e.message ? e.message : e;
+      console.warn(`[lean] ${c} backend failed, falling back: ${reason}`);
+      skipped.push(`${c}: ${reason}`);
       engine = null;
     }
   }
