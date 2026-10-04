@@ -110,7 +110,7 @@ async function load(model) {
 
 async function chat(text) {
   if (!engine) {
-    self.postMessage({ type: 'error', message: 'engine not loaded' });
+    self.postMessage({ type: 'error', phase: 'generate', message: 'engine not loaded' });
     return;
   }
   let tokens = 0;
@@ -133,7 +133,7 @@ async function chat(text) {
     );
     self.postMessage({ type: 'done', tokens });
   } catch (e) {
-    self.postMessage({ type: 'error', message: e && e.message ? e.message : String(e) });
+    self.postMessage({ type: 'error', phase: 'generate', message: e && e.message ? e.message : String(e) });
   } finally {
     abortFlag = null;
   }
@@ -148,7 +148,7 @@ function reset() {
 }
 
 const handlers = {
-  load: (msg) => load(msg.model).catch((e) => self.postMessage({ type: 'error', message: e && e.message ? e.message : String(e) })),
+  load: (msg) => load(msg.model).catch((e) => self.postMessage({ type: 'error', phase: 'load', message: e && e.message ? e.message : String(e) })),
   chat: (msg) => chat(msg.text),
   stop: () => stop(),
   reset: () => reset(),

@@ -833,14 +833,21 @@
         llmStatusText.textContent = 'ready';
       } else if (msg.type === 'error') {
         const text = msg.message || '';
-        if (/network|cache|fetch|HTTP/i.test(text)) {
-          llmStatusText.textContent = 'download failed';
+        if (msg.phase === 'load') {
+          if (/network|cache|fetch|HTTP/i.test(text)) {
+            llmStatusText.textContent = 'download failed';
+          } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
+            llmStatusText.textContent = 'WebGPU not stable on this device';
+          } else {
+            llmStatusText.textContent = 'failed: ' + text;
+          }
+          if (llmRejectReady) { llmRejectReady(new Error(text)); llmResolveReady = null; llmRejectReady = null; }
+          llmReady = llmLoaded;
         } else {
-          llmStatusText.textContent = 'failed: ' + text;
+          if (!llmAbort) llmOutput.textContent = 'error: ' + text;
+          llmReady = true;
+          llmStatusText.textContent = 'ready';
         }
-        if (llmLoaded && !llmAbort) llmOutput.textContent = 'error: ' + text;
-        if (llmRejectReady) { llmRejectReady(new Error(text)); llmResolveReady = null; llmRejectReady = null; }
-        llmReady = llmLoaded;
         console.error(text);
       }
     };
