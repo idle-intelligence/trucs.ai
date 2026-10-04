@@ -63,49 +63,38 @@ function backendLabel(backend, threads) {
   return 'on the CPU, 1 thread';
 }
 
-// `models` is `{ webgpu, cpu }`: two model configs, picked per candidate
-// backend, not once up front. SmolLM2-1.7B Q4_0 traps (out of memory) on
-// the CPU-threads build - lean's CPU engines only have pkg-mt's capped
-// wasm memory, not a GPU's address space - so a CPU candidate (threads or
-// single) always loads the smaller `models.cpu`, even when the first
-// candidate was WebGPU and failed partway through: each candidate fetches
-// and loads its own model, so fallback never retries the 1.7B model on CPU.
-async function load(models) {
+async function load(model) {
   const caps = await capabilities();
   const candidates = [caps.hasAdapter && 'webgpu', caps.threadsCapable && 'threads', 'single'].filter(Boolean);
   console.log(`[lean] capabilities: crossOriginIsolated=${caps.crossOriginIsolated} sharedArrayBuffer=${caps.sharedArrayBuffer} hardwareConcurrency=${caps.hardwareConcurrency} hasAdapter=${caps.hasAdapter} -> candidates: ${candidates.join(', ')}`);
 
   const { getModel } = await import('../lib/model-cache.js');
+  const [ggufBytes, tokenizerBytes, tokenizerCfgBytes] = await getModel(
+    [model.gguf, model.tokenizer, model.tokenizerCfg],
+    {
+      cache: model.cache,
+      onProgress: (loaded, total) => {
+        if (total > 0) {
+          const mb = (loaded / 1024 / 1024).toFixed(0);
+          const pct = ((loaded / total) * 100).toFixed(0);
+          status(`downloading model: ${mb}MB, ${pct}%`);
+        }
+      },
+    }
+  );
+  const tokenizerJson = new TextDecoder().decode(tokenizerBytes);
+  const tokenizerCfgJson = new TextDecoder().decode(tokenizerCfgBytes);
+
+  status('loading...');
   const skipped = [];
   let backend = null;
-  let loadedModel = null;
   for (const c of candidates) {
-    const model = c === 'webgpu' ? models.webgpu : models.cpu;
     try {
-      status(`fetching ${model.name}...`);
-      const [ggufBytes, tokenizerBytes, tokenizerCfgBytes] = await getModel(
-        [model.gguf, model.tokenizer, model.tokenizerCfg],
-        {
-          cache: model.cache,
-          onProgress: (loaded, total) => {
-            if (total > 0) {
-              const mb = (loaded / 1024 / 1024).toFixed(0);
-              const pct = ((loaded / total) * 100).toFixed(0);
-              status(`downloading ${model.name}: ${mb}MB, ${pct}%`);
-            }
-          },
-        }
-      );
-      const tokenizerJson = new TextDecoder().decode(tokenizerBytes);
-      const tokenizerCfgJson = new TextDecoder().decode(tokenizerCfgBytes);
-
-      status(`loading on ${c}...`);
       const r = await createEngine(c);
       r.engine.load(ggufBytes, tokenizerJson, tokenizerCfgJson, model.maxCtx);
       engine = r.engine;
       AbortFlagCtor = r.AbortFlag;
       backend = c;
-      loadedModel = model;
       break;
     } catch (e) {
       const reason = e && e.message ? e.message : e;
@@ -116,7 +105,7 @@ async function load(models) {
   }
   if (!engine) throw new Error(`no backend available (${skipped.join('; ')})`);
 
-  self.postMessage({ type: 'ready', backend, label: backendLabel(backend, caps.hardwareConcurrency), modelName: loadedModel.name });
+  self.postMessage({ type: 'ready', backend, label: backendLabel(backend, caps.hardwareConcurrency) });
 }
 
 async function chat(text) {
@@ -159,7 +148,7 @@ function reset() {
 }
 
 const handlers = {
-  load: (msg) => load(msg.models).catch((e) => self.postMessage({ type: 'error', phase: 'load', message: e && e.message ? e.message : String(e) })),
+  load: (msg) => load(msg.model).catch((e) => self.postMessage({ type: 'error', phase: 'load', message: e && e.message ? e.message : String(e) })),
   chat: (msg) => chat(msg.text),
   stop: () => stop(),
   reset: () => reset(),
