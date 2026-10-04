@@ -155,7 +155,7 @@
 
     <!-- ── Mobile: single-column layout ── -->
     <div id="mobile-layout">
-      <p class="panel-desc" id="mobile-warning" hidden>Running a smaller model on the CPU. Expect slower responses.</p>
+      <p class="panel-desc">Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try a desktop browser for a much better experience with WebGPU acceleration.</p>
 
       <div class="model-status">
         <button id="m-llm-load-btn">download</button>
@@ -189,11 +189,11 @@
     <hr>
 
     <p id="desc-full" class="panel-desc">
-      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a> (~1GB), single-turn chat on <a href="https://github.com/idle-intelligence/llm-web">lean</a>, a WebGPU/WebAssembly inference engine.<br>
+      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, single-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
     <p id="desc-mobile" class="panel-desc" hidden>
-      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB), single-turn chat on <a href="https://github.com/idle-intelligence/llm-web">lean</a>, a WebGPU/WebAssembly inference engine.<br>
+      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
@@ -232,21 +232,13 @@
     if (mobileMode) {
       document.querySelector('.panels').style.display = 'none';
       document.getElementById('mobile-layout').style.display = 'block';
+      document.getElementById('desc-full').hidden = true;
+      document.getElementById('desc-mobile').hidden = false;
     }
 
-    // ── LLM model choice (lean): WebGPU adapter -> SmolLM2-1.7B, else CPU -> SmolLM2-360M.
-    // Independent of mobileMode, which only picks the panel layout above.
-
-    let hasAdapter = false;
-    if (navigator.gpu) {
-      try {
-        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-        hasAdapter = !!adapter;
-      } catch (_) { hasAdapter = false; }
-    }
-    document.getElementById('desc-full').hidden = !hasAdapter;
-    document.getElementById('desc-mobile').hidden = hasAdapter;
-    document.getElementById('mobile-warning').hidden = hasAdapter;
+    // ── LLM model choice: same mobileMode split as the panel layout above
+    // (1.7B desktop, 360M mobile/no-WebGPU). lean itself still picks the
+    // best backend it can run that model on (see lean-chat-worker.js).
 
     const MODEL_1_7B = {
       size: '~1GB',
@@ -264,7 +256,7 @@
       tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const MODEL = hasAdapter ? MODEL_1_7B : MODEL_360M;
+    const MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
 
     // ── TTS constants (shared) ──
 
@@ -324,7 +316,7 @@
           llmStatusText.textContent = msg.text;
         } else if (msg.type === 'ready') {
           llmReady = true;
-          llmStatusText.textContent = `ready, ${msg.label}`;
+          llmStatusText.textContent = 'ready';
           llmLoadBtn.disabled = true;
           llmSendBtn.disabled = false;
         } else if (msg.type === 'token') {
@@ -696,6 +688,7 @@
 
       let llmSentenceBuffer = '';
       let llmGenStart = 0;
+      let llmFirstTokenTime = null;
 
       llmWorker.onmessage = (e) => {
         const msg = e.data;
@@ -703,10 +696,14 @@
           llmStatusText.textContent = msg.text;
         } else if (msg.type === 'ready') {
           llmReady = true;
-          llmStatusText.textContent = `ready, ${msg.label}`;
+          llmStatusText.textContent = 'ready';
           llmLoadBtn.disabled = true;
           llmSendBtn.disabled = false;
         } else if (msg.type === 'token') {
+          if (llmFirstTokenTime === null) {
+            llmFirstTokenTime = performance.now();
+            llmStatusText.textContent = 'ready';
+          }
           llmOutput.textContent += msg.text;
           llmSentenceBuffer += msg.text;
           let boundary;
@@ -727,9 +724,14 @@
         } else if (msg.type === 'done') {
           if (llmSentenceBuffer.trim()) sendToTts('chunk', llmSentenceBuffer.trim());
           sendToTts('done');
-          const elapsed = (performance.now() - llmGenStart) / 1000;
-          const tokSec = (msg.tokens / elapsed).toFixed(1);
-          llmStats.textContent = `${msg.tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+          if (llmFirstTokenTime !== null) {
+            const ttfb = ((llmFirstTokenTime - llmGenStart) / 1000).toFixed(1);
+            const decodeTime = (performance.now() - llmFirstTokenTime) / 1000;
+            const tokSec = decodeTime > 0 ? (msg.tokens / decodeTime).toFixed(1) : '—';
+            llmStats.textContent = `TTFB ${ttfb}s · ${msg.tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
+          } else {
+            llmStats.textContent = 'no tokens generated';
+          }
           llmSendBtn.disabled = false;
         } else if (msg.type === 'error') {
           const text = msg.message || '';
@@ -758,6 +760,8 @@
         llmOutput.textContent = '';
         llmStats.textContent = '';
         llmSentenceBuffer = '';
+        llmFirstTokenTime = null;
+        llmStatusText.textContent = 'thinking...';
         llmGenStart = performance.now();
         sendToTts('clear');
         llmWorker.postMessage({ type: 'chat', text });
