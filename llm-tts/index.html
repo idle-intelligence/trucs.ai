@@ -346,14 +346,20 @@
           llmSendBtn.disabled = false;
         } else if (msg.type === 'error') {
           const text = msg.message || '';
-          if (/network|cache|fetch|HTTP/i.test(text)) {
-            llmStatusText.textContent = 'download failed, check your connection and try again';
+          if (msg.phase === 'load') {
+            if (/network|cache|fetch|HTTP/i.test(text)) {
+              llmStatusText.textContent = 'download failed, check your connection and try again';
+            } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
+              llmStatusText.textContent = 'WebGPU is not stable enough on this device yet.';
+            } else {
+              llmStatusText.textContent = 'failed to load: ' + text;
+            }
+            llmLoadBtn.disabled = false;
+            llmSendBtn.disabled = true;
           } else {
-            llmStatusText.textContent = 'failed: ' + text;
+            llmOutput.textContent = 'error: ' + text;
+            llmSendBtn.disabled = false;
           }
-          if (llmReady) llmOutput.textContent = 'error: ' + text;
-          llmLoadBtn.disabled = false;
-          llmSendBtn.disabled = !llmReady;
           console.error(text);
         }
       };
@@ -735,14 +741,21 @@
           llmSendBtn.disabled = false;
         } else if (msg.type === 'error') {
           const text = msg.message || '';
-          if (/network|cache|fetch|HTTP/i.test(text)) {
-            llmStatusText.textContent = 'download failed, check your connection and try again';
+          if (msg.phase === 'load') {
+            if (/network|cache|fetch|HTTP/i.test(text)) {
+              llmStatusText.textContent = 'download failed, check your connection and try again';
+            } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
+              llmStatusText.textContent = 'WebGPU is not stable enough on this device yet.';
+            } else {
+              llmStatusText.textContent = 'failed to load: ' + text;
+            }
+            llmLoadBtn.disabled = false;
+            llmSendBtn.disabled = true;
           } else {
-            llmStatusText.textContent = 'failed: ' + text;
+            llmOutput.textContent = 'error: ' + text;
+            llmStatusText.textContent = 'ready';
+            llmSendBtn.disabled = false;
           }
-          if (llmReady) llmOutput.textContent = 'error: ' + text;
-          llmLoadBtn.disabled = false;
-          llmSendBtn.disabled = !llmReady;
           console.error(text);
         }
       };
