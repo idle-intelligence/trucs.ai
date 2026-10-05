@@ -25,7 +25,7 @@
 const EARLY = [];
 self.onmessage = (e) => EARLY.push(e);
 
-const ENGINE_BUILD = '2026-10-04-release-01';
+const ENGINE_BUILD = '2026-10-05-release-02';
 
 let engine = null;
 let AbortFlagCtor = null;
@@ -40,23 +40,46 @@ async function capabilities() {
   return caps();
 }
 
+// Each wasm build is initialised once per worker and reused: the CPU
+// threads build's thread pool can only be built once, so a load retry
+// after a failure (the page's "download failed, try again" path) must not
+// initialise it again.
+let singlePromise = null;
+let threadsPromise = null;
+function loadSingle() {
+  if (!singlePromise) {
+    singlePromise = (async () => {
+      const mod = await import(`./pkg/lean.js?v=${ENGINE_BUILD}`);
+      await mod.default({ module_or_path: `./pkg/lean_bg.wasm?v=${ENGINE_BUILD}` });
+      mod.leanInit();
+      return mod;
+    })();
+  }
+  return singlePromise;
+}
+function loadThreads() {
+  if (!threadsPromise) {
+    threadsPromise = (async () => {
+      const mod = await import(`./pkg-mt/lean.js?v=${ENGINE_BUILD}`);
+      await mod.default({ module_or_path: `./pkg-mt/lean_bg.wasm?v=${ENGINE_BUILD}` });
+      await mod.initThreadPool(navigator.hardwareConcurrency);
+      mod.leanInit();
+      return mod;
+    })();
+  }
+  return threadsPromise;
+}
+
 async function createEngine(which) {
   if (which === 'webgpu') {
-    const mod = await import(`./pkg/lean.js?v=${ENGINE_BUILD}`);
-    await mod.default({ module_or_path: `./pkg/lean_bg.wasm?v=${ENGINE_BUILD}` });
-    mod.leanInit();
+    const mod = await loadSingle();
     return { engine: await mod.LeanEngine.create(), AbortFlag: mod.AbortFlag };
   }
   if (which === 'threads') {
-    const mod = await import(`./pkg-mt/lean.js?v=${ENGINE_BUILD}`);
-    await mod.default({ module_or_path: `./pkg-mt/lean_bg.wasm?v=${ENGINE_BUILD}` });
-    await mod.initThreadPool(navigator.hardwareConcurrency);
-    mod.leanInit();
+    const mod = await loadThreads();
     return { engine: mod.LeanEngineCpu.create(), AbortFlag: mod.AbortFlag };
   }
-  const mod = await import(`./pkg/lean.js?v=${ENGINE_BUILD}`);
-  await mod.default({ module_or_path: `./pkg/lean_bg.wasm?v=${ENGINE_BUILD}` });
-  mod.leanInit();
+  const mod = await loadSingle();
   return { engine: mod.LeanEngineCpu.create(), AbortFlag: mod.AbortFlag };
 }
 
