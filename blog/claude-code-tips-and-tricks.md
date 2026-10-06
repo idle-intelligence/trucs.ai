@@ -1,6 +1,7 @@
 ---
 layout: default
 title: "Claude Code tips and tricks"
+noindex: true
 ---
 
 # Claude Code tips and tricks
