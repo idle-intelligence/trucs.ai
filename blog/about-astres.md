@@ -1,6 +1,8 @@
 ---
 layout: default
 title: "About astres (ridgeline)"
+description: "ridgeline draws the solar system as ridgeline graphs."
+og_image: /assets/og/astres.png
 ---
 
 # About astres (ridgeline)
