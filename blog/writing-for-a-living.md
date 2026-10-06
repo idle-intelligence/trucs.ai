@@ -1,6 +1,7 @@
 ---
 layout: default
 title: writing for a living
+noindex: true
 ---
 
 # writing for a living
