@@ -787,7 +787,7 @@
     // reset here — only stopEverything/reset send {type:'reset'}.
     // ════════════════════════════════════════════
 
-    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-04-cache-01', import.meta.url), { type: 'module' });
+    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-06-lean-878b1a1', import.meta.url), { type: 'module' });
     let llmLoaded = false;
     let llmGenStart = 0;
     let llmSentenceBuffer = '';

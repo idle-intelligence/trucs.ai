@@ -230,7 +230,7 @@ export class LeanEngine {
      * files' contents as strings. `max_ctx` bounds the KV cache (prompt +
      * max_new_tokens must fit). The caller should drop its own reference to
      * `gguf_bytes`'s backing `ArrayBuffer` right after this call returns so
-     * the JS heap can reclaim it too (see `www/main.js`'s call site).
+     * the JS heap can reclaim it too.
      */
     load(gguf_bytes: Uint8Array, tokenizer_json: string, tokenizer_config_json: string, max_ctx: number): void;
     /**
@@ -266,8 +266,8 @@ export class LeanEngine {
      * Renders + tokenizes `prompt` the same way `generate()` does and
      * returns the resulting token count, with no GPU work - lets a harness
      * log a synthetic timing-only prompt's actual length (e.g. the
-     * ~1000-token prefill case in `www/main.js`) without duplicating the
-     * chat-template/tokenizer path in JS.
+     * ~1000-token prefill case in a browser harness) without duplicating
+     * the chat-template/tokenizer path in JS.
      */
     tokenCount(prompt: string): number;
     /**
@@ -423,10 +423,10 @@ export interface InitOutput {
     readonly wbg_rayon_poolbuilder_numThreads: (a: number) => number;
     readonly wbg_rayon_poolbuilder_receiver: (a: number) => number;
     readonly wbg_rayon_start_worker: (a: number) => void;
-    readonly wasm_bindgen_5eadc5baeccbd563___convert__closures_____invoke___js_sys_4d3c6b4f7172722e___Function_fn_wasm_bindgen_5eadc5baeccbd563___JsValue_____wasm_bindgen_5eadc5baeccbd563___sys__Undefined___js_sys_4d3c6b4f7172722e___Function_fn_wasm_bindgen_5eadc5baeccbd563___JsValue_____wasm_bindgen_5eadc5baeccbd563___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen_5eadc5baeccbd563___convert__closures_____invoke___wasm_bindgen_5eadc5baeccbd563___JsValue__core_47c40c249e36843c___result__Result_____wasm_bindgen_5eadc5baeccbd563___JsError___true_: (a: number, b: number, c: any) => [number, number];
-    readonly wasm_bindgen_5eadc5baeccbd563___convert__closures_____invoke___js_sys_4d3c6b4f7172722e___futures__task__wait_async_polyfill__MessageEvent______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_5eadc5baeccbd563___convert__closures_____invoke___wasm_bindgen_5eadc5baeccbd563___JsValue______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___js_sys_1ca67c61c74302c3___Function_fn_wasm_bindgen_c5a209400a6a505___JsValue_____wasm_bindgen_c5a209400a6a505___sys__Undefined___js_sys_1ca67c61c74302c3___Function_fn_wasm_bindgen_c5a209400a6a505___JsValue_____wasm_bindgen_c5a209400a6a505___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___wasm_bindgen_c5a209400a6a505___JsValue__core_69630a7fb43a177___result__Result_____wasm_bindgen_c5a209400a6a505___JsError___true_: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___js_sys_1ca67c61c74302c3___futures__task__wait_async_polyfill__MessageEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___wasm_bindgen_c5a209400a6a505___JsValue______true_: (a: number, b: number, c: any) => void;
     readonly memory: WebAssembly.Memory;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

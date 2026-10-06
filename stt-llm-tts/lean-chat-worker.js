@@ -22,7 +22,7 @@
 const EARLY = [];
 self.onmessage = (e) => EARLY.push(e);
 
-const ENGINE_BUILD = '2026-10-04-release-01';
+const ENGINE_BUILD = '2026-10-06-lean-878b1a1';
 
 let engine = null;
 let AbortFlagCtor = null;
@@ -68,7 +68,7 @@ async function load(model) {
   const candidates = [caps.hasAdapter && 'webgpu', caps.threadsCapable && 'threads', 'single'].filter(Boolean);
   console.log(`[lean] capabilities: crossOriginIsolated=${caps.crossOriginIsolated} sharedArrayBuffer=${caps.sharedArrayBuffer} hardwareConcurrency=${caps.hardwareConcurrency} hasAdapter=${caps.hasAdapter} -> candidates: ${candidates.join(', ')}`);
 
-  const { getModel } = await import('../lib/model-cache.js?v=2026-10-04-cache-01');
+  const { getModel } = await import('../lib/model-cache.js?v=2026-10-06-lean-878b1a1');
   const [ggufBytes, tokenizerBytes, tokenizerCfgBytes] = await getModel(
     [model.gguf, model.tokenizer, model.tokenizerCfg],
     {
