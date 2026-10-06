@@ -102,3 +102,8 @@ blockquote {
   padding-left: 1em;
   color: #888;
 }
+
+.panel-desc {
+  color: #999;
+  font-size: 0.8rem;
+}
