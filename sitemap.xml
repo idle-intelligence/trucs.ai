@@ -1,0 +1,15 @@
+---
+permalink: /sitemap.xml
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{%- for page in site.pages %}
+{%- if page.url == "/sitemap.xml" %}{% continue %}{% endif %}
+{%- if page.noindex %}{% continue %}{% endif %}
+  <url><loc>{{ site.url }}{{ page.url | replace: '.html', '' }}</loc></url>
+{%- endfor %}
+{%- assign html_statics = site.static_files | where_exp: "f", "f.extname == '.html'" %}
+{%- for f in html_statics %}
+  <url><loc>{{ site.url }}{{ f.path | replace: 'index.html', '' }}</loc></url>
+{%- endfor %}
+</urlset>

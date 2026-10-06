@@ -41,3 +41,5 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
 ---
 
 An [Idle Intelligence](https://idleintelligence.org/) Initiative   
+
+<p class="panel-desc"><a href="https://github.com/ilnmtlbnm">GitHub</a> | <a href="https://huggingface.co/ilnmtlbnm">Hugging Face</a></p>
