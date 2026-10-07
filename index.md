@@ -1,4 +1,5 @@
 ---
+author: Thomas Cambau
 layout: default
 title: trucs.ai
 description: "This is a collection of experiments and ideas, mainly around running AI stuff in the browser."
