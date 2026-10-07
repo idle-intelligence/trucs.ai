@@ -3,6 +3,7 @@ author: Thomas Cambau
 layout: default
 title: "Browser weather"
 description: "Weather data straight from your browser, no server, using the kNN weather modules from trucs.ai/knn-weather."
+og_image: /assets/og/browser-weather.png
 ---
 
 # Browser weather
