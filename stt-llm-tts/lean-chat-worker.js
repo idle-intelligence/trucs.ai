@@ -131,29 +131,67 @@ async function load(model) {
   self.postMessage({ type: 'ready', backend, label: backendLabel(backend, caps.hardwareConcurrency) });
 }
 
+// Answers are read aloud: keep them short. lean's chat API has no system
+// prompt yet, so the instruction the WebLLM version used as its system
+// prompt is put in front of the first user turn of each conversation.
+const INSTRUCTION = 'You are a helpful, concise voice assistant. Your text is read aloud. Keep answers to one to three sentences.';
+const MAX_NEW_TOKENS = 120;
+let freshConversation = true;
+
+// Stop after this many sentences: SmolLM2 does not reliably follow the
+// "one to three sentences" instruction, and every word is read aloud.
+const MAX_SENTENCES = 3;
+
+async function generate(text) {
+  let tokens = 0;
+  let reply = '';
+  abortFlag = new AbortFlagCtor();
+  const flag = abortFlag;
+  const prompt = freshConversation ? `${INSTRUCTION}\n\n${text}` : text;
+  await engine.chatGenerate(
+    prompt,
+    MAX_NEW_TOKENS,
+    0.7,
+    40,
+    0.9,
+    // No repetition penalty: over a multi-turn history it penalises the most
+    // common tokens ("the", "of", ".") and answers turn telegraphic.
+    1.0,
+    0,
+    new Uint32Array(0),
+    (id, piece) => {
+      if (id >= 0) tokens += 1;
+      if (piece) {
+        self.postMessage({ type: 'token', text: piece });
+        reply += piece;
+        if ((reply.match(/[.!?](\s|$)/g) || []).length >= MAX_SENTENCES) flag.abort();
+      }
+    },
+    abortFlag.cloneFlag()
+  );
+  freshConversation = false;
+  return tokens;
+}
+
 async function chat(text) {
   if (!engine) {
     self.postMessage({ type: 'error', phase: 'generate', message: 'engine not loaded' });
     return;
   }
-  let tokens = 0;
   try {
-    abortFlag = new AbortFlagCtor();
-    await engine.chatGenerate(
-      text,
-      256,
-      0.7,
-      40,
-      0.9,
-      1.1,
-      0,
-      new Uint32Array(0),
-      (id, piece) => {
-        if (id >= 0) tokens += 1;
-        if (piece) self.postMessage({ type: 'token', text: piece });
-      },
-      abortFlag.cloneFlag()
-    );
+    let tokens;
+    try {
+      tokens = await generate(text);
+    } catch (e) {
+      // The conversation no longer fits the context window: lean refuses the
+      // turn before generating anything. Start a fresh conversation and
+      // answer this turn instead of failing every turn from now on.
+      if (!String(e && e.message ? e.message : e).includes('exceeds max_ctx')) throw e;
+      console.log('[lean] conversation full, starting a new one');
+      engine.chatReset();
+      freshConversation = true;
+      tokens = await generate(text);
+    }
     self.postMessage({ type: 'done', tokens });
   } catch (e) {
     self.postMessage({ type: 'error', phase: 'generate', message: e && e.message ? e.message : String(e) });
@@ -168,6 +206,7 @@ function stop() {
 
 function reset() {
   if (engine) engine.chatReset();
+  freshConversation = true;
 }
 
 const handlers = {
