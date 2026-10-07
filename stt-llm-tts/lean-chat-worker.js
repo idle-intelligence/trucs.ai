@@ -138,9 +138,15 @@ const INSTRUCTION = 'You are a helpful, concise voice assistant. Your text is re
 const MAX_NEW_TOKENS = 120;
 let freshConversation = true;
 
+// Stop after this many sentences: SmolLM2 does not reliably follow the
+// "one to three sentences" instruction, and every word is read aloud.
+const MAX_SENTENCES = 3;
+
 async function generate(text) {
   let tokens = 0;
+  let reply = '';
   abortFlag = new AbortFlagCtor();
+  const flag = abortFlag;
   const prompt = freshConversation ? `${INSTRUCTION}\n\n${text}` : text;
   await engine.chatGenerate(
     prompt,
@@ -148,12 +154,18 @@ async function generate(text) {
     0.7,
     40,
     0.9,
-    1.1,
+    // No repetition penalty: over a multi-turn history it penalises the most
+    // common tokens ("the", "of", ".") and answers turn telegraphic.
+    1.0,
     0,
     new Uint32Array(0),
     (id, piece) => {
       if (id >= 0) tokens += 1;
-      if (piece) self.postMessage({ type: 'token', text: piece });
+      if (piece) {
+        self.postMessage({ type: 'token', text: piece });
+        reply += piece;
+        if ((reply.match(/[.!?](\s|$)/g) || []).length >= MAX_SENTENCES) flag.abort();
+      }
     },
     abortFlag.cloneFlag()
   );
