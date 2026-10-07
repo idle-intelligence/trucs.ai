@@ -1,4 +1,5 @@
 ---
+author: Thomas Cambau
 layout: default
 title: "About astres (ridgeline)"
 description: "ridgeline draws the solar system as ridgeline graphs."
