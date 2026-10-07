@@ -179,7 +179,7 @@
 
     <p class="panel-desc" id="bottom-desc">
       STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.<br>
-      LLM: <a href="https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2</a> (<span id="llm-model-label">1.7B</span>), multi-turn chat via WebGPU with <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>.<br>
+      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
@@ -225,6 +225,28 @@
       }
     }
 
+    // LLM model choice: same mobileMode split as the STT model/UX above (1.7B desktop,
+    // 360M mobile/no-WebGPU). lean's own backend selection (webgpu/threads/single, in
+    // lean-chat-worker.js) replaces the old WebLLM storage-buffer-count workaround this
+    // page used to need.
+    const MODEL_1_7B = {
+      size: '~1GB',
+      cache: 'llm-smollm2-1.7b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+    };
+    const MODEL_360M = {
+      size: '~271MB',
+      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+    };
+    const LLM_MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+
     // Console toggle: setMode('mobile') or setMode('full')
     window.setMode = (mode) => { location.href = `?mode=${mode}`; };
 
@@ -258,12 +280,16 @@
     const ttsVoiceOutput = document.getElementById('tts-voice-output');
     const ttsMetricsEl = document.getElementById('tts-metrics');
 
-    // ── Update bottom description for mobile mode ──
-    if (mobileMode) {
-      document.getElementById('bottom-desc').innerHTML =
-        'STT: <a href="https://huggingface.co/ggerganov/whisper.cpp">Whisper Tiny Q5_1</a> (~31MB) via <a href="https://github.com/idle-intelligence/stt-web">whisper.cpp</a> compiled to WebAssembly.<br>' +
-        'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M Q4_K_M</a> (~271MB) via <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> compiled to WebAssembly with <a href="https://github.com/ngxson/wllama">wllama</a>.<br>' +
-        'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
+    // ── Bottom description: both lines follow mobileMode ──
+    {
+      const sttLine = mobileMode
+        ? 'STT: <a href="https://huggingface.co/ggerganov/whisper.cpp">Whisper Tiny Q5_1</a> (~31MB) via <a href="https://github.com/idle-intelligence/stt-web">whisper.cpp</a> compiled to WebAssembly.'
+        : 'STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.';
+      const llmLine = mobileMode
+        ? 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.'
+        : 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.';
+      const ttsLine = 'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
+      document.getElementById('bottom-desc').innerHTML = `${sttLine}<br>${llmLine}<br>${ttsLine}`;
     }
 
     // ── Shared state ──
@@ -272,10 +298,6 @@
     let pendingLlmText = '';
     let llmDone = false;
     let autoRestartEnabled = false;
-
-    const SYSTEM_PROMPT = 'You are a helpful, concise voice assistant. Your text is read aloud. Keep answers to one to three sentences.';
-    const MAX_TURNS = 5;
-    let chatHistory = [];
 
     function isUsableTranscript(text) {
       return /[a-zA-ZÀ-ÿ]{2,}/.test(text);
@@ -294,27 +316,11 @@
     let llmCached = false;
     let ttsCached = false;
 
-    // Full mode only: WebLLM model selection
-    let selectedModel = null;
-    let modelSize = null;
-
     if (mobileMode) {
       // STT: Whisper model cached by worker via Cache API
       try {
         const cache = await caches.open('whisper-model-v1');
         if (await cache.match('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin')) sttCached = true;
-      } catch (_) {}
-
-      // LLM: check if wllama model is cached (wllama uses OPFS, not Cache API)
-      try {
-        const opfsRoot = await navigator.storage.getDirectory();
-        const cacheDir = await opfsRoot.getDirectoryHandle('cache');
-        for await (const [name] of cacheDir.entries()) {
-          if (name.includes('SmolLM2-360M-Instruct-Q4_K_M')) {
-            llmCached = true;
-            break;
-          }
-        }
       } catch (_) {}
     } else {
       // Full mode: Kyutai STT cache
@@ -324,43 +330,12 @@
         const cached = await cache.match(`${HF_BASE}/stt-1b-en_fr-q4_0.gguf`);
         if (cached) sttCached = true;
       } catch (_) {}
-
-      // Full mode: WebLLM model selection
-      const isMobile = navigator.userAgentData?.mobile
-        ?? /Android|iPhone|iPod|webOS/i.test(navigator.userAgent);
-
-      if (isMobile) {
-        selectedModel = 'SmolLM2-360M-Instruct-q4f32_1-MLC';
-        modelSize = '~290MB';
-        const label = document.getElementById('llm-model-label');
-        if (label) label.textContent = '360M';
-      } else {
-        selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-        modelSize = '~2.7GB';
-        try {
-          const adapter = await navigator.gpu.requestAdapter();
-          if (adapter?.features.has('shader-f16')) {
-            selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
-            modelSize = '~1GB';
-          }
-        } catch (_) {}
-      }
-
-      try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
-          if (!hasSmolLM2) continue;
-          if (entries.some(r => r.url.includes(selectedModel))) {
-            llmCached = true;
-          } else {
-            await caches.delete(key);
-          }
-        }
-      } catch (_) {}
     }
+
+    try {
+      const cache = await caches.open(LLM_MODEL.cache);
+      llmCached = !!(await cache.match(LLM_MODEL.gguf));
+    } catch (_) {}
 
     // TTS cache (same for both modes)
     const MODEL_CACHE = 'tts-model-v3';
@@ -377,16 +352,12 @@
 
     if (mobileMode) {
       sttStatusText.textContent = sttCached ? 'cached (~31MB)' : '~31MB';
-      llmStatusText.textContent = llmCached ? 'cached (~271MB)' : '~271MB';
-      ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
-      const label = document.getElementById('llm-model-label');
-      if (label) label.textContent = '360M (mobile)';
       sttRecordBtn.textContent = 'start';
     } else {
       sttStatusText.textContent = sttCached ? 'cached (~600MB)' : '~600MB';
-      llmStatusText.textContent = llmCached ? `cached (${modelSize})` : modelSize;
-      ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
     }
+    llmStatusText.textContent = llmCached ? `cached (${LLM_MODEL.size})` : LLM_MODEL.size;
+    ttsStatusText.textContent = ttsCached ? 'cached (~130MB)' : '~130MB';
 
     // ════════════════════════════════════════════
     // Full-mode STT (Kyutai)
@@ -410,7 +381,7 @@
 
       sttClient = new SttClient({
         baseUrl: 'https://idle-intelligence.github.io/stt-web',
-        workerUrl: '../stt/worker.js',
+        workerUrl: '../stt/worker.js?v=2',
         audioProcessorUrl: '../stt/audio-processor.js',
 
         onStatus: (text, ready, progress) => {
@@ -791,10 +762,7 @@
       }
       autoRestartEnabled = false;
       llmAbort = true;
-      if (mobileMode && wllamaAbortSignal) {
-        try { wllamaAbortSignal(); } catch (_) {}
-        wllamaAbortSignal = null;
-      }
+      llmWorker.postMessage({ type: 'stop' });
       handleTtsMessage('clear');
       pipelineBusy = false;
       updateRecordBtn();
@@ -813,89 +781,87 @@
     });
 
     // ════════════════════════════════════════════
-    // Full-mode LLM (WebLLM)
+    // LLM (lean, in a Worker — see lean-chat-worker.js). Multi-turn: the
+    // worker's engine keeps its own conversation (chatGenerate/chatReset,
+    // crates/lean/src/chat.rs), so no chatHistory array and no per-turn
+    // reset here — only stopEverything/reset send {type:'reset'}.
     // ════════════════════════════════════════════
 
-    let engine = null;
+    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-06-lean-878b1a1', import.meta.url), { type: 'module' });
+    let llmLoaded = false;
+    let llmGenStart = 0;
+    let llmSentenceBuffer = '';
+    let llmResolveReady = null;
+    let llmRejectReady = null;
 
-    async function loadLlmFull() {
-      const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
-      llmStatusText.textContent = 'loading...';
-      try {
-        engine = await CreateMLCEngine(selectedModel, {
-          initProgressCallback: (report) => {
-            const pct = (report.progress * 100).toFixed(0);
-            const mbMatch = report.text.match(/([\d.]+)\s*MB/);
-            const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB, ` : '';
-            const verb = llmCached ? 'Loading' : 'Downloading';
-            const phase = pct === '100' ? ' — testing WebGPU...' : '';
-            llmStatusText.textContent = `${verb}: ${mb}${pct}%${phase}`;
-          },
-        });
-        llmStatusText.textContent = 'ready';
+    llmWorker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'status') {
+        llmStatusText.textContent = msg.text;
+      } else if (msg.type === 'ready') {
+        llmLoaded = true;
         llmReady = true;
-      } catch (err) {
-        const msg = err.message || String(err);
-        if (/network|cache|fetch/i.test(msg)) {
-          llmStatusText.textContent = 'download failed';
-        } else if (/VK_ERROR|pipeline/i.test(msg)) {
-          llmStatusText.textContent = 'WebGPU not stable on this device';
-        } else {
-          llmStatusText.textContent = 'failed: ' + msg;
+        llmStatusText.textContent = 'ready';
+        if (llmResolveReady) { llmResolveReady(); llmResolveReady = null; llmRejectReady = null; }
+      } else if (msg.type === 'token') {
+        llmOutput.textContent += msg.text;
+        llmSentenceBuffer += msg.text;
+        let boundary;
+        while ((boundary = llmSentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+          const ch = llmSentenceBuffer[boundary];
+          const cutAt = ch === '\n' ? boundary : boundary + 1;
+          const sentence = llmSentenceBuffer.slice(0, cutAt).trim();
+          llmSentenceBuffer = llmSentenceBuffer.slice(cutAt).trimStart();
+          if (sentence) handleTtsMessage('chunk', sentence);
         }
-        console.error(err);
-      }
-    }
-
-    // ════════════════════════════════════════════
-    // Mobile LLM (wllama)
-    // ════════════════════════════════════════════
-
-    let wllama = null;
-    let wllamaAbortSignal = null;
-
-    async function loadLlmMobile() {
-      const { Wllama, LoggerWithoutDebug } = await import('https://idle-intelligence.github.io/llm-web/pkg/wllama/index.js');
-
-      llmStatusText.textContent = 'loading...';
-      try {
-        wllama = new Wllama({
-          'single-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/single-thread/wllama.wasm',
-          'multi-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/multi-thread/wllama.wasm',
-        }, { suppressNativeLog: true, logger: LoggerWithoutDebug });
-        await wllama.loadModelFromHF(
-          'bartowski/SmolLM2-360M-Instruct-GGUF',
-          'SmolLM2-360M-Instruct-Q4_K_M.gguf',
-          {
-            n_ctx: 2048,
-            n_batch: 128,
-            progressCallback: ({ loaded, total }) => {
-              if (total > 0) {
-                const mb = (loaded / 1024 / 1024).toFixed(0);
-                const pct = ((loaded / total) * 100).toFixed(0);
-                const verb = llmCached ? 'Loading' : 'Downloading';
-                llmStatusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
-              }
-            },
-          }
-        );
-        console.log('[llm] SmolLM2-360M-Instruct-Q4_K_M loaded (wllama)');
-        llmStatusText.textContent = 'ready';
+        if (llmSentenceBuffer.length > 200) {
+          const spaceAt = llmSentenceBuffer.lastIndexOf(' ', 200);
+          const cut = spaceAt > 0 ? spaceAt : 200;
+          const fragment = llmSentenceBuffer.slice(0, cut).trim();
+          llmSentenceBuffer = llmSentenceBuffer.slice(cut).trimStart();
+          if (fragment) handleTtsMessage('chunk', fragment);
+        }
+      } else if (msg.type === 'done') {
+        if (!llmAbort) {
+          if (llmSentenceBuffer.trim()) handleTtsMessage('chunk', llmSentenceBuffer.trim());
+          handleTtsMessage('done');
+          const elapsed = (performance.now() - llmGenStart) / 1000;
+          const tokSec = (msg.tokens / elapsed).toFixed(1);
+          llmMetricsEl.textContent = `${msg.tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+        }
         llmReady = true;
-      } catch (err) {
-        llmStatusText.textContent = 'failed: ' + (err.message || String(err));
-        console.error(err);
+        llmStatusText.textContent = 'ready';
+      } else if (msg.type === 'error') {
+        const text = msg.message || '';
+        if (msg.phase === 'load') {
+          if (/network|cache|fetch|HTTP/i.test(text)) {
+            llmStatusText.textContent = 'download failed';
+          } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
+            llmStatusText.textContent = 'WebGPU not stable on this device';
+          } else {
+            llmStatusText.textContent = 'failed: ' + text;
+          }
+          if (llmRejectReady) { llmRejectReady(new Error(text)); llmResolveReady = null; llmRejectReady = null; }
+          llmReady = llmLoaded;
+        } else {
+          if (!llmAbort) llmOutput.textContent = 'error: ' + text;
+          llmReady = true;
+          llmStatusText.textContent = 'ready';
+        }
+        console.error(text);
       }
-    }
+    };
 
-    // ════════════════════════════════════════════
-    // Generate (branches on mode)
-    // ════════════════════════════════════════════
+    function loadLlm() {
+      llmStatusText.textContent = 'loading...';
+      llmWorker.postMessage({ type: 'load', model: LLM_MODEL });
+      return new Promise((resolve, reject) => { llmResolveReady = resolve; llmRejectReady = reject; });
+    }
 
     async function generate() {
       const text = pendingLlmText.trim().slice(0, 2000);
       pendingLlmText = '';
-      if (!text) return;
+      if (!text || !llmLoaded) return;
 
       llmReady = false;
       llmAbort = false;
@@ -904,163 +870,11 @@
       llmStatusText.textContent = 'generating...';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
+      llmSentenceBuffer = '';
+      llmGenStart = performance.now();
       handleTtsMessage('clear');
 
-      const start = performance.now();
-
-      if (mobileMode) {
-        await generateMobile(text, start);
-      } else {
-        await generateFull(text, start);
-      }
-    }
-
-    async function generateFull(text, start) {
-      if (!engine) return;
-      try {
-        chatHistory.push({ role: 'user', content: text });
-        const messages = [
-          { role: 'system', content: SYSTEM_PROMPT },
-          ...chatHistory,
-        ];
-        const chunks = await engine.chat.completions.create({
-          messages,
-          max_tokens: 256,
-          stream: true,
-        });
-
-        let tokens = 0;
-        let sentenceBuffer = '';
-        for await (const chunk of chunks) {
-          if (llmAbort) break;
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) {
-            llmOutput.textContent += delta;
-            tokens++;
-            sentenceBuffer += delta;
-            let boundary;
-            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-              const ch = sentenceBuffer[boundary];
-              const cutAt = ch === '\n' ? boundary : boundary + 1;
-              const sentence = sentenceBuffer.slice(0, cutAt).trim();
-              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-              if (sentence) handleTtsMessage('chunk', sentence);
-            }
-            if (sentenceBuffer.length > 200) {
-              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-              const cut = spaceAt > 0 ? spaceAt : 200;
-              const fragment = sentenceBuffer.slice(0, cut).trim();
-              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-              if (fragment) handleTtsMessage('chunk', fragment);
-            }
-          }
-        }
-        if (!llmAbort) {
-          if (sentenceBuffer.trim()) handleTtsMessage('chunk', sentenceBuffer.trim());
-          handleTtsMessage('done');
-          chatHistory.push({ role: 'assistant', content: llmOutput.textContent });
-          const elapsed = (performance.now() - start) / 1000;
-          const tokSec = (tokens / elapsed).toFixed(1);
-          llmMetricsEl.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
-        }
-      } catch (err) {
-        if (!llmAbort) llmOutput.textContent = 'error: ' + err.message;
-        console.error(err);
-      }
-
-      if (llmAbort) {
-        await engine.resetChat();
-      } else if (chatHistory.length > MAX_TURNS * 2) {
-        chatHistory = chatHistory.slice(-MAX_TURNS * 2);
-        await engine.resetChat();
-      }
-      llmReady = true;
-      llmStatusText.textContent = 'ready';
-    }
-
-    async function generateMobile(text, start) {
-      if (!wllama) return;
-      // Build prompt with chat history in SmolLM2 chat format
-      chatHistory.push({ role: 'user', content: text });
-
-      // Format as instruct prompt
-      let prompt = `<|im_start|>system\n${SYSTEM_PROMPT}<|im_end|>\n`;
-      const historyWindow = chatHistory.slice(-(MAX_TURNS * 2));
-      for (const msg of historyWindow) {
-        prompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
-      }
-      prompt += '<|im_start|>assistant\n';
-
-      let fullResponse = '';
-      let sentenceBuffer = '';
-      let tokens = 0;
-
-      try {
-        wllamaAbortSignal = null;
-        await wllama.createCompletion(prompt, {
-          nPredict: 256,
-          sampling: { temp: 0.7, top_k: 40, top_p: 0.9 },
-          onNewToken: (token, piece, currentText, { abortSignal }) => {
-            if (llmAbort) {
-              abortSignal();
-              return;
-            }
-            wllamaAbortSignal = abortSignal;
-            tokens++;
-            // piece may be a Uint8Array — decode to string
-            const pieceStr = typeof piece === 'string' ? piece : new TextDecoder().decode(piece);
-
-            // Stop at end token
-            if (pieceStr.includes('<|im_end|>') || currentText.includes('<|im_end|>')) {
-              abortSignal();
-              return;
-            }
-
-            fullResponse = currentText.replace(/<\|im_end\|>.*$/s, '');
-            llmOutput.textContent = fullResponse;
-            sentenceBuffer += pieceStr;
-
-            let boundary;
-            while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-              const ch = sentenceBuffer[boundary];
-              const cutAt = ch === '\n' ? boundary : boundary + 1;
-              const sentence = sentenceBuffer.slice(0, cutAt).trim();
-              sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-              if (sentence) handleTtsMessage('chunk', sentence);
-            }
-            if (sentenceBuffer.length > 200) {
-              const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-              const cut = spaceAt > 0 ? spaceAt : 200;
-              const fragment = sentenceBuffer.slice(0, cut).trim();
-              sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-              if (fragment) handleTtsMessage('chunk', fragment);
-            }
-          },
-        });
-
-        if (!llmAbort) {
-          const cleanResponse = fullResponse.replace(/<\|im_end\|>.*$/s, '').trim();
-          llmOutput.textContent = cleanResponse;
-          if (sentenceBuffer.trim()) handleTtsMessage('chunk', sentenceBuffer.trim());
-          handleTtsMessage('done');
-          chatHistory.push({ role: 'assistant', content: cleanResponse });
-          const elapsed = (performance.now() - start) / 1000;
-          const tokSec = (tokens / elapsed).toFixed(1);
-          llmMetricsEl.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
-        }
-      } catch (err) {
-        if (!llmAbort) llmOutput.textContent = 'error: ' + (err.message || String(err));
-        console.error(err);
-      }
-
-      if (llmAbort) {
-        chatHistory = [];
-      } else if (chatHistory.length > MAX_TURNS * 2) {
-        chatHistory = chatHistory.slice(-MAX_TURNS * 2);
-      }
-      llmReady = true;
-      llmStatusText.textContent = 'ready';
-      wllamaAbortSignal = null;
+      llmWorker.postMessage({ type: 'chat', text });
     }
 
     // ════════════════════════════════════════════
@@ -1351,18 +1165,13 @@
       pendingLlmText = '';
       llmAbort = true;
       llmDone = false;
-      chatHistory = [];
       autoRestartEnabled = false;
       pipelineBusy = false;
       updateRecordBtn();
       sttRecordBtn.disabled = false;
 
-      // Abort wllama if generating
-      if (mobileMode && wllamaAbortSignal) {
-        try { wllamaAbortSignal(); } catch (_) {}
-        wllamaAbortSignal = null;
-      }
-      if (!mobileMode && engine && llmReady) engine.resetChat();
+      llmWorker.postMessage({ type: 'stop' });
+      if (llmLoaded) llmWorker.postMessage({ type: 'reset' });
 
       handleTtsMessage('clear');
 
@@ -1372,9 +1181,7 @@
       sttMetricsEl.textContent = '';
       llmOutput.textContent = '';
       llmMetricsEl.textContent = '';
-      if (llmReady || (!mobileMode && engine) || (mobileMode && wllama)) {
-        llmStatusText.textContent = 'ready';
-      }
+      if (llmLoaded) llmStatusText.textContent = 'ready';
       ttsMetricsEl.textContent = '';
     }
 
@@ -1386,11 +1193,9 @@
 
     async function loadAll() {
       loadBtn.disabled = true;
-      if (mobileMode) {
-        await Promise.all([loadSttMobile(), loadLlmMobile(), initTts()]);
-      } else {
-        await Promise.all([loadSttFull(), loadLlmFull(), initTts()]);
-      }
+      const sttPromise = mobileMode ? loadSttMobile() : loadSttFull();
+      const llmPromise = loadLlm().catch((err) => console.error(err));
+      await Promise.all([sttPromise, llmPromise, initTts()]);
       resetBtn.disabled = false;
       if (llmReady && pendingLlmText) generate();
     }
@@ -1403,7 +1208,7 @@
 
     // Cleanup on page unload to free WASM workers and memory
     window.addEventListener('pagehide', () => {
-      if (wllama) wllama.exit().catch(() => {});
+      llmWorker.terminate();
       if (sttClient) { try { sttClient.destroy?.(); } catch (_) {} }
     });
   </script>
