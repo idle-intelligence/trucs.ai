@@ -32,8 +32,7 @@ const FIFTY_M_ZOOM = 6; // switch to finer country borders and city set past thi
 
 const COUNTRIES_110M_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson';
 // Finer coastlines past FIFTY_M_ZOOM come from two files rather than
-// ne_50m_admin_0_countries.geojson: measured gzip transfer sizes (curl -H
-// 'Accept-Encoding: gzip' -w '%{size_download}', 2026-09-23) were
+// ne_50m_admin_0_countries.geojson: measured gzip transfer sizes were
 // ne_50m_admin_0_countries.geojson: 1,022,612 B; ne_50m_land.geojson (fill
 // only): 529,836 B; ne_50m_admin_0_boundary_lines_land.geojson (borders
 // only): 195,680 B. Land + boundary together (725,516 B) is ~29% smaller
@@ -337,8 +336,7 @@ export function createMapView(canvas, { onTap } = {}) {
   // Tries a small set of offsets around (x, y) for `text`; reserves and
   // returns the first that doesn't collide, or null if every offset does
   // (the dot is still drawn, just without a label).
-  // Draws `text` (plain, no background, no stroke halo — TC, 2026-09-23:
-  // "the cities names with a white underlay feel wrong") at the first free
+  // Draws `text` (plain, no background, no stroke halo) at the first free
   // offset around (x, y), or nothing if every offset collides.
   function placeLabel(x, y, text, color) {
     const w = ctx.measureText(text).width;
@@ -389,7 +387,7 @@ export function createMapView(canvas, { onTap } = {}) {
 
   // A small opaque-ish white backing sized to the given box — used behind
   // text instead of a stroke halo, which read as a smeared white glow
-  // around each letter (TC, 2026-09-23).
+  // around each letter.
   const PRINT_BG = 'rgba(255, 255, 255, 0.9)';
 
   function printBg(x1, y1, x2, y2) {
@@ -423,8 +421,7 @@ export function createMapView(canvas, { onTap } = {}) {
     }
   }
 
-  // Paint order vs. collision-priority order are different things (TC,
-  // 2026-09-23, after background dots painted over used-station blocks):
+  // Paint order vs. collision-priority order are different things:
   // background dots must be painted BEFORE used-station dots/blocks so the
   // blocks' print-label backgrounds sit visually on top of them, but the id
   // LABELS still collide in lowest-priority order — the point, used-station
@@ -442,8 +439,7 @@ export function createMapView(canvas, { onTap } = {}) {
   // to be visually underneath anything that outranks it, which painting
   // order alone guarantees. (A first attempt at this bug reserved dots
   // here too, which made almost every used-station block placement fail at
-  // any zoom dense enough to have background dots near the point — TC,
-  // 2026-09-23.)
+  // any zoom dense enough to have background dots near the point.)
   function drawStationDots() {
     for (const s of visibleStations) {
       const p = screenOf(s.lat, s.lon);
@@ -470,10 +466,9 @@ export function createMapView(canvas, { onTap } = {}) {
     // labels are ready just before a station pans into view). The cap used
     // to apply to that combined, id-sorted list, so an off-canvas station
     // with an alphabetically early id could burn the whole budget before
-    // any genuinely on-screen station got a single attempt (TC, 2026-09-23:
-    // a station stayed unlabelled for several pans, only labelling once it
-    // was "well into the map"). On-canvas stations are tried first, with no
-    // cap — the real limit on how many can ever succeed is screen space,
+    // any genuinely on-screen station got a single attempt. On-canvas
+    // stations are tried first, with no cap — the real limit on how many
+    // can ever succeed is screen space,
     // enforced by the collision pass itself — and only the padding-margin
     // stations share the capped remainder, since they're a preload, not
     // something the visitor is looking at yet.
@@ -543,9 +538,9 @@ export function createMapView(canvas, { onTap } = {}) {
   // near and a far distance — 16 candidates total, up from the original 4
   // sides only. At region zoom, 5 used-station blocks packed close together
   // could exhaust 4 candidates before every block had a home, so 1-2 blocks
-  // were silently dropped (TC, 2026-09-23: "only 2 of the 5 ... are
-  // drawn"). More candidates makes that far less likely; the compact
-  // last-resort fallback in placeBlock() below covers whatever's left.
+  // were silently dropped. More candidates makes that far less likely; the
+  // compact last-resort fallback in placeBlock() below covers whatever's
+  // left.
   function blockCandidates(w, h, gaps) {
     const offsets = [];
     for (const gap of gaps) {
@@ -567,9 +562,9 @@ export function createMapView(canvas, { onTap } = {}) {
   // (full) block only tries two distances — beyond that a "nearby" block
   // stops reading as belonging to its dot. The compact last-resort block is
   // small enough, and rare enough, that it can afford to search much
-  // farther out (TC, 2026-09-23: at region zoom, 5 clustered stations'
-  // blocks can fully surround the point within the first two distances,
-  // so the 5th needs a wider search to find any gap at all).
+  // farther out (at region zoom, 5 clustered stations' blocks can fully
+  // surround the point within the first two distances, so the 5th needs a
+  // wider search to find any gap at all).
   function tryPlaceBox(x, y, lines, gaps) {
     const pad = 3;
     const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2;
@@ -664,7 +659,7 @@ export function createMapView(canvas, { onTap } = {}) {
   // The status line and result panel are HTML/CSS overlays, not drawn on
   // the canvas, but they cover real screen area. A fixed guessed box here
   // was the root cause of a station staying unlabelled for several pans on
-  // phone (TC, 2026-09-23): on narrow layouts the result panel moves BELOW
+  // phone: on narrow layouts the result panel moves BELOW
   // the map (see the index.html media query), so the guessed top-right
   // 160x100 box was reserved on the canvas even though nothing was really
   // there, and it was large enough relative to a phone-width canvas to
@@ -768,7 +763,7 @@ export function createMapView(canvas, { onTap } = {}) {
 
   // ── Pointer interaction: drag to pan, wheel/pinch to zoom, tap to pick. ──
   //
-  // Root cause of "when I zoom, it moves" (TC, 2026-09-23): pinch-zoom
+  // Root cause of the map drifting when zooming: pinch-zoom
   // called setZoom() with no anchor, which defaults to the canvas center —
   // so unless a pinch happened to be dead-center, the geo point under the
   // fingers drifted every frame. Fixed by anchoring at the pinch midpoint
@@ -927,8 +922,8 @@ export function createMapView(canvas, { onTap } = {}) {
       showRegion(lat, lon);
     },
     // Sets the point and its stations without moving the view — used for a
-    // map tap, which TC wants to select and compute in place. Stations
-    // outside the current view still count; their lines just run off-edge.
+    // map tap, which selects and computes in place. Stations outside the
+    // current view still count; their lines just run off-edge.
     setSelection(lat, lon, used) {
       point = { lat, lon };
       usedStations = used;

@@ -207,11 +207,10 @@
 
     // The map's shape follows the screen via plain CSS (see #map-canvas /
     // the portrait media query below) — width: 100% of its wrapper plus a
-    // fixed aspect-ratio, no JS height computation of any kind (TC,
-    // 2026-09-23: "without any complicated dynamic vertical scaffolding
-    // and scaling. Simple stuff"). The canvas's backing store still
-    // follows whatever CSS size results, through map.js's existing
-    // ResizeObserver — that's just pixel-buffer bookkeeping, not layout.
+    // fixed aspect-ratio, no JS height computation of any kind. The
+    // canvas's backing store still follows whatever CSS size results,
+    // through map.js's existing ResizeObserver — that's just pixel-buffer
+    // bookkeeping, not layout.
     window.addEventListener('resize', syncOverlayRects);
     window.addEventListener('orientationchange', syncOverlayRects);
 
@@ -447,10 +446,9 @@
 
       // Below 480 CSS px (matching the map's own compact station-block
       // breakpoint) the full sentence takes up a third of the map, so it
-      // shortens to the two lines TC gave verbatim — and if line 1 still
-      // wraps at the current canvas width (measured, not guessed), the
-      // ", N no report" note is dropped rather than let it wrap to two
-      // visual lines.
+      // shortens to two lines — and if line 1 still wraps at the current
+      // canvas width (measured, not guessed), the ", N no report" note is
+      // dropped rather than let it wrap to two visual lines.
       if (mapCanvasEl.getBoundingClientRect().width < 480) {
         const noObsShort = result.missingCount > 0 ? `, ${result.missingCount} no report` : '';
         let line1 = `${latLonLine(lat, lon)}, ${final.length} stn < 100 km${noObsShort}`;
