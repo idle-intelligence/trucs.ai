@@ -5,9 +5,15 @@ title: blog
 
 # blog
 
+## posts
+
 [About astres (ridgeline)](/blog/about-astres)
 
 [Browser weather](/blog/browser-weather)
+
+---
+
+## clauderies
 
 [Claude and stt-web](/blog/claude-and-stt-web)
 
