@@ -9,6 +9,10 @@ title: blog
 
 [Browser weather](/blog/browser-weather)
 
+---
+
+## clauderies
+
 [Claude and stt-web](/blog/claude-and-stt-web)
 
 [Claude and the Swarm](/blog/claude-and-the-swarm) (4 parts)
