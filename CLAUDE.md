@@ -39,7 +39,7 @@ Flat. Each project gets a top-level directory. No `/demos/` grouping — the hom
 
 - **STT client**: `SttClient` from `stt/stt-client.js`. Worker-based (`stt/worker.js`). Audio resampled to 24kHz, chunked in 1920-sample frames (80ms Mimi codec frames). Worker accepts `{ type: 'audio', samples }` messages.
 - **TTS**: `TtsWorker` from `tts/tts-worker.js`. Audio streamed to `AudioWorklet` (`tts/audio-worklet.js`). Worklet supports `finish`/`ended` signaling for playback completion detection.
-- **LLM**: WebLLM engine loaded from CDN. KV cache reused across turns (don't call `resetChat()` between turns). Only reset on abort, history trim, or explicit reset.
+- **LLM**: `lean` engine (llm-web), loaded in a Worker, WASM + WebGPU/CPU-threads/single-thread by capability. Single-turn: the page calls `chatReset()` before every `chatGenerate()`, so each turn starts fresh.
 - **Voice loop** (`stt-llm-tts`): Silence detection via `onTranscript` — only tokens with letters reset the 1.5s timer. Repeat detection filters STT hallucinations (>3 identical consecutive tokens ignored). `autoRestartEnabled` flag guards the loop.
 
 ## Local Development
@@ -54,3 +54,4 @@ Flat. Each project gets a top-level directory. No `/demos/` grouping — the hom
 - Binary assets go in their project subdirectory.
 - New project = new top-level directory + a link on the home page.
 - Bottom-of-page descriptions use `.panel-desc` class (grey, small text with links to models and source repos).
+- Loading URLs for wasm/model assets carry a build tag (e.g. `?v=<tag>`); bump it on every rebuild so browsers don't keep serving a stale cached module.
