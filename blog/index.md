@@ -5,6 +5,8 @@ title: blog
 
 # blog
 
+## posts
+
 [About astres (ridgeline)](/blog/about-astres)
 
 [Browser weather](/blog/browser-weather)
