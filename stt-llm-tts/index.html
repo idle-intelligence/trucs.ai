@@ -467,6 +467,10 @@
     async function playDemoFull() {
       if (!sttClient) return;
       reset();
+      // Same reset the mic path does (toggleRecordingFull): the repeat filter
+      // must not count the previous demo's identical transcript.
+      lastToken = '';
+      repeatCount = 0;
       demoBtn.disabled = true;
       sttRecordBtn.disabled = true;
 
@@ -788,7 +792,7 @@
     // reset here — only stopEverything/reset send {type:'reset'}.
     // ════════════════════════════════════════════
 
-    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-07-init-once', import.meta.url), { type: 'module' });
+    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-07-voice-fixes', import.meta.url), { type: 'module' });
     let llmLoaded = false;
     let llmGenStart = 0;
     let llmSentenceBuffer = '';
