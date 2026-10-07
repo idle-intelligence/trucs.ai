@@ -118,8 +118,8 @@
 
     <hr>
 
-    <p id="desc-full" class="panel-desc"><a href="https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2-1.7B-Instruct</a>, single-turn chat via WebGPU with <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>.</p>
-    <p id="desc-mobile" class="panel-desc" hidden><a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_K_M</a> (~271MB) via <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> compiled to WebAssembly with <a href="https://github.com/ngxson/wllama">wllama</a>.</p>
+    <p id="desc-full" class="panel-desc"><a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, single-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.</p>
+    <p id="desc-mobile" class="panel-desc" hidden><a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.</p>
 
     <hr>
     <p><a href="/">← trucs.ai</a></p>
@@ -188,6 +188,13 @@
       resetVoiceTimeout();
     };
 
+    // ── Voice helper ──
+
+    function sendVoiceChunks(text) {
+      if (!voiceConnected) return;
+      channel.postMessage({ from: 'llm', type: 'chunk', text });
+    }
+
     // ── Mode detection ──
 
     const modeParam = new URLSearchParams(location.search).get('mode');
@@ -200,7 +207,7 @@
     } else if (modeParam === 'full') {
       mobileMode = false;
     } else if (isMobile) {
-      // Always use wllama on mobile — smaller model, better experience
+      // Always use the small model on mobile — smaller model, better experience
       mobileMode = true;
     } else {
       if (!navigator.gpu) {
@@ -214,315 +221,162 @@
       }
     }
 
+    // ════════════════════════════════════════════
+    // lean engine, in a Worker. mobileMode picks the model (1.7B desktop,
+    // 360M mobile/no-WebGPU); lean itself still picks the best backend it
+    // can run that model on (WebGPU, then CPU threads, then single-thread —
+    // see lean-chat-worker.js).
+    // ════════════════════════════════════════════
+
+    const MODEL_1_7B = {
+      size: '~1GB',
+      cache: 'llm-smollm2-1.7b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+      name: 'SmolLM2-1.7B',
+    };
+    const MODEL_360M = {
+      size: '~271MB',
+      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+      name: 'SmolLM2-360M',
+    };
+
+    const MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+
     if (mobileMode) {
       descFull.hidden = true;
       descMobile.hidden = false;
-      document.getElementById('model-name').textContent = 'SmolLM2-360M';
+      document.getElementById('model-name').textContent = MODEL.name;
       document.getElementById('mobile-warning').hidden = false;
       document.getElementById('voice-link').hidden = true;
     }
 
-    // ── Voice helper ──
+    const worker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-06-lean-878b1a1', import.meta.url), { type: 'module' });
 
-    function sendVoiceChunks(text) {
-      if (!voiceConnected) return;
-      channel.postMessage({ from: 'llm', type: 'chunk', text });
-    }
+    let ready = false;
+    let isCached = false;
+    try {
+      const cache = await caches.open(MODEL.cache);
+      isCached = !!(await cache.match(MODEL.gguf));
+      if (isCached) loadBtn.textContent = 'load';
+    } catch (_) {}
+    statusText.textContent = isCached
+      ? `model cached locally: ${MODEL.size}`
+      : `model download: ${MODEL.size}`;
 
-    // ════════════════════════════════════════════
-    // Full mode (WebGPU via WebLLM)
-    // ════════════════════════════════════════════
+    let sentenceBuffer = '';
+    let genStart = 0;
+    let firstTokenTime = null;
+    let backend = null;
 
-    if (!mobileMode) {
-      const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
-
-      let engine = null;
-      let isCached = false;
-
-      // Desktop + shader-f16: 1.7B q4f16 (~1GB)
-      // Desktop − shader-f16: 1.7B q4f32 (~2.7GB)
-      let selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-      let modelSize = '~2.7GB';
-      try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (adapter?.features.has('shader-f16')) {
-          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
-          modelSize = '~1GB';
-        }
-      } catch (_) {}
-
-      try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
-          if (!hasSmolLM2) continue;
-          if (entries.some(r => r.url.includes(selectedModel))) {
-            isCached = true;
-            loadBtn.textContent = 'load';
-          } else {
-            await caches.delete(key);
-          }
-        }
-      } catch (_) {}
-      statusText.textContent = isCached
-        ? `model cached locally: ${modelSize}`
-        : `model download: ${modelSize}`;
-
-      async function loadModel() {
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'status') {
+        statusText.textContent = msg.text;
+      } else if (msg.type === 'ready') {
+        ready = true;
+        backend = msg.backend;
+        console.log(`[llm] backend: ${msg.backend} (${msg.label})`);
+        statusText.textContent = 'ready';
         loadBtn.disabled = true;
-        statusText.textContent = 'loading...';
-        try {
-          engine = await CreateMLCEngine(selectedModel, {
-            initProgressCallback: (report) => {
-              const pct = (report.progress * 100).toFixed(0);
-              const mbMatch = report.text.match(/([\d.]+)\s*MB/);
-              const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
-              const verb = isCached ? 'Loading' : 'Downloading';
-              const phase = pct === '100' ? ' — testing WebGPU...' : '';
-              statusText.textContent = `${verb}: ${mb}${pct}%${phase}`;
-            },
-          });
-          statusText.textContent = 'ready';
-          sendBtn.disabled = false;
-        } catch (err) {
-          const msg = err.message || String(err);
-          if (/network|cache|fetch/i.test(msg)) {
-            statusText.textContent = 'download failed — check your connection and try again';
-            loadBtn.disabled = false;
-          } else if (/VK_ERROR|pipeline/i.test(msg)) {
+        sendBtn.disabled = false;
+      } else if (msg.type === 'token') {
+        if (firstTokenTime === null) {
+          firstTokenTime = performance.now();
+          if (backend !== 'webgpu') statusText.textContent = 'ready';
+        }
+        output.textContent += msg.text;
+        sentenceBuffer += msg.text;
+        let boundary;
+        while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+          const ch = sentenceBuffer[boundary];
+          const cutAt = ch === '\n' ? boundary : boundary + 1;
+          const sentence = sentenceBuffer.slice(0, cutAt).trim();
+          sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
+          if (sentence) sendVoiceChunks(sentence);
+        }
+        if (sentenceBuffer.length > 200) {
+          const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
+          const cut = spaceAt > 0 ? spaceAt : 200;
+          sendVoiceChunks(sentenceBuffer.slice(0, cut).trim());
+          sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
+        }
+      } else if (msg.type === 'done') {
+        if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
+        if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
+        if (backend === 'webgpu') {
+          const elapsed = (performance.now() - genStart) / 1000;
+          const tokSec = (msg.tokens / elapsed).toFixed(1);
+          stats.textContent = `${msg.tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+        } else if (firstTokenTime !== null) {
+          const ttfb = ((firstTokenTime - genStart) / 1000).toFixed(1);
+          const decodeTime = (performance.now() - firstTokenTime) / 1000;
+          const tokSec = decodeTime > 0 ? (msg.tokens / decodeTime).toFixed(1) : '—';
+          stats.textContent = `TTFB ${ttfb}s · ${msg.tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
+        } else {
+          stats.textContent = 'no tokens generated';
+        }
+        statusText.textContent = 'ready';
+        sendBtn.disabled = false;
+      } else if (msg.type === 'error') {
+        const text = msg.message || '';
+        if (msg.phase === 'load') {
+          if (/network|cache|fetch|HTTP/i.test(text)) {
+            statusText.textContent = 'download failed, check your connection and try again';
+          } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
             statusText.textContent = 'WebGPU is not stable enough on this device yet.';
           } else {
-            statusText.textContent = 'failed to load: ' + msg;
-            loadBtn.disabled = false;
+            statusText.textContent = 'failed to load: ' + text;
           }
-          console.error(err);
-        }
-      }
-
-      async function generate() {
-        const text = input.value.trim().slice(0, 2000);
-        if (!text || !engine) return;
-
-        sendBtn.disabled = true;
-        output.textContent = '';
-        stats.textContent = '';
-        if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
-
-        const start = performance.now();
-        try {
-          const chunks = await engine.chat.completions.create({
-            messages: [
-              { role: 'system', content: 'You are a helpful assistant running entirely in the browser via WebGPU — no server, no API. This is a trucs.ai demo. The user types, you reply. Keep answers concise and clear.' },
-              { role: 'user', content: text },
-            ],
-            max_tokens: 512,
-            stream: true,
-          });
-
-          let tokens = 0;
-          let sentenceBuffer = '';
-          for await (const chunk of chunks) {
-            const delta = chunk.choices[0]?.delta?.content;
-            if (delta) {
-              output.textContent += delta;
-              tokens++;
-              sentenceBuffer += delta;
-              let boundary;
-              while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-                const ch = sentenceBuffer[boundary];
-                const cutAt = ch === '\n' ? boundary : boundary + 1;
-                const sentence = sentenceBuffer.slice(0, cutAt).trim();
-                sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-                if (sentence) sendVoiceChunks(sentence);
-              }
-              if (sentenceBuffer.length > 200) {
-                const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-                const cut = spaceAt > 0 ? spaceAt : 200;
-                sendVoiceChunks(sentenceBuffer.slice(0, cut).trim());
-                sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-              }
-            }
-          }
-          if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
-          if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
-
-          const elapsed = (performance.now() - start) / 1000;
-          const tokSec = (tokens / elapsed).toFixed(1);
-          stats.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
-        } catch (err) {
-          output.textContent = 'error: ' + err.message;
-          console.error(err);
-        }
-
-        await engine.resetChat();
-        sendBtn.disabled = false;
-      }
-
-      if (isCached) {
-        loadModel();
-      } else {
-        loadBtn.addEventListener('click', loadModel);
-      }
-      sendBtn.addEventListener('click', generate);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !sendBtn.disabled) {
-          e.preventDefault();
-          generate();
-        }
-      });
-    }
-
-    // ════════════════════════════════════════════
-    // Mobile mode (wllama WASM)
-    // ════════════════════════════════════════════
-
-    if (mobileMode) {
-      const { Wllama, LoggerWithoutDebug } = await import('https://idle-intelligence.github.io/llm-web/pkg/wllama/index.js');
-
-      let wllama = null;
-      let isCached = false;
-
-      try {
-        const opfsRoot = await navigator.storage.getDirectory();
-        const cacheDir = await opfsRoot.getDirectoryHandle('cache');
-        for await (const [name] of cacheDir.entries()) {
-          if (name.includes('SmolLM2-360M-Instruct-Q4_K_M')) {
-            isCached = true;
-            loadBtn.textContent = 'load';
-            break;
-          }
-        }
-      } catch (_) {}
-      statusText.textContent = isCached
-        ? 'model cached locally: ~271MB'
-        : 'model download: ~271MB';
-
-      async function loadModel() {
-        loadBtn.disabled = true;
-        statusText.textContent = 'loading...';
-        try {
-          wllama = new Wllama({
-            'single-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/single-thread/wllama.wasm',
-            'multi-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/multi-thread/wllama.wasm',
-          }, { suppressNativeLog: true, logger: LoggerWithoutDebug });
-
-          await wllama.loadModelFromHF(
-            'bartowski/SmolLM2-360M-Instruct-GGUF',
-            'SmolLM2-360M-Instruct-Q4_K_M.gguf',
-            {
-              n_ctx: 2048,
-              n_batch: 128,
-              progressCallback: ({ loaded, total }) => {
-                if (total > 0) {
-                  const mb = (loaded / 1024 / 1024).toFixed(0);
-                  const pct = ((loaded / total) * 100).toFixed(0);
-                  const verb = isCached ? 'Loading' : 'Downloading';
-                  statusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
-                }
-              },
-            }
-          );
-
-          statusText.textContent = 'ready';
-          sendBtn.disabled = false;
-        } catch (err) {
-          statusText.textContent = 'failed to load: ' + (err.message || String(err));
           loadBtn.disabled = false;
-          console.error(err);
+          sendBtn.disabled = true;
+        } else {
+          output.textContent = 'error: ' + text;
+          if (backend !== 'webgpu') statusText.textContent = 'ready';
+          sendBtn.disabled = false;
         }
+        console.error(text);
       }
+    };
 
-      async function generate() {
-        const text = input.value.trim().slice(0, 2000);
-        if (!text || !wllama) return;
-
-        sendBtn.disabled = true;
-        output.textContent = '';
-        stats.textContent = '';
-        statusText.textContent = 'thinking...';
-        if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
-
-        const systemPrompt = 'You are a helpful, concise assistant. Keep answers short and clear.';
-        const prompt = `<|im_start|>system\n${systemPrompt}<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
-
-        const start = performance.now();
-        let tokens = 0;
-        let firstTokenTime = null;
-        let sentenceBuffer = '';
-
-        try {
-          await wllama.createCompletion(prompt, {
-            nPredict: 512,
-            sampling: { temp: 0.7, top_k: 40, top_p: 0.9 },
-            onNewToken: (token, piece, currentText, { abortSignal }) => {
-              if (firstTokenTime === null) {
-                firstTokenTime = performance.now();
-                statusText.textContent = 'ready';
-              }
-              tokens++;
-              const pieceStr = typeof piece === 'string' ? piece : new TextDecoder().decode(piece);
-
-              if (pieceStr.includes('<|im_end|>') || currentText.includes('<|im_end|>')) {
-                abortSignal();
-                return;
-              }
-
-              const clean = currentText.replace(/<\|im_end\|>.*$/s, '');
-              output.textContent = clean;
-
-              sentenceBuffer += pieceStr;
-              let boundary;
-              while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-                const ch = sentenceBuffer[boundary];
-                const cutAt = ch === '\n' ? boundary : boundary + 1;
-                const sentence = sentenceBuffer.slice(0, cutAt).trim();
-                sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-                if (sentence) sendVoiceChunks(sentence);
-              }
-              if (sentenceBuffer.length > 200) {
-                const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-                const cut = spaceAt > 0 ? spaceAt : 200;
-                sendVoiceChunks(sentenceBuffer.slice(0, cut).trim());
-                sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-              }
-            },
-          });
-
-          if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
-          if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
-
-          if (firstTokenTime !== null) {
-            const ttfb = ((firstTokenTime - start) / 1000).toFixed(1);
-            const decodeTime = (performance.now() - firstTokenTime) / 1000;
-            const tokSec = decodeTime > 0 ? (tokens / decodeTime).toFixed(1) : '—';
-            stats.textContent = `TTFB ${ttfb}s · ${tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
-          } else {
-            stats.textContent = 'no tokens generated';
-          }
-        } catch (err) {
-          output.textContent = 'error: ' + err.message;
-          statusText.textContent = 'ready';
-          console.error(err);
-        }
-
-        sendBtn.disabled = false;
-      }
-
-      if (isCached) {
-        loadModel();
-      } else {
-        loadBtn.addEventListener('click', loadModel);
-      }
-      sendBtn.addEventListener('click', generate);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !sendBtn.disabled) {
-          e.preventDefault();
-          generate();
-        }
-      });
+    function loadModel() {
+      loadBtn.disabled = true;
+      statusText.textContent = 'loading...';
+      worker.postMessage({ type: 'load', model: MODEL });
     }
+
+    function generate() {
+      const text = input.value.trim().slice(0, 2000);
+      if (!text || !ready) return;
+      sendBtn.disabled = true;
+      output.textContent = '';
+      stats.textContent = '';
+      sentenceBuffer = '';
+      firstTokenTime = null;
+      if (backend !== 'webgpu') statusText.textContent = 'thinking...';
+      genStart = performance.now();
+      if (voiceConnected) channel.postMessage({ from: 'llm', type: 'clear' });
+      worker.postMessage({ type: 'chat', text });
+    }
+
+    if (isCached) {
+      loadModel();
+    } else {
+      loadBtn.addEventListener('click', loadModel);
+    }
+    sendBtn.addEventListener('click', generate);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !sendBtn.disabled) {
+        e.preventDefault();
+        generate();
+      }
+    });
   </script>
 </body>
 </html>
