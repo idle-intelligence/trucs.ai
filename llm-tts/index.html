@@ -189,11 +189,11 @@
     <hr>
 
     <p id="desc-full" class="panel-desc">
-      LLM: <a href="https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2-1.7B-Instruct</a>, single-turn chat via WebGPU with <a href="https://github.com/mlc-ai/web-llm">WebLLM</a>.<br>
+      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, single-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
     <p id="desc-mobile" class="panel-desc" hidden>
-      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_K_M</a> (~271MB) via <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> compiled to WebAssembly with <a href="https://github.com/ngxson/wllama">wllama</a>.<br>
+      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
@@ -236,6 +236,28 @@
       document.getElementById('desc-mobile').hidden = false;
     }
 
+    // ── LLM model choice: same mobileMode split as the panel layout above
+    // (1.7B desktop, 360M mobile/no-WebGPU). lean itself still picks the
+    // best backend it can run that model on (see lean-chat-worker.js).
+
+    const MODEL_1_7B = {
+      size: '~1GB',
+      cache: 'llm-smollm2-1.7b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+    };
+    const MODEL_360M = {
+      size: '~271MB',
+      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
+      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+      maxCtx: 2048,
+    };
+    const MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+
     // ── TTS constants (shared) ──
 
     const VOICES = ['alba', 'azelma', 'cosette', 'eponine', 'fantine', 'javert', 'jean', 'marius'];
@@ -247,17 +269,15 @@
     const MAX_PREBUFFER_S = 4;
 
     // ════════════════════════════════════════════
-    // Full mode (desktop — WebGPU via WebLLM)
+    // Full mode (desktop layout)
     // ════════════════════════════════════════════
 
     if (!mobileMode) {
-      const { CreateMLCEngine } = await import('https://esm.run/@mlc-ai/web-llm');
-
       // ── LLM elements ──
-      const llmInput = document.getElementById('llm-input');
       const llmSendBtn = document.getElementById('llm-send-btn');
       const llmLoadBtn = document.getElementById('llm-load-btn');
       const llmStatusText = document.getElementById('llm-status-text');
+      const llmInput = document.getElementById('llm-input');
       const llmOutput = document.getElementById('llm-output');
       const llmStats = document.getElementById('llm-stats');
 
@@ -273,131 +293,93 @@
         handleTtsMessage(type, data);
       }
 
-      // ── LLM ──
+      // ── LLM (lean, in a Worker — see lean-chat-worker.js) ──
 
-      let engine = null;
+      const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-06-lean-878b1a1', import.meta.url), { type: 'module' });
+      let llmReady = false;
       let llmCached = false;
-
-      let selectedModel = 'SmolLM2-1.7B-Instruct-q4f32_1-MLC';
-      let modelSize = '~2.7GB';
       try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (adapter?.features.has('shader-f16')) {
-          selectedModel = 'SmolLM2-1.7B-Instruct-q4f16_1-MLC';
-          modelSize = '~1GB';
-        }
-      } catch (_) {}
-
-      // Cache check + purge wrong variants
-      try {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          const cache = await caches.open(key);
-          const entries = await cache.keys();
-          const hasSmolLM2 = entries.some(r => r.url.includes('SmolLM2'));
-          if (!hasSmolLM2) continue;
-          if (entries.some(r => r.url.includes(selectedModel))) {
-            llmCached = true;
-            llmLoadBtn.textContent = 'load';
-          } else {
-            await caches.delete(key);
-          }
-        }
+        const cache = await caches.open(MODEL.cache);
+        llmCached = !!(await cache.match(MODEL.gguf));
+        if (llmCached) llmLoadBtn.textContent = 'load';
       } catch (_) {}
       llmStatusText.textContent = llmCached
-        ? `model cached locally: ${modelSize}`
-        : `model download: ${modelSize}`;
+        ? `model cached locally: ${MODEL.size}`
+        : `model download: ${MODEL.size}`;
 
-      async function loadLlm() {
+      let llmSentenceBuffer = '';
+      let llmGenStart = 0;
+
+      llmWorker.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.type === 'status') {
+          llmStatusText.textContent = msg.text;
+        } else if (msg.type === 'ready') {
+          llmReady = true;
+          llmStatusText.textContent = 'ready';
+          llmLoadBtn.disabled = true;
+          llmSendBtn.disabled = false;
+        } else if (msg.type === 'token') {
+          llmOutput.textContent += msg.text;
+          llmSentenceBuffer += msg.text;
+          let boundary;
+          while ((boundary = llmSentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+            const ch = llmSentenceBuffer[boundary];
+            const cutAt = ch === '\n' ? boundary : boundary + 1;
+            const sentence = llmSentenceBuffer.slice(0, cutAt).trim();
+            llmSentenceBuffer = llmSentenceBuffer.slice(cutAt).trimStart();
+            if (sentence) sendToTts('chunk', sentence);
+          }
+          if (llmSentenceBuffer.length > 200) {
+            const spaceAt = llmSentenceBuffer.lastIndexOf(' ', 200);
+            const cut = spaceAt > 0 ? spaceAt : 200;
+            const fragment = llmSentenceBuffer.slice(0, cut).trim();
+            llmSentenceBuffer = llmSentenceBuffer.slice(cut).trimStart();
+            if (fragment) sendToTts('chunk', fragment);
+          }
+        } else if (msg.type === 'done') {
+          if (llmSentenceBuffer.trim()) sendToTts('chunk', llmSentenceBuffer.trim());
+          sendToTts('done');
+          const elapsed = (performance.now() - llmGenStart) / 1000;
+          const tokSec = (msg.tokens / elapsed).toFixed(1);
+          llmStats.textContent = `${msg.tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
+          llmSendBtn.disabled = false;
+        } else if (msg.type === 'error') {
+          const text = msg.message || '';
+          if (msg.phase === 'load') {
+            if (/network|cache|fetch|HTTP/i.test(text)) {
+              llmStatusText.textContent = 'download failed, check your connection and try again';
+            } else if (/VK_ERROR|pipeline|device lost|out of memory/i.test(text)) {
+              llmStatusText.textContent = 'WebGPU is not stable enough on this device yet.';
+            } else {
+              llmStatusText.textContent = 'failed to load: ' + text;
+            }
+            llmLoadBtn.disabled = false;
+            llmSendBtn.disabled = true;
+          } else {
+            llmOutput.textContent = 'error: ' + text;
+            llmSendBtn.disabled = false;
+          }
+          console.error(text);
+        }
+      };
+
+      function loadLlm() {
         llmLoadBtn.disabled = true;
         llmStatusText.textContent = 'loading...';
-        try {
-          engine = await CreateMLCEngine(selectedModel, {
-            initProgressCallback: (report) => {
-              const pct = (report.progress * 100).toFixed(0);
-              const mbMatch = report.text.match(/([\d.]+)\s*MB/);
-              const mb = mbMatch ? `${Math.round(parseFloat(mbMatch[1]))}MB loaded, ` : '';
-              const verb = llmCached ? 'Loading' : 'Downloading';
-              const phase = pct === '100' ? ' — testing WebGPU...' : '';
-              llmStatusText.textContent = `${verb}: ${mb}${pct}%${phase}`;
-            },
-          });
-          llmStatusText.textContent = 'ready';
-          llmSendBtn.disabled = false;
-        } catch (err) {
-          const msg = err.message || String(err);
-          if (/network|cache|fetch/i.test(msg)) {
-            llmStatusText.textContent = 'download failed — check your connection and try again';
-            llmLoadBtn.disabled = false;
-          } else if (/VK_ERROR|pipeline/i.test(msg)) {
-            llmStatusText.textContent = 'WebGPU is not stable enough on this device yet.';
-          } else {
-            llmStatusText.textContent = 'failed to load: ' + msg;
-            llmLoadBtn.disabled = false;
-          }
-          console.error(err);
-        }
+        llmWorker.postMessage({ type: 'load', model: MODEL });
       }
 
-      async function generate() {
+      function generate() {
         const text = llmInput.value.trim().slice(0, 2000);
-        if (!text || !engine) return;
-
+        if (!text || !llmReady) return;
         llmSendBtn.disabled = true;
         llmOutput.textContent = '';
         llmStats.textContent = '';
+        llmSentenceBuffer = '';
+        llmGenStart = performance.now();
         sendToTts('clear');
-
-        const start = performance.now();
-
-        try {
-          const chunks = await engine.chat.completions.create({
-            messages: [
-              { role: 'system', content: 'You are a helpful assistant running entirely in the browser — no server, no API. This is a trucs.ai demo. The user types, you reply, and your text is read aloud. Keep answers short and conversational: one to three sentences. Be warm, clear, and direct.' },
-              { role: 'user', content: text },
-            ],
-            max_tokens: 512,
-            stream: true,
-          });
-
-          let tokens = 0;
-          let sentenceBuffer = '';
-          for await (const chunk of chunks) {
-            const delta = chunk.choices[0]?.delta?.content;
-            if (delta) {
-              llmOutput.textContent += delta;
-              tokens++;
-              sentenceBuffer += delta;
-              let boundary;
-              while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-                const ch = sentenceBuffer[boundary];
-                const cutAt = ch === '\n' ? boundary : boundary + 1;
-                const sentence = sentenceBuffer.slice(0, cutAt).trim();
-                sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-                if (sentence) sendToTts('chunk', sentence);
-              }
-              if (sentenceBuffer.length > 200) {
-                const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-                const cut = spaceAt > 0 ? spaceAt : 200;
-                const fragment = sentenceBuffer.slice(0, cut).trim();
-                sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-                if (fragment) sendToTts('chunk', fragment);
-              }
-            }
-          }
-          if (sentenceBuffer.trim()) sendToTts('chunk', sentenceBuffer.trim());
-          sendToTts('done');
-
-          const elapsed = (performance.now() - start) / 1000;
-          const tokSec = (tokens / elapsed).toFixed(1);
-          llmStats.textContent = `${tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
-        } catch (err) {
-          llmOutput.textContent = 'error: ' + err.message;
-          console.error(err);
-        }
-
-        await engine.resetChat();
-        llmSendBtn.disabled = false;
+        llmWorker.postMessage({ type: 'chat', text });
       }
 
       if (llmCached) {
@@ -672,17 +654,15 @@
     }
 
     // ════════════════════════════════════════════
-    // Mobile mode (wllama WASM + TTS)
+    // Mobile layout
     // ════════════════════════════════════════════
 
     if (mobileMode) {
-      const { Wllama, LoggerWithoutDebug } = await import('https://idle-intelligence.github.io/llm-web/pkg/wllama/index.js');
-
       // ── LLM elements ──
-      const llmInput = document.getElementById('m-llm-input');
       const llmSendBtn = document.getElementById('m-llm-send-btn');
       const llmLoadBtn = document.getElementById('m-llm-load-btn');
       const llmStatusText = document.getElementById('m-llm-status-text');
+      const llmInput = document.getElementById('m-llm-input');
       const llmOutput = document.getElementById('m-llm-output');
       const llmStats = document.getElementById('m-llm-stats');
 
@@ -698,138 +678,100 @@
         handleTtsMessage(type, data);
       }
 
-      // ── LLM (wllama) ──
+      // ── LLM (lean, in a Worker — see lean-chat-worker.js) ──
 
-      let wllama = null;
+      const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-06-lean-878b1a1', import.meta.url), { type: 'module' });
+      let llmReady = false;
       let llmCached = false;
-
       try {
-        const opfsRoot = await navigator.storage.getDirectory();
-        const cacheDir = await opfsRoot.getDirectoryHandle('cache');
-        for await (const [name] of cacheDir.entries()) {
-          if (name.includes('SmolLM2-360M-Instruct-Q4_K_M')) {
-            llmCached = true;
-            llmLoadBtn.textContent = 'load';
-            break;
-          }
-        }
+        const cache = await caches.open(MODEL.cache);
+        llmCached = !!(await cache.match(MODEL.gguf));
+        if (llmCached) llmLoadBtn.textContent = 'load';
       } catch (_) {}
       llmStatusText.textContent = llmCached
-        ? 'model cached locally: ~271MB'
-        : 'model download: ~271MB';
+        ? `model cached locally: ${MODEL.size}`
+        : `model download: ${MODEL.size}`;
 
-      async function loadLlm() {
-        llmLoadBtn.disabled = true;
-        llmStatusText.textContent = 'loading...';
-        try {
-          wllama = new Wllama({
-            'single-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/single-thread/wllama.wasm',
-            'multi-thread/wllama.wasm': 'https://idle-intelligence.github.io/llm-web/pkg/wllama/multi-thread/wllama.wasm',
-          }, { suppressNativeLog: true, logger: LoggerWithoutDebug });
+      let llmSentenceBuffer = '';
+      let llmGenStart = 0;
+      let llmFirstTokenTime = null;
 
-          await wllama.loadModelFromHF(
-            'bartowski/SmolLM2-360M-Instruct-GGUF',
-            'SmolLM2-360M-Instruct-Q4_K_M.gguf',
-            {
-              n_ctx: 2048,
-              n_batch: 128,
-              progressCallback: ({ loaded, total }) => {
-                if (total > 0) {
-                  const mb = (loaded / 1024 / 1024).toFixed(0);
-                  const pct = ((loaded / total) * 100).toFixed(0);
-                  const verb = llmCached ? 'Loading' : 'Downloading';
-                  llmStatusText.textContent = `${verb}: ${mb}MB, ${pct}%`;
-                }
-              },
-            }
-          );
-
+      llmWorker.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.type === 'status') {
+          llmStatusText.textContent = msg.text;
+        } else if (msg.type === 'ready') {
+          llmReady = true;
           llmStatusText.textContent = 'ready';
+          llmLoadBtn.disabled = true;
           llmSendBtn.disabled = false;
-        } catch (err) {
-          llmStatusText.textContent = 'failed to load: ' + (err.message || String(err));
-          llmLoadBtn.disabled = false;
-          console.error(err);
-        }
-      }
-
-      async function generate() {
-        const text = llmInput.value.trim().slice(0, 2000);
-        if (!text || !wllama) return;
-
-        llmSendBtn.disabled = true;
-        llmOutput.textContent = '';
-        llmStats.textContent = '';
-        llmStatusText.textContent = 'thinking...';
-        sendToTts('clear');
-
-        const systemPrompt = 'You are a helpful, concise assistant. Your text is read aloud. Keep answers to one to three sentences.';
-        const prompt = `<|im_start|>system\n${systemPrompt}<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
-
-        const start = performance.now();
-        let tokens = 0;
-        let firstTokenTime = null;
-        let sentenceBuffer = '';
-
-        try {
-          await wllama.createCompletion(prompt, {
-            nPredict: 512,
-            sampling: { temp: 0.7, top_k: 40, top_p: 0.9 },
-            onNewToken: (token, piece, currentText, { abortSignal }) => {
-              if (firstTokenTime === null) {
-                firstTokenTime = performance.now();
-                llmStatusText.textContent = 'ready';
-              }
-              tokens++;
-              const pieceStr = typeof piece === 'string' ? piece : new TextDecoder().decode(piece);
-
-              if (pieceStr.includes('<|im_end|>') || currentText.includes('<|im_end|>')) {
-                abortSignal();
-                return;
-              }
-
-              const clean = currentText.replace(/<\|im_end\|>.*$/s, '');
-              llmOutput.textContent = clean;
-
-              sentenceBuffer += pieceStr;
-              let boundary;
-              while ((boundary = sentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
-                const ch = sentenceBuffer[boundary];
-                const cutAt = ch === '\n' ? boundary : boundary + 1;
-                const sentence = sentenceBuffer.slice(0, cutAt).trim();
-                sentenceBuffer = sentenceBuffer.slice(cutAt).trimStart();
-                if (sentence) sendToTts('chunk', sentence);
-              }
-              if (sentenceBuffer.length > 200) {
-                const spaceAt = sentenceBuffer.lastIndexOf(' ', 200);
-                const cut = spaceAt > 0 ? spaceAt : 200;
-                const fragment = sentenceBuffer.slice(0, cut).trim();
-                sentenceBuffer = sentenceBuffer.slice(cut).trimStart();
-                if (fragment) sendToTts('chunk', fragment);
-              }
-            },
-          });
-
-          const cleanResponse = (llmOutput.textContent || '').replace(/<\|im_end\|>.*$/s, '').trim();
-          llmOutput.textContent = cleanResponse;
-          if (sentenceBuffer.trim()) sendToTts('chunk', sentenceBuffer.trim());
+        } else if (msg.type === 'token') {
+          if (llmFirstTokenTime === null) {
+            llmFirstTokenTime = performance.now();
+            llmStatusText.textContent = 'ready';
+          }
+          llmOutput.textContent += msg.text;
+          llmSentenceBuffer += msg.text;
+          let boundary;
+          while ((boundary = llmSentenceBuffer.search(/[.!?]\s|\n/)) !== -1) {
+            const ch = llmSentenceBuffer[boundary];
+            const cutAt = ch === '\n' ? boundary : boundary + 1;
+            const sentence = llmSentenceBuffer.slice(0, cutAt).trim();
+            llmSentenceBuffer = llmSentenceBuffer.slice(cutAt).trimStart();
+            if (sentence) sendToTts('chunk', sentence);
+          }
+          if (llmSentenceBuffer.length > 200) {
+            const spaceAt = llmSentenceBuffer.lastIndexOf(' ', 200);
+            const cut = spaceAt > 0 ? spaceAt : 200;
+            const fragment = llmSentenceBuffer.slice(0, cut).trim();
+            llmSentenceBuffer = llmSentenceBuffer.slice(cut).trimStart();
+            if (fragment) sendToTts('chunk', fragment);
+          }
+        } else if (msg.type === 'done') {
+          if (llmSentenceBuffer.trim()) sendToTts('chunk', llmSentenceBuffer.trim());
           sendToTts('done');
-
-          if (firstTokenTime !== null) {
-            const ttfb = ((firstTokenTime - start) / 1000).toFixed(1);
-            const decodeTime = (performance.now() - firstTokenTime) / 1000;
-            const tokSec = decodeTime > 0 ? (tokens / decodeTime).toFixed(1) : '—';
-            llmStats.textContent = `TTFB ${ttfb}s · ${tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
+          if (llmFirstTokenTime !== null) {
+            const ttfb = ((llmFirstTokenTime - llmGenStart) / 1000).toFixed(1);
+            const decodeTime = (performance.now() - llmFirstTokenTime) / 1000;
+            const tokSec = decodeTime > 0 ? (msg.tokens / decodeTime).toFixed(1) : '—';
+            llmStats.textContent = `TTFB ${ttfb}s · ${msg.tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
           } else {
             llmStats.textContent = 'no tokens generated';
           }
-        } catch (err) {
-          llmOutput.textContent = 'error: ' + (err.message || String(err));
-          llmStatusText.textContent = 'ready';
-          console.error(err);
+          llmSendBtn.disabled = false;
+        } else if (msg.type === 'error') {
+          const text = msg.message || '';
+          if (msg.phase === 'load') {
+            llmStatusText.textContent = 'failed to load: ' + text;
+            llmLoadBtn.disabled = false;
+            llmSendBtn.disabled = true;
+          } else {
+            llmOutput.textContent = 'error: ' + text;
+            llmStatusText.textContent = 'ready';
+            llmSendBtn.disabled = false;
+          }
+          console.error(text);
         }
+      };
 
-        llmSendBtn.disabled = false;
+      function loadLlm() {
+        llmLoadBtn.disabled = true;
+        llmStatusText.textContent = 'loading...';
+        llmWorker.postMessage({ type: 'load', model: MODEL });
+      }
+
+      function generate() {
+        const text = llmInput.value.trim().slice(0, 2000);
+        if (!text || !llmReady) return;
+        llmSendBtn.disabled = true;
+        llmOutput.textContent = '';
+        llmStats.textContent = '';
+        llmSentenceBuffer = '';
+        llmFirstTokenTime = null;
+        llmStatusText.textContent = 'thinking...';
+        llmGenStart = performance.now();
+        sendToTts('clear');
+        llmWorker.postMessage({ type: 'chat', text });
       }
 
       if (llmCached) {
