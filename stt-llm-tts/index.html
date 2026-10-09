@@ -300,6 +300,13 @@
     let llmDone = false;
     let autoRestartEnabled = false;
 
+    // Demo: a short scripted conversation, each later question depending on
+    // the previous answer. Resolved by the TTS worklet's 'ended' message once
+    // a turn's spoken answer has fully finished playing, so the next
+    // question is only sent after that.
+    const DEMO_TURNS = ['joke.wav', 'demo-2.wav', 'demo-3.wav'];
+    let demoTurnEndResolve = null;
+
     function isUsableTranscript(text) {
       return /[a-zA-ZÀ-ÿ]{2,}/.test(text);
     }
@@ -464,45 +471,59 @@
     }
 
     // ── Full mode: Demo ──
+    // Plays a short scripted conversation (DEMO_TURNS): each question is only
+    // sent after the previous spoken answer has finished playing, and later
+    // questions depend on the earlier context (the lean chat worker keeps its
+    // own multi-turn history, so only the first turn below resets it).
     async function playDemoFull() {
       if (!sttClient) return;
       reset();
-      // Same reset the mic path does (toggleRecordingFull): the repeat filter
-      // must not count the previous demo's identical transcript.
-      lastToken = '';
-      repeatCount = 0;
       demoBtn.disabled = true;
       sttRecordBtn.disabled = true;
 
-      const resp = await fetch('./joke.wav');
-      const arrayBuf = await resp.arrayBuffer();
-      const tmpCtx = new OfflineAudioContext(1, 1, 24000);
-      const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
-      const outLength = Math.ceil(audioBuf.duration * 24000);
-      const renderCtx = new OfflineAudioContext(1, outLength, 24000);
-      const source = renderCtx.createBufferSource();
-      source.buffer = audioBuf;
-      source.connect(renderCtx.destination);
-      source.start();
-      const rendered = await renderCtx.startRendering();
-      const pcm = rendered.getChannelData(0);
+      for (const file of DEMO_TURNS) {
+        // Same reset the mic path does (toggleRecordingFull): the repeat
+        // filter must not count a previous turn's identical transcript.
+        lastToken = '';
+        repeatCount = 0;
 
-      sttClient.worker.postMessage({ type: 'reset' });
-      const FRAME = 1920;
-      for (let i = 0; i < pcm.length; i += FRAME) {
-        const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
-        sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
+        const resp = await fetch(`./${file}`);
+        const arrayBuf = await resp.arrayBuffer();
+        const tmpCtx = new OfflineAudioContext(1, 1, 24000);
+        const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
+        const outLength = Math.ceil(audioBuf.duration * 24000);
+        const renderCtx = new OfflineAudioContext(1, outLength, 24000);
+        const source = renderCtx.createBufferSource();
+        source.buffer = audioBuf;
+        source.connect(renderCtx.destination);
+        source.start();
+        const rendered = await renderCtx.startRendering();
+        const pcm = rendered.getChannelData(0);
+
+        transcriptText = '';
+        sttTranscript.textContent = '';
+        sttClient.worker.postMessage({ type: 'reset' });
+        const FRAME = 1920;
+        for (let i = 0; i < pcm.length; i += FRAME) {
+          const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
+          sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
+        }
+
+        sttClient._flushPromise = new Promise(r => { sttClient._flushResolve = r; });
+        sttClient.worker.postMessage({ type: 'stop' });
+        await sttClient._flushPromise;
+        sttClient._flushPromise = null;
+
+        const text = transcriptText.trim();
+        if (!text || !isUsableTranscript(text)) break;
+
+        const turnEnded = new Promise(r => { demoTurnEndResolve = r; });
+        sendToLlm(text);
+        await turnEnded;
       }
 
-      sttClient._flushPromise = new Promise(r => { sttClient._flushResolve = r; });
-      sttClient.worker.postMessage({ type: 'stop' });
-      await sttClient._flushPromise;
-      sttClient._flushPromise = null;
-
       demoBtn.disabled = false;
-      const text = transcriptText.trim();
-      if (text && isUsableTranscript(text)) sendToLlm(text);
-      else { sttRecordBtn.disabled = false; }
+      sttRecordBtn.disabled = false;
     }
 
     // ── Full mode: toggle recording ──
@@ -694,38 +715,49 @@
       }
     }
 
-    // Mobile demo: decode WAV to 16kHz and send to Whisper
+    // Mobile demo: decode WAV to 16kHz and send to Whisper. Same scripted
+    // DEMO_TURNS sequence as the full-mode demo: each question is only sent
+    // after the previous spoken answer has finished playing.
     async function playDemoMobile() {
       if (!whisperClient) return;
       reset();
       demoBtn.disabled = true;
       sttRecordBtn.disabled = true;
 
-      const resp = await fetch('./joke.wav');
-      const arrayBuf = await resp.arrayBuffer();
-      const tmpCtx = new OfflineAudioContext(1, 1, 16000);
-      const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
-      const outLength = Math.ceil(audioBuf.duration * 16000);
-      const renderCtx = new OfflineAudioContext(1, outLength, 16000);
-      const source = renderCtx.createBufferSource();
-      source.buffer = audioBuf;
-      source.connect(renderCtx.destination);
-      source.start();
-      const rendered = await renderCtx.startRendering();
-      const pcm = rendered.getChannelData(0);
+      for (const file of DEMO_TURNS) {
+        const resp = await fetch(`./${file}`);
+        const arrayBuf = await resp.arrayBuffer();
+        const tmpCtx = new OfflineAudioContext(1, 1, 16000);
+        const audioBuf = await tmpCtx.decodeAudioData(arrayBuf);
+        const outLength = Math.ceil(audioBuf.duration * 16000);
+        const renderCtx = new OfflineAudioContext(1, outLength, 16000);
+        const source = renderCtx.createBufferSource();
+        source.buffer = audioBuf;
+        source.connect(renderCtx.destination);
+        source.start();
+        const rendered = await renderCtx.startRendering();
+        const pcm = rendered.getChannelData(0);
 
-      sttStatusText.textContent = 'transcribing...';
-      const t0 = performance.now();
-      try {
-        const text = await whisperClient.transcribe(pcm.slice());
-        const transcribeMs = (performance.now() - t0).toFixed(0);
-        sttMetricsEl.textContent = `transcribed in ${transcribeMs}ms`;
-        sttTranscript.textContent = text;
-        sttStatusText.textContent = 'ready';
-        if (text && isUsableTranscript(text)) sendToLlm(text);
-      } catch (err) {
-        sttStatusText.textContent = 'transcription error: ' + err.message;
-        console.error(err);
+        sttStatusText.textContent = 'transcribing...';
+        const t0 = performance.now();
+        let text = '';
+        try {
+          text = await whisperClient.transcribe(pcm.slice());
+          const transcribeMs = (performance.now() - t0).toFixed(0);
+          sttMetricsEl.textContent = `transcribed in ${transcribeMs}ms`;
+          sttTranscript.textContent = text;
+          sttStatusText.textContent = 'ready';
+        } catch (err) {
+          sttStatusText.textContent = 'transcription error: ' + err.message;
+          console.error(err);
+          break;
+        }
+
+        if (!text || !isUsableTranscript(text)) break;
+
+        const turnEnded = new Promise(r => { demoTurnEndResolve = r; });
+        sendToLlm(text);
+        await turnEnded;
       }
 
       demoBtn.disabled = false;
@@ -935,7 +967,14 @@
       workletNode = new AudioWorkletNode(audioCtx, 'streaming-audio');
       workletNode.connect(audioCtx.destination);
       workletNode.port.onmessage = (e) => {
-        if (e.data.type === 'ended') autoRestartRecording();
+        if (e.data.type === 'ended') {
+          autoRestartRecording();
+          if (demoTurnEndResolve) {
+            const resolve = demoTurnEndResolve;
+            demoTurnEndResolve = null;
+            resolve();
+          }
+        }
       };
     }
 
