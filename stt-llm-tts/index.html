@@ -395,8 +395,6 @@
         onStatus: (text, ready, progress) => {
           if (ready) {
             sttStatusText.textContent = 'ready';
-            sttRecordBtn.disabled = false;
-            demoBtn.disabled = false;
             return;
           }
           if (progress && progress.total > 0) {
@@ -617,8 +615,6 @@
 
       console.log('[stt] whisper-tiny-q5_1 loaded');
       sttStatusText.textContent = 'ready';
-      sttRecordBtn.disabled = false;
-      demoBtn.disabled = false;
     }
 
     async function startMobileRecording() {
@@ -1286,7 +1282,11 @@
       const llmPromise = loadLlm().catch((err) => console.error(err));
       await Promise.all([sttPromise, llmPromise, initTts()]);
       resetBtn.disabled = false;
-      if (llmReady && pendingLlmText) generate();
+      // Recording and the demo only start once all three models are ready.
+      if (llmReady) {
+        sttRecordBtn.disabled = false;
+        demoBtn.disabled = false;
+      }
     }
 
     if (allCached) {
