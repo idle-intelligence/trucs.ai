@@ -585,7 +585,8 @@ async function main() {
     const el = document.getElementById('nowgpu');
     if (detail) {
       el.innerHTML = 'Explore mode couldn\'t start on this device.<br>'
-        + `<span style="opacity:0.6; font-size:12px">${String(detail)}</span>`;
+        + `<span style="opacity:0.6; font-size:12px">${String(detail)}</span><br>`
+        + '<a href="/blog/about-astres">Read how it works</a> in the meantime.';
     }
     el.style.display = 'block';
   };
@@ -1555,6 +1556,7 @@ main().catch(e => {
   console.error('[explore]', e);
   const el = document.getElementById('nowgpu');
   el.innerHTML = 'Explore mode couldn\'t start on this device.<br>'
-    + `<span style="opacity:0.6; font-size:12px">${e && e.message ? e.message : e}</span>`;
+    + `<span style="opacity:0.6; font-size:12px">${e && e.message ? e.message : e}</span><br>`
+    + '<a href="/blog/about-astres">Read how it works</a> in the meantime.';
   el.style.display = 'block';
 });
