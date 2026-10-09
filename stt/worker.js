@@ -196,13 +196,18 @@ async function cachedFetch(url, label) {
 // Message handlers
 // ---------------------------------------------------------------------------
 
+// Version tag for the stt-web engine files loaded from baseUrl. Bump it after
+// each stt-web deploy so the glue module and the wasm are always fetched
+// together, never a cached old one next to a new one.
+const STT_ENGINE_TAG = '2026-10-09-flush-guard';
+
 async function handleLoad(config) {
     const base = (config.baseUrl || '').replace(/\/+$/, '');
 
     // 1. Import WASM module.
     self.postMessage({ type: 'status', text: 'Loading WASM module...' });
-    sttWasm = await import(base + '/pkg/stt_wasm.js');
-    await sttWasm.default(base + '/pkg/stt_wasm_bg.wasm');
+    sttWasm = await import(base + '/pkg/stt_wasm.js?v=' + STT_ENGINE_TAG);
+    await sttWasm.default(base + '/pkg/stt_wasm_bg.wasm?v=' + STT_ENGINE_TAG);
 
     // 2. Initialize WebGPU device.
     self.postMessage({ type: 'status', text: 'Initializing WebGPU device...' });
