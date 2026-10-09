@@ -377,7 +377,7 @@
     let vadTtfb = null;
 
     async function loadSttFull() {
-      const { SttClient } = await import('../stt/stt-client.js');
+      const { SttClient } = await import('../stt/stt-client.js?v=2');
       sttStatusText.textContent = 'loading...';
 
       sttClient = new SttClient({
