@@ -29,7 +29,7 @@ Flat. Each project gets a top-level directory. No `/demos/` grouping — the hom
 - `/llm/` — LLM chat. SmolLM2-1.7B-Instruct via the [lean](https://github.com/idle-intelligence/llm-web) engine (custom Rust inference compiled to WASM), single-turn, WebGPU/CPU-threads/single-thread by capability.
 - `/tts/` — Text-to-speech. Quantized Kyutai Pocket-TTS model, custom Rust inference compiled to WASM. Uses [tts-web](https://github.com/idle-intelligence/tts-web). Audio output via AudioWorklet (`audio-worklet.js`).
 - `/llm-tts/` — Combined LLM + TTS. Two-panel layout.
-- `/stt-llm-tts/` — Full voice loop: STT → LLM → TTS with silence detection, auto-restart, multi-turn chat. Three-panel layout. Includes demo button (`joke.wav`).
+- `/stt-llm-tts/` — Full voice loop: STT → LLM → TTS with silence detection, auto-restart, multi-turn chat. Three-panel layout. Includes a demo button that plays a 3-turn scripted conversation (`demo-{1,2,3}-vera.wav`).
 - `/classifier/` — BERT text classifier compiled to WASM via Candle + wasm-pack.
 - `/swarm/` — links to ruche.world
 - `/ilnmtlbnm/` — profile page
