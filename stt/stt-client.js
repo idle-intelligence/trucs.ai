@@ -109,18 +109,13 @@ export class SttClient {
         // Reset engine state for a clean recording session
         this.worker.postMessage({ type: 'reset' });
 
-        // Request microphone access
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-            }
-        });
-
-        // Use the device's default sample rate. The AudioWorklet resamples to 24kHz.
-        // Forcing sampleRate: 24000 breaks Firefox when the mic's native rate differs.
+        // Build the whole consumer graph (AudioContext, worklet module, node,
+        // direct-to-worker port) *before* requesting the mic. getUserMedia
+        // returns a track that starts producing audio immediately; if the
+        // worklet isn't wired up yet, whatever the mic captures during that
+        // gap (addModule in particular can take tens of ms, more on a cold
+        // module cache) is never pulled into the graph and is lost. Audio
+        // spoken right as the mic opens was being dropped this way.
         this.audioContext = new AudioContext();
 
         // Explicitly resume — Firefox and Safari may leave the context suspended
@@ -147,6 +142,16 @@ export class SttClient {
             { type: 'audio-port', port: channel.port2 },
             [channel.port2]
         );
+
+        // Request microphone access now that the graph is ready to consume it.
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            }
+        });
 
         // Connect mic → worklet → destination.
         // Web Audio API is pull-based: the destination pulls audio from its inputs
