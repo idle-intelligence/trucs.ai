@@ -470,6 +470,38 @@
       if (text && isUsableTranscript(text)) sendToLlm(text);
     }
 
+    // Plays pcm aloud (no mic involved: a plain AudioBufferSourceNode to the
+    // speakers, nothing feeds back into any input) while feeding the same
+    // samples to the STT worker in real-time-paced 80ms chunks, so the live
+    // transcript advances roughly in step with what you hear. Resolves once
+    // both the chunk feed and the audible playback have finished.
+    async function playAudibleWhileFeedingStt(pcm) {
+      const playCtx = new AudioContext();
+      const playBuf = playCtx.createBuffer(1, pcm.length, 24000);
+      playBuf.getChannelData(0).set(pcm);
+      const src = playCtx.createBufferSource();
+      src.buffer = playBuf;
+      src.connect(playCtx.destination);
+      const playbackEnded = new Promise(r => { src.onended = r; });
+      src.start();
+
+      const FRAME = 1920;
+      const FRAME_MS = FRAME / 24000 * 1000; // 80ms/frame at 24kHz
+      const t0 = performance.now();
+      for (let i = 0; i < pcm.length; i += FRAME) {
+        const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
+        sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
+        const targetElapsed = (i / FRAME + 1) * FRAME_MS;
+        const actualElapsed = performance.now() - t0;
+        if (targetElapsed > actualElapsed) {
+          await new Promise(r => setTimeout(r, targetElapsed - actualElapsed));
+        }
+      }
+
+      await playbackEnded;
+      await playCtx.close();
+    }
+
     // ── Full mode: Demo ──
     // Plays a short scripted conversation (DEMO_TURNS): each question is only
     // sent after the previous spoken answer has finished playing, and later
@@ -503,11 +535,7 @@
         transcriptText = '';
         sttTranscript.textContent = '';
         sttClient.worker.postMessage({ type: 'reset' });
-        const FRAME = 1920;
-        for (let i = 0; i < pcm.length; i += FRAME) {
-          const chunk = pcm.slice(i, Math.min(i + FRAME, pcm.length));
-          sttClient.worker.postMessage({ type: 'audio', samples: chunk }, [chunk.buffer]);
-        }
+        await playAudibleWhileFeedingStt(pcm);
 
         sttClient._flushPromise = new Promise(r => { sttClient._flushResolve = r; });
         sttClient.worker.postMessage({ type: 'stop' });
@@ -742,7 +770,24 @@
         const t0 = performance.now();
         let text = '';
         try {
-          text = await whisperClient.transcribe(pcm.slice());
+          // Whisper transcribes the whole buffer in one call (no per-chunk
+          // streaming to pace), so just play the question aloud (no mic
+          // involved) alongside it and wait for both before continuing.
+          const playCtx = new AudioContext();
+          const playBuf = playCtx.createBuffer(1, pcm.length, 16000);
+          playBuf.getChannelData(0).set(pcm);
+          const src = playCtx.createBufferSource();
+          src.buffer = playBuf;
+          src.connect(playCtx.destination);
+          const playbackEnded = new Promise(r => { src.onended = r; });
+          src.start();
+
+          [text] = await Promise.all([
+            whisperClient.transcribe(pcm.slice()),
+            playbackEnded,
+          ]);
+          await playCtx.close();
+
           const transcribeMs = (performance.now() - t0).toFixed(0);
           sttMetricsEl.textContent = `transcribed in ${transcribeMs}ms`;
           sttTranscript.textContent = text;
