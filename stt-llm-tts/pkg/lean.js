@@ -1,15 +1,10 @@
 /* @ts-self-types="./lean.d.ts" */
 
 /**
- * A JS-shareable abort switch for `generateStream`/`chatGenerate`: JS holds
- * the same `AbortFlag` it passed into the call (e.g. from a "stop" button's
- * click handler) and calls `.abort()` on it whenever it likes; the decode
- * loop checks `is_aborted()` once per generated token, between GPU
- * dispatches - see `generate::decode_loop`'s `should_stop` parameter. This
- * works because every `.await` inside the decode loop actually yields to
- * the browser's event loop (real GPU-readback awaits, not a synchronous
- * spin), so a click handler queued while a `generateStream` promise is
- * pending still gets to run and flip the flag before the next token.
+ * Stops a running `generate`: keep one clone, pass another to the call,
+ * and call [`AbortFlag::abort`] from anywhere (another thread, a signal
+ * handler, a worker's message handler). Checked once per generated token.
+ * JavaScript gets this same type as the `AbortFlag` class.
  */
 export class AbortFlag {
     static __wrap(ptr) {
@@ -32,16 +27,10 @@ export class AbortFlag {
         wasm.abortflag_abort(this.__wbg_ptr);
     }
     /**
-     * A cheap `Rc` clone sharing the same underlying flag - **the value to
-     * pass into `generateStream`/`chatGenerate`, not the original**.
-     * wasm-bindgen destroys a by-value class argument's JS-side handle the
-     * instant it crosses into wasm (`__destroy_into_raw()` in the generated
-     * glue), so passing the caller's own `AbortFlag` directly would leave
-     * that JS object unusable (a later `flag.abort()` call would hit a
-     * freed pointer) even though the call is still in flight. Passing
-     * `flag.cloneFlag()` instead keeps the caller's original object alive
-     * and callable for the whole (possibly multi-second) generation, since
-     * both point at the same `Rc<Cell<bool>>`.
+     * A handle on the same flag. In JavaScript, pass `flag.cloneFlag()`
+     * to `generate` rather than `flag` itself: wasm-bindgen consumes a
+     * class passed by value, and the caller's `flag` must stay usable to
+     * call `abort()` while the call runs.
      * @returns {AbortFlag}
      */
     cloneFlag() {
@@ -64,721 +53,87 @@ export class AbortFlag {
 }
 if (Symbol.dispose) AbortFlag.prototype[Symbol.dispose] = AbortFlag.prototype.free;
 
-export class LeanEngine {
+/**
+ * A model's chat template with its special tokens: the JS face of
+ * [`crate::ChatTemplate`].
+ */
+export class ChatTemplate {
     static __wrap(ptr) {
-        const obj = Object.create(LeanEngine.prototype);
+        const obj = Object.create(ChatTemplate.prototype);
         obj.__wbg_ptr = ptr;
-        LeanEngineFinalization.register(obj, obj.__wbg_ptr, obj);
+        ChatTemplateFinalization.register(obj, obj.__wbg_ptr, obj);
         return obj;
     }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        LeanEngineFinalization.unregister(this);
+        ChatTemplateFinalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_leanengine_free(ptr, 0);
+        wasm.__wbg_chattemplate_free(ptr, 0);
     }
     /**
-     * Appends `token_ids` onto the *existing* KV cache (typically just
-     * after `restoreKv` from a resident-prefix snapshot, or continuing a
-     * live session) instead of starting a fresh one - the "prefill(suffix)"
-     * half of KV snapshot/restore. Returns the last position's logits.
-     * @param {Uint32Array} token_ids
-     * @param {Uint32Array} mask_bits
-     * @returns {Promise<Float32Array>}
+     * The template, `bos_token` and `eos_token` of a
+     * `tokenizer_config.json`'s text.
+     * @param {string} json
+     * @returns {ChatTemplate}
      */
-    appendTokens(token_ids, mask_bits) {
-        const ptr0 = passArray32ToWasm0(token_ids, wasm.__wbindgen_malloc);
+    static fromTokenizerConfig(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_appendTokens(this.__wbg_ptr, ptr0, len0, ptr1, len1);
-        return ret;
-    }
-    /**
-     * Packs `allowed_ids` into this crate's mask-bitset format
-     * (`model::build_mask_bitset`) for `mask_bits` arguments below - a
-     * consumer's grammar/schema loop calls this once per step with that
-     * step's allowed vocabulary, then passes the result straight through.
-     * @param {Uint32Array} allowed_ids
-     * @returns {Uint32Array}
-     */
-    buildMaskBitset(allowed_ids) {
-        const ptr0 = passArray32ToWasm0(allowed_ids, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_buildMaskBitset(this.__wbg_ptr, ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v2;
-    }
-    /**
-     * Multi-turn chat: adds `prompt` as a user turn, streams the reply
-     * through `on_token(id, text)` (see `TokenSink`) and returns it. The
-     * reply joins the conversation for the next call. Same signature and,
-     * greedy (`temperature == 0`), the same tokens on `LeanEngineCpu` -
-     * `tests/chat_api.rs`.
-     *
-     * Each turn re-renders the whole conversation through the model's chat
-     * template and runs only the ids past the longest prefix already in
-     * the KV cache (`chat::ChatSession`), so the cache after N turns is
-     * what one prefill of the rendered conversation would build - see
-     * `tests/streaming_sampling.rs::multi_turn_append_matches_full_reprefill`.
-     * Sampling, `mask_bits` and `abort` work as in `generateStream`.
-     * @param {string} prompt
-     * @param {number} max_new_tokens
-     * @param {number} temperature
-     * @param {number} top_k
-     * @param {number} top_p
-     * @param {number} repetition_penalty
-     * @param {number} seed
-     * @param {Uint32Array} mask_bits
-     * @param {any} on_token
-     * @param {AbortFlag | null} [abort]
-     * @returns {Promise<string>}
-     */
-    chatGenerate(prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, mask_bits, on_token, abort) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        let ptr2 = 0;
-        if (!isLikeNone(abort)) {
-            _assertClass(abort, AbortFlag);
-            ptr2 = abort.__destroy_into_raw();
-        }
-        const ret = wasm.leanengine_chatGenerate(this.__wbg_ptr, ptr0, len0, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, ptr1, len1, on_token, ptr2);
-        return ret;
-    }
-    /**
-     * Clears the multi-turn conversation and resets the KV cache to
-     * position 0 - call before starting a new conversation. Same call on
-     * `LeanEngineCpu`.
-     */
-    chatReset() {
-        const ret = wasm.leanengine_chatReset(this.__wbg_ptr);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
-    }
-    /**
-     * Same as `create()`, but also requests WebGPU's `timestamp-query`
-     * feature when the adapter has it (feature detection only), so the
-     * diagnostics calls below can report GPU time. Nothing else differs.
-     * @returns {Promise<LeanEngine>}
-     */
-    static createDiag() {
-        const ret = wasm.leanengine_createDiag();
-        return ret;
-    }
-    /**
-     * Requests a WebGPU adapter/device (the adapter's own limits, not
-     * `wgpu::Limits::default()` - see `engine.rs::Engine::new_async`'s doc
-     * comment) and builds every compute pipeline. Must be awaited before
-     * any other call.
-     * @returns {Promise<LeanEngine>}
-     */
-    static create() {
-        const ret = wasm.leanengine_create();
-        return ret;
-    }
-    /**
-     * Debug only: the adapter/device features and limits this engine was
-     * created with (JSON, see `Engine::adapter_report`).
-     * @returns {string}
-     */
-    debugAdapter() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.leanengine_debugAdapter(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
-     * Debug only: a fresh prefill of `token_ids` (same as `prefillTokens`
-     * with no mask) with op taps on, returning one checksum row per op
-     * (JSON array, see `Engine::debug_collect`). The taps split compute
-     * passes, so use it to compare runs with each other, not for timing.
-     * @param {Uint32Array} token_ids
-     * @returns {Promise<string>}
-     */
-    debugPrefill(token_ids) {
-        const ptr0 = passArray32ToWasm0(token_ids, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_debugPrefill(this.__wbg_ptr, ptr0, len0);
-        return ret;
-    }
-    /**
-     * Debug only: record every weight upload from now on (call before
-     * `load`), so `debugVerifyUploads` can check the device copies.
-     * @param {boolean} on
-     */
-    debugRecordUploads(on) {
-        wasm.leanengine_debugRecordUploads(this.__wbg_ptr, on);
-    }
-    /**
-     * Debug only: reads back every recorded upload and reports the buffers
-     * whose device bytes differ from what was uploaded (JSON).
-     * @returns {Promise<string>}
-     */
-    debugVerifyUploads() {
-        const ret = wasm.leanengine_debugVerifyUploads(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Greedy decode of `steps` forward steps from `token_id` (no EOS stop),
-     * pipelined: each step is submitted before the previous step's id is
-     * read back (see `model::decode_greedy_pipelined`). Returns the ids the
-     * steps produced, the same as `steps` calls of `decodeStepArgmax`
-     * chained on their own outputs.
-     * @param {number} token_id
-     * @param {number} steps
-     * @returns {Promise<Uint32Array>}
-     */
-    decodeGreedy(token_id, steps) {
-        const ret = wasm.leanengine_decodeGreedy(this.__wbg_ptr, token_id, steps);
-        return ret;
-    }
-    /**
-     * Decodes `token_ids` back into text - the inverse of `tokenize`/
-     * `encodeRaw`, exposed so a harness can print what a masked or restored
-     * generation actually produced.
-     * @param {Uint32Array} token_ids
-     * @returns {string}
-     */
-    decodeIds(token_ids) {
-        let deferred3_0;
-        let deferred3_1;
-        try {
-            const ptr0 = passArray32ToWasm0(token_ids, wasm.__wbindgen_malloc);
-            const len0 = WASM_VECTOR_LEN;
-            const ret = wasm.leanengine_decodeIds(this.__wbg_ptr, ptr0, len0);
-            var ptr2 = ret[0];
-            var len2 = ret[1];
-            if (ret[3]) {
-                ptr2 = 0; len2 = 0;
-                throw takeFromExternrefTable0(ret[2]);
-            }
-            deferred3_0 = ptr2;
-            deferred3_1 = len2;
-            return getStringFromWasm0(ptr2, len2);
-        } finally {
-            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-        }
-    }
-    /**
-     * Decodes one token against the existing KV cache and returns the
-     * argmax id, same fast path `generate()` uses internally, exposed for a
-     * consumer driving its own step loop (e.g. after `restoreKv`, or with a
-     * per-step mask that changes every call - a fixed mask across an entire
-     * `generate()` call would not let a grammar narrow the allowed set as
-     * it consumes each token). `mask_bits` is applied before argmax, in the
-     * same GPU submission as the rest of the step - no extra readback.
-     * @param {number} token_id
-     * @param {Uint32Array} mask_bits
-     * @returns {Promise<number>}
-     */
-    decodeStepArgmax(token_id, mask_bits) {
-        const ptr0 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_decodeStepArgmax(this.__wbg_ptr, token_id, ptr0, len0);
-        return ret;
-    }
-    /**
-     * JSON: device request ms, pipeline creation calls ms (all of them, in
-     * total), whether pass timestamps are available, and the last `load()`'s
-     * split.
-     * @returns {string}
-     */
-    diagInfo() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.leanengine_diagInfo(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
-     * JSON for the last `prefillTokens`/`decodeStepArgmax` call:
-     * `encodeMs` (recording + submit, CPU), `waitMs` (submit to result in
-     * hand), and `gpu` (`null` unless timestamps were on: `spanMs`,
-     * `passSumMs`, `segments` as `[label, ms, passes]`, `unwritten`; a
-     * span or segment with no written timestamp is `null`).
-     * @returns {string}
-     */
-    diagLast() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.leanengine_diagLast(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
-     * Milliseconds for one 4-byte copy + `mapAsync` round trip with no
-     * other work: the per-readback floor, and (right after `create`/`load`)
-     * the time for the GPU process to drain what was queued before it.
-     * @returns {Promise<number>}
-     */
-    diagRoundTrip() {
-        const ret = wasm.leanengine_diagRoundTrip(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Diagnostics switches, both off by default - see `Engine::set_diag`.
-     * @param {boolean} timestamps
-     * @param {boolean} split
-     */
-    diagSet(timestamps, split) {
-        wasm.leanengine_diagSet(this.__wbg_ptr, timestamps, split);
-    }
-    /**
-     * Tokenizes raw `text` with no chat-template rendering (unlike
-     * `tokenize()`) - for building a target/mask continuation from
-     * arbitrary text (e.g. a fixed string a constrained-decoding test wants
-     * to force), not a user chat turn.
-     * @param {string} text
-     * @returns {Uint32Array}
-     */
-    encodeRaw(text) {
-        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_encodeRaw(this.__wbg_ptr, ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v2;
-    }
-    /**
-     * Single-turn generation like `generate()` (same chat-template
-     * rendering, same fresh-KV-cache-every-call reset), but with
-     * (a) sampling beyond greedy - `temperature == 0.0` takes the exact
-     * same GPU-argmax path `generate()` uses, so greedy output is
-     * bit-identical between the two entry points (see
-     * `tests/streaming_sampling.rs::greedy_streaming_matches_whole_reply`);
-     * any `temperature > 0.0` reads back full logits each step and draws
-     * from `sampling::sample` (temperature/top-k/top-p/repetition-penalty,
-     * seeded by `seed` for reproducibility - see `sampling.rs`); (b) an
-     * `abort` flag (`AbortFlag`, optional - pass `undefined`/omit for no
-     * abort support) checked once per generated token; (c) an optional
-     * per-step `mask_bits` (this crate's mask-bitset format, same
-     * convention as `decodeStepArgmax` - empty vec means unmasked),
-     * applied identically whether sampling or greedy. `on_token` is called
-     * exactly as `generate()`'s is - `on_token(id, text)` - once per
-     * token, as soon as it's chosen, before that token's own forward step
-     * runs.
-     * @param {string} prompt
-     * @param {number} max_new_tokens
-     * @param {number} temperature
-     * @param {number} top_k
-     * @param {number} top_p
-     * @param {number} repetition_penalty
-     * @param {number} seed
-     * @param {Uint32Array} mask_bits
-     * @param {any} on_token
-     * @param {AbortFlag | null} [abort]
-     * @returns {Promise<string>}
-     */
-    generateStream(prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, mask_bits, on_token, abort) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        let ptr2 = 0;
-        if (!isLikeNone(abort)) {
-            _assertClass(abort, AbortFlag);
-            ptr2 = abort.__destroy_into_raw();
-        }
-        const ret = wasm.leanengine_generateStream(this.__wbg_ptr, ptr0, len0, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, ptr1, len1, on_token, ptr2);
-        return ret;
-    }
-    /**
-     * Renders `prompt` through the model's own chat template (single user
-     * turn, `add_generation_prompt = true` - same shape as `lean-cli`'s
-     * `--prompt` path), tokenizes it, prefills, then greedily decodes up to
-     * `max_new_tokens` tokens (stopping early on any of the model's
-     * `eos_token_ids`). Each token goes to `on_token(id, text)` as soon as
-     * it's produced (see `TokenSink`; a no-op if `on_token` isn't a JS
-     * function). Returns the decoded continuation text.
-     * @param {string} prompt
-     * @param {number} max_new_tokens
-     * @param {any} on_token
-     * @returns {Promise<string>}
-     */
-    generate(prompt, max_new_tokens, on_token) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_generate(this.__wbg_ptr, ptr0, len0, max_new_tokens, on_token);
-        return ret;
-    }
-    /**
-     * GPU-resident byte counts, broken down by category (see
-     * `GpuModel::weight_gpu_bytes`/`KvCache::gpu_bytes`/
-     * `Pool::resident_bytes`'s doc comments): `weightBytes` (fixed at
-     * load, independent of context), `kvCacheBytes` (fixed at `max_ctx`,
-     * independent of `kv_len`), `poolBytes` (per-forward scratch -
-     * activations, RoPE tables, uniforms; settles to a fixed shape once a
-     * given `(rows, kv_len-bucket)` combination has been seen once). Does
-     * NOT include the wasm linear memory (`memory.buffer.byteLength`,
-     * read directly from JS) or the JS-side GGUF `Uint8Array`/`Vec<u8>`
-     * copies, which this method has no visibility into - a caller
-     * combines this with `performance.memory`/`wasm.memory` for the full
-     * picture. Added for this session's browser memory investigation
-     * (docs/runs/2026-09-28-lean-decode-breakdown.md).
-     * @returns {string}
-     */
-    gpuMemoryInfo() {
-        let deferred2_0;
-        let deferred2_1;
-        try {
-            const ret = wasm.leanengine_gpuMemoryInfo(this.__wbg_ptr);
-            var ptr1 = ret[0];
-            var len1 = ret[1];
-            if (ret[3]) {
-                ptr1 = 0; len1 = 0;
-                throw takeFromExternrefTable0(ret[2]);
-            }
-            deferred2_0 = ptr1;
-            deferred2_1 = len1;
-            return getStringFromWasm0(ptr1, len1);
-        } finally {
-            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-        }
-    }
-    /**
-     * JSON string with basic model/device info, for a status line.
-     * @returns {string}
-     */
-    info() {
-        let deferred1_0;
-        let deferred1_1;
-        try {
-            const ret = wasm.leanengine_info(this.__wbg_ptr);
-            deferred1_0 = ret[0];
-            deferred1_1 = ret[1];
-            return getStringFromWasm0(ret[0], ret[1]);
-        } finally {
-            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
-     * The number of positions currently populated in the KV cache (0 right
-     * after `load()` or a fresh `prefillTokens`, grows with `appendTokens`/
-     * `decodeStepArgmax`, or is set directly by `restoreKv`).
-     * @returns {number}
-     */
-    kvLen() {
-        const ret = wasm.leanengine_kvLen(this.__wbg_ptr);
+        const ret = wasm.chattemplate_fromTokenizerConfig(ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
-        return ret[0] >>> 0;
+        return ChatTemplate.__wrap(ret[0]);
     }
     /**
-     * Parses `gguf_bytes` (the whole GGUF file, fetched by JS, passed as a
-     * `Uint8Array` view rather than a `Vec<u8>` so wasm-bindgen never has to
-     * copy it into wasm linear memory up front - see `JsBytesReader`'s doc
-     * comment) and uploads every weight to the GPU (two-phase loading: only
-     * one tensor's raw bytes are ever resident in wasm memory at a time,
-     * dropped right after that tensor's GPU upload inside
-     * `GpuModel::load_from_reader`, well before `max_ctx`'s KV cache is
-     * allocated). `tokenizer_json`/`tokenizer_config_json` are the two
-     * files' contents as strings. `max_ctx` bounds the KV cache (prompt +
-     * max_new_tokens must fit). The caller should drop its own reference to
-     * `gguf_bytes`'s backing `ArrayBuffer` right after this call returns so
-     * the JS heap can reclaim it too.
-     * @param {Uint8Array} gguf_bytes
-     * @param {string} tokenizer_json
-     * @param {string} tokenizer_config_json
-     * @param {number} max_ctx
+     * A template from its source alone, with no special tokens.
+     * @param {string} source
      */
-    load(gguf_bytes, tokenizer_json, tokenizer_config_json, max_ctx) {
-        const ptr0 = passStringToWasm0(tokenizer_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    constructor(source) {
+        const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(tokenizer_config_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_load(this.__wbg_ptr, gguf_bytes, ptr0, len0, ptr1, len1, max_ctx);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
-    }
-    /**
-     * Low-level prefill over raw token ids (no chat-template rendering -
-     * use `tokenize()` first if needed): resets the pool and starts a fresh
-     * KV cache at position 0, runs prefill, and returns the last position's
-     * logits (`vocab_size` long). `mask_bits`, if non-empty, constrains the
-     * *first* generated token the same way `decodeStepArgmax`'s mask
-     * constrains later ones (see `mask_buf`'s doc comment on the empty-vec
-     * convention).
-     * @param {Uint32Array} token_ids
-     * @param {Uint32Array} mask_bits
-     * @returns {Promise<Float32Array>}
-     */
-    prefillTokens(token_ids, mask_bits) {
-        const ptr0 = passArray32ToWasm0(token_ids, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_prefillTokens(this.__wbg_ptr, ptr0, len0, ptr1, len1);
-        return ret;
-    }
-    /**
-     * Restores a snapshot produced by `snapshotKv` (this session's own, or
-     * one a consumer stored earlier and is handing back) into the current
-     * KV cache, and sets `kvLen()` to the snapshot's length. Queued
-     * `queue.write_buffer` calls only - no readback, safe to call
-     * synchronously. Follow with `appendTokens` for the resumed suffix, or
-     * `decodeStepArgmax` to continue decoding directly from the restored
-     * prefix's last position.
-     * @param {Uint8Array} bytes
-     */
-    restoreKv(bytes) {
-        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_restoreKv(this.__wbg_ptr, ptr0, len0);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
-    }
-    /**
-     * Reads back the KV cache's `[0, kvLen())` prefix and returns it as
-     * `KvSnapshot::to_bytes()` - a resident-prefix image a consumer can
-     * store keyed by its own prompt/tool-schema hash (see this crate's
-     * consumer survey, gap #1) and later hand back to `restoreKv`. Async
-     * (`Engine::read_buffer`'s `into_data_async` path) - never blocks the
-     * browser's main/worker thread.
-     * @returns {Promise<Uint8Array>}
-     */
-    snapshotKv() {
-        const ret = wasm.leanengine_snapshotKv(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * Renders + tokenizes `prompt` the same way `generate()` does and
-     * returns the resulting token count, with no GPU work - lets a harness
-     * log a synthetic timing-only prompt's actual length (e.g. the
-     * ~1000-token prefill case in a browser harness) without duplicating
-     * the chat-template/tokenizer path in JS.
-     * @param {string} prompt
-     * @returns {number}
-     */
-    tokenCount(prompt) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_tokenCount(this.__wbg_ptr, ptr0, len0);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
-    }
-    /**
-     * Renders + tokenizes `prompt` through the model's chat template, same
-     * as `generate()`, but returns the raw token ids instead of running
-     * generation - the low-level entry point a consumer's own prefix/suffix
-     * split (e.g. a resident tool-schema prefix) is built on top of, rather
-     * than `generate()`'s all-in-one path.
-     * @param {string} prompt
-     * @returns {Uint32Array}
-     */
-    tokenize(prompt) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanengine_tokenize(this.__wbg_ptr, ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v2;
+        const ret = wasm.chattemplate_new(ptr0, len0);
+        this.__wbg_ptr = ret;
+        ChatTemplateFinalization.register(this, this.__wbg_ptr, this);
+        return this;
     }
 }
-if (Symbol.dispose) LeanEngine.prototype[Symbol.dispose] = LeanEngine.prototype.free;
+if (Symbol.dispose) ChatTemplate.prototype[Symbol.dispose] = ChatTemplate.prototype.free;
 
 /**
- * The CPU backend's wasm-bindgen surface (`cpu.rs`, one thread or a
- * rayon pool in the `wasm-mt` build): same method names and argument
- * shapes as `LeanEngine` wherever a CPU equivalent exists, so a page holds
- * either behind the same call sites (`create`/`load`/`generate`/
- * `chatGenerate`/`chatReset`/`tokenize`/`decodeIds`/`prefillTokens`/
- * `decodeStepArgmax`). `chatGenerate` is async like the GPU one and yields
- * to the event loop between tokens so an `AbortFlag` can be flipped; the
- * other methods are synchronous and block the calling thread for the
- * forward pass (run them in a Web Worker). No LoRA or KV-snapshot surface
- * yet.
+ * The engine: the JS face of [`crate::Lean`], same calls and same
+ * behaviour.
  */
-export class LeanEngineCpu {
+export class Lean {
     static __wrap(ptr) {
-        const obj = Object.create(LeanEngineCpu.prototype);
+        const obj = Object.create(Lean.prototype);
         obj.__wbg_ptr = ptr;
-        LeanEngineCpuFinalization.register(obj, obj.__wbg_ptr, obj);
+        LeanFinalization.register(obj, obj.__wbg_ptr, obj);
         return obj;
     }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        LeanEngineCpuFinalization.unregister(this);
+        LeanFinalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_leanenginecpu_free(ptr, 0);
+        wasm.__wbg_lean_free(ptr, 0);
     }
     /**
-     * Same signature and behavior as `LeanEngine::chatGenerate`, on the
-     * CPU KV cache (`chat::cpu_chat_turn`); greedy replies are the GPU's
-     * tokens (`tests/chat_api.rs`). `mask_bits` is applied to the logits on
-     * the CPU exactly as `mask_logits.wgsl` does on the GPU.
-     * @param {string} prompt
-     * @param {number} max_new_tokens
-     * @param {number} temperature
-     * @param {number} top_k
-     * @param {number} top_p
-     * @param {number} repetition_penalty
-     * @param {number} seed
-     * @param {Uint32Array} mask_bits
-     * @param {any} on_token
-     * @param {AbortFlag | null} [abort]
-     * @returns {Promise<string>}
-     */
-    chatGenerate(prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, mask_bits, on_token, abort) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray32ToWasm0(mask_bits, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        let ptr2 = 0;
-        if (!isLikeNone(abort)) {
-            _assertClass(abort, AbortFlag);
-            ptr2 = abort.__destroy_into_raw();
-        }
-        const ret = wasm.leanenginecpu_chatGenerate(this.__wbg_ptr, ptr0, len0, max_new_tokens, temperature, top_k, top_p, repetition_penalty, seed, ptr1, len1, on_token, ptr2);
-        return ret;
-    }
-    /**
-     * Same as `LeanEngine::chatReset`.
-     */
-    chatReset() {
-        const ret = wasm.leanenginecpu_chatReset(this.__wbg_ptr);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
-    }
-    /**
-     * No adapter/device to request (unlike `LeanEngine::create`) - kept as
-     * a function (not a plain struct literal) for API-shape symmetry with
-     * the GPU surface's `create()`.
-     * @returns {LeanEngineCpu}
-     */
-    static create() {
-        const ret = wasm.leanenginecpu_create();
-        return LeanEngineCpu.__wrap(ret);
-    }
-    /**
-     * @param {Uint32Array} token_ids
+     * `"webgpu"`, `"threads"` or `"single"`.
      * @returns {string}
      */
-    decodeIds(token_ids) {
-        let deferred3_0;
-        let deferred3_1;
-        try {
-            const ptr0 = passArray32ToWasm0(token_ids, wasm.__wbindgen_malloc);
-            const len0 = WASM_VECTOR_LEN;
-            const ret = wasm.leanenginecpu_decodeIds(this.__wbg_ptr, ptr0, len0);
-            var ptr2 = ret[0];
-            var len2 = ret[1];
-            if (ret[3]) {
-                ptr2 = 0; len2 = 0;
-                throw takeFromExternrefTable0(ret[2]);
-            }
-            deferred3_0 = ptr2;
-            deferred3_1 = len2;
-            return getStringFromWasm0(ptr2, len2);
-        } finally {
-            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-        }
-    }
-    /**
-     * @param {number} token_id
-     * @returns {number}
-     */
-    decodeStepArgmax(token_id) {
-        const ret = wasm.leanenginecpu_decodeStepArgmax(this.__wbg_ptr, token_id);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
-    }
-    /**
-     * @param {string} text
-     * @returns {Uint32Array}
-     */
-    encodeRaw(text) {
-        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanenginecpu_encodeRaw(this.__wbg_ptr, ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v2;
-    }
-    /**
-     * Same contract as `LeanEngine::generate` (render -> tokenize ->
-     * prefill -> greedy decode, `on_token(id, text)` per token), no mask
-     * support, synchronous (no `.await` inside the loop).
-     * @param {string} prompt
-     * @param {number} max_new_tokens
-     * @param {any} on_token
-     * @returns {string}
-     */
-    generate(prompt, max_new_tokens, on_token) {
-        let deferred3_0;
-        let deferred3_1;
-        try {
-            const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-            const len0 = WASM_VECTOR_LEN;
-            const ret = wasm.leanenginecpu_generate(this.__wbg_ptr, ptr0, len0, max_new_tokens, on_token);
-            var ptr2 = ret[0];
-            var len2 = ret[1];
-            if (ret[3]) {
-                ptr2 = 0; len2 = 0;
-                throw takeFromExternrefTable0(ret[2]);
-            }
-            deferred3_0 = ptr2;
-            deferred3_1 = len2;
-            return getStringFromWasm0(ptr2, len2);
-        } finally {
-            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-        }
-    }
-    /**
-     * @returns {string}
-     */
-    info() {
+    get backend() {
         let deferred1_0;
         let deferred1_1;
         try {
-            const ret = wasm.leanenginecpu_info(this.__wbg_ptr);
+            const ret = wasm.lean_backend(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -787,94 +142,108 @@ export class LeanEngineCpu {
         }
     }
     /**
+     * One inference turn over `text`, exactly as given. `params`:
+     * `maxNewTokens`, `temperature` (0 = greedy), `topK`, `topP`,
+     * `repetitionPenalty`, `seed`, optional `mask`. `onToken(text)` gets
+     * each piece of the reply as it is decoded; it must not call this
+     * engine, and a throw from it stops generation and is rethrown.
+     * `abort`: `flag.cloneFlag()` of an `AbortFlag`, or nothing. Resolves
+     * to the whole reply. Rejects with a `ContextOverflow` error (see
+     * `lean_error_to_js`) when `text` plus `maxNewTokens` does not fit
+     * `maxCtx`; the engine stays usable.
+     * @param {string} text
+     * @param {any} params
+     * @param {any} on_token
+     * @param {AbortFlag | null} [abort]
+     * @returns {Promise<string>}
+     */
+    generate(text, params, on_token, abort) {
+        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        let ptr1 = 0;
+        if (!isLikeNone(abort)) {
+            _assertClass(abort, AbortFlag);
+            ptr1 = abort.__destroy_into_raw();
+        }
+        const ret = wasm.lean_generate(this.__wbg_ptr, ptr0, len0, params, on_token, ptr1);
+        return ret;
+    }
+    /**
+     * `opts`: `{ gguf, tokenizer, maxCtx, backend }`. `gguf` is the GGUF
+     * file as a `Uint8Array` (read one tensor at a time, never copied
+     * whole into wasm memory; drop your reference after the call so the
+     * JS heap can reclaim it), `tokenizer` the text of `tokenizer.json`,
+     * `maxCtx` the KV cache size in tokens, `backend` `"auto"` (default:
+     * WebGPU, else the CPU forward pass), `"webgpu"` or `"cpu"`. The CPU
+     * forward pass runs on a thread pool in the threads build after
+     * `initThreadPool(n)`, and on one thread otherwise.
+     * @param {any} opts
+     * @returns {Promise<Lean>}
+     */
+    static load(opts) {
+        const ret = wasm.lean_load(opts);
+        return ret;
+    }
+    /**
+     * How many tokens `text` is. No forward pass.
+     * @param {string} text
      * @returns {number}
      */
-    kvLen() {
-        const ret = wasm.leanenginecpu_kvLen(this.__wbg_ptr);
+    tokenCount(text) {
+        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.lean_tokenCount(this.__wbg_ptr, ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] >>> 0;
-    }
-    /**
-     * Parses `gguf_bytes` (a `Uint8Array` view, same reasoning as
-     * `LeanEngine::load`) into a CPU-resident model (Q4_0/Q8_0/Q6_K tensor
-     * bytes held as-is - see `cpu.rs`'s doc comment, this is the one rung
-     * that legitimately needs its own resident copy of the quantized
-     * bytes, since it computes directly off them) and allocates a
-     * `CpuKvCache` sized to `max_ctx`. Same signature as `LeanEngine::load`
-     * minus the `Result` needing to report GPU-adapter failures.
-     * @param {Uint8Array} gguf_bytes
-     * @param {string} tokenizer_json
-     * @param {string} tokenizer_config_json
-     * @param {number} max_ctx
-     */
-    load(gguf_bytes, tokenizer_json, tokenizer_config_json, max_ctx) {
-        const ptr0 = passStringToWasm0(tokenizer_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(tokenizer_config_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.leanenginecpu_load(this.__wbg_ptr, gguf_bytes, ptr0, len0, ptr1, len1, max_ctx);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
-    }
-    /**
-     * Low-level prefill over raw token ids - resets the KV cache to
-     * position 0, runs prefill, returns the last position's logits. No
-     * mask argument (unlike `LeanEngine::prefillTokens`) - `cpu.rs` has no
-     * mask support yet.
-     * @param {Uint32Array} token_ids
-     * @returns {Float32Array}
-     */
-    prefillTokens(token_ids) {
-        const ptr0 = passArray32ToWasm0(token_ids, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanenginecpu_prefillTokens(this.__wbg_ptr, ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v2;
-    }
-    /**
-     * @param {string} prompt
-     * @returns {number}
-     */
-    tokenCount(prompt) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanenginecpu_tokenCount(this.__wbg_ptr, ptr0, len0);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
-    }
-    /**
-     * @param {string} prompt
-     * @returns {Uint32Array}
-     */
-    tokenize(prompt) {
-        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.leanenginecpu_tokenize(this.__wbg_ptr, ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v2;
     }
 }
-if (Symbol.dispose) LeanEngineCpu.prototype[Symbol.dispose] = LeanEngineCpu.prototype.free;
+if (Symbol.dispose) Lean.prototype[Symbol.dispose] = Lean.prototype.free;
 
 /**
- * Initializes the panic hook for readable browser-console error messages.
- * Optional but recommended: call once before `LeanEngine::create()`.
+ * `render` for JavaScript: `template` is a `ChatTemplate`, `messages` an
+ * array of `{role, content, tool_calls?, name?, tool_call_id?}`, `tools`
+ * an array of tool definitions or null/undefined.
+ * @param {ChatTemplate} template
+ * @param {any} messages
+ * @param {any} tools
+ * @param {boolean} add_generation_prompt
+ * @returns {string}
  */
-export function leanInit() {
-    wasm.leanInit();
+export function chatRender(template, messages, tools, add_generation_prompt) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        _assertClass(template, ChatTemplate);
+        const ret = wasm.chatRender(template.__wbg_ptr, messages, tools, add_generation_prompt);
+        var ptr1 = ret[0];
+        var len1 = ret[1];
+        if (ret[3]) {
+            ptr1 = 0; len1 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred2_0 = ptr1;
+        deferred2_1 = len1;
+        return getStringFromWasm0(ptr1, len1);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * `trim_oldest_exchange` for JavaScript: returns a new array without the
+ * oldest exchange (the same message objects otherwise), or `undefined`
+ * when there is no older exchange to drop. `messages` is not modified.
+ * @param {Array<any>} messages
+ * @returns {any}
+ */
+export function chatTrimOldestExchange(messages) {
+    const ret = wasm.chatTrimOldestExchange(messages);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -910,6 +279,12 @@ function __wbg_get_imports() {
             const ret = arg0 === undefined;
             return ret;
         },
+        __wbg___wbindgen_number_get_1dc732b810cb937c: function(arg0, arg1) {
+            const obj = arg1;
+            const ret = typeof(obj) === 'number' ? obj : undefined;
+            getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+        },
         __wbg___wbindgen_string_get_92ab86bb19cbc12f: function(arg0, arg1) {
             const obj = arg1;
             const ret = typeof(obj) === 'string' ? obj : undefined;
@@ -938,10 +313,6 @@ function __wbg_get_imports() {
         }, arguments); },
         __wbg_call_6bcf8d3e20937e46: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.call(arg1, arg2);
-            return ret;
-        }, arguments); },
-        __wbg_call_7bbd9cceba9949ad: function() { return handleError(function (arg0, arg1, arg2, arg3) {
-            const ret = arg0.call(arg1, arg2, arg3);
             return ret;
         }, arguments); },
         __wbg_construct_69525de4bcbd615c: function() { return handleError(function (arg0, arg1) {
@@ -1026,6 +397,10 @@ function __wbg_get_imports() {
             const ret = Reflect.get(arg0, arg1);
             return ret;
         }, arguments); },
+        __wbg_get_unchecked_363572bdd397d473: function(arg0, arg1) {
+            const ret = arg0[arg1 >>> 0];
+            return ret;
+        },
         __wbg_gpu_ac6dc8fb638a26c3: function(arg0) {
             const ret = arg0.gpu;
             return ret;
@@ -1054,6 +429,20 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
+        __wbg_instanceof_Uint8Array_598adc0fef426aa8: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof Uint8Array;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
+        __wbg_isArray_5674713bb7b79043: function(arg0) {
+            const ret = Array.isArray(arg0);
+            return ret;
+        },
         __wbg_label_84abde6506fa15b7: function(arg0, arg1) {
             const ret = arg1.label;
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1061,11 +450,15 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbg_leanengine_new: function(arg0) {
-            const ret = LeanEngine.__wrap(arg0);
+        __wbg_lean_new: function(arg0) {
+            const ret = Lean.__wrap(arg0);
             return ret;
         },
         __wbg_length_31bdaf014f5fbde2: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
+        __wbg_length_4e1adc0d42e23620: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
@@ -1223,7 +616,7 @@ function __wbg_get_imports() {
                     const a = state0.a;
                     state0.a = 0;
                     try {
-                        return wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined_______true_(a, state0.b, arg0, arg1);
+                        return wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined_______true_(a, state0.b, arg0, arg1);
                     } finally {
                         state0.a = a;
                     }
@@ -1233,6 +626,10 @@ function __wbg_get_imports() {
             } finally {
                 state0.a = 0;
             }
+        },
+        __wbg_new_a32a1ab6c6655abe: function(arg0, arg1) {
+            const ret = new Error(getStringFromWasm0(arg0, arg1));
+            return ret;
         },
         __wbg_new_bebc3f4757acf305: function() {
             const ret = new Object();
@@ -1253,7 +650,7 @@ function __wbg_get_imports() {
                     const a = state0.a;
                     state0.a = 0;
                     try {
-                        return wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined_______true_(a, state0.b, arg0, arg1);
+                        return wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined_______true_(a, state0.b, arg0, arg1);
                     } finally {
                         state0.a = a;
                     }
@@ -1268,7 +665,7 @@ function __wbg_get_imports() {
             const ret = new Uint8Array(arg0, arg1 >>> 0, arg2 >>> 0);
             return ret;
         },
-        __wbg_now_b515ed7d0710d903: function() {
+        __wbg_now_9491a29e32c83fc0: function() {
             const ret = performance.now();
             return ret;
         },
@@ -1387,6 +784,9 @@ function __wbg_get_imports() {
         __wbg_set_module_af2f871a0bed003c: function(arg0, arg1) {
             arg0.module = arg1;
         },
+        __wbg_set_name_6e2a5da46a9ae1e7: function(arg0, arg1, arg2) {
+            arg0.name = getStringFromWasm0(arg1, arg2);
+        },
         __wbg_set_offset_f07a73165707eb4c: function(arg0, arg1) {
             arg0.offset = arg1;
         },
@@ -1440,6 +840,10 @@ function __wbg_get_imports() {
             const ret = typeof window === 'undefined' ? null : window;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
+        __wbg_stringify_54b3d9b61602aee6: function() { return handleError(function (arg0) {
+            const ret = JSON.stringify(arg0);
+            return ret;
+        }, arguments); },
         __wbg_subarray_1daff70dde20c145: function(arg0, arg1, arg2) {
             const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
             return ret;
@@ -1466,13 +870,13 @@ function __wbg_get_imports() {
             arg0.writeBuffer(arg1, arg2, arg3, arg4, arg5);
         }, arguments); },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 685, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___wasm_bindgen_d9968b0ec09587b9___JsValue______true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1466, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___wasm_bindgen_d1364fc00cf24e81___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 711, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___wasm_bindgen_d9968b0ec09587b9___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_d9968b0ec09587b9___JsError___true_);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 1496, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___wasm_bindgen_d1364fc00cf24e81___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_d1364fc00cf24e81___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0) {
@@ -1488,27 +892,6 @@ function __wbg_get_imports() {
         __wbindgen_generic_0000000000000005: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
-            return ret;
-        },
-        __wbindgen_generic_0000000000000006: function(arg0, arg1) {
-            var v0 = getArrayF32FromWasm0(arg0, arg1).slice();
-            wasm.__wbindgen_free(arg0, arg1 * 4, 4);
-            // Cast intrinsic for `Vector(F32) -> Externref`.
-            const ret = v0;
-            return ret;
-        },
-        __wbindgen_generic_0000000000000007: function(arg0, arg1) {
-            var v0 = getArrayU32FromWasm0(arg0, arg1).slice();
-            wasm.__wbindgen_free(arg0, arg1 * 4, 4);
-            // Cast intrinsic for `Vector(U32) -> Externref`.
-            const ret = v0;
-            return ret;
-        },
-        __wbindgen_generic_0000000000000008: function(arg0, arg1) {
-            var v0 = getArrayU8FromWasm0(arg0, arg1).slice();
-            wasm.__wbindgen_free(arg0, arg1 * 1, 1);
-            // Cast intrinsic for `Vector(U8) -> Externref`.
-            const ret = v0;
             return ret;
         },
         __wbindgen_init_externref_table: function() {
@@ -1527,19 +910,19 @@ function __wbg_get_imports() {
     };
 }
 
-function wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___wasm_bindgen_d9968b0ec09587b9___JsValue______true_(arg0, arg1, arg2) {
-    wasm.wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___wasm_bindgen_d9968b0ec09587b9___JsValue______true_(arg0, arg1, arg2);
+function wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___wasm_bindgen_d1364fc00cf24e81___JsValue______true_(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___wasm_bindgen_d1364fc00cf24e81___JsValue______true_(arg0, arg1, arg2);
 }
 
-function wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___wasm_bindgen_d9968b0ec09587b9___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_d9968b0ec09587b9___JsError___true_(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___wasm_bindgen_d9968b0ec09587b9___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_d9968b0ec09587b9___JsError___true_(arg0, arg1, arg2);
+function wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___wasm_bindgen_d1364fc00cf24e81___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_d1364fc00cf24e81___JsError___true_(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___wasm_bindgen_d1364fc00cf24e81___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_d1364fc00cf24e81___JsError___true_(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined_______true_(arg0, arg1, arg2, arg3) {
-    wasm.wasm_bindgen_d9968b0ec09587b9___convert__closures_____invoke___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined___js_sys_f9154c29c9997e92___Function_fn_wasm_bindgen_d9968b0ec09587b9___JsValue_____wasm_bindgen_d9968b0ec09587b9___sys__Undefined_______true_(arg0, arg1, arg2, arg3);
+function wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined_______true_(arg0, arg1, arg2, arg3) {
+    wasm.wasm_bindgen_d1364fc00cf24e81___convert__closures_____invoke___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined___js_sys_6645885dddf8ad2e___Function_fn_wasm_bindgen_d1364fc00cf24e81___JsValue_____wasm_bindgen_d1364fc00cf24e81___sys__Undefined_______true_(arg0, arg1, arg2, arg3);
 }
 
 
@@ -1550,12 +933,12 @@ const __wbindgen_enum_GpuQueryType = ["occlusion", "timestamp"];
 const AbortFlagFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_abortflag_free(ptr, 1));
-const LeanEngineFinalization = (typeof FinalizationRegistry === 'undefined')
+const ChatTemplateFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_leanengine_free(ptr, 1));
-const LeanEngineCpuFinalization = (typeof FinalizationRegistry === 'undefined')
+    : new FinalizationRegistry(ptr => wasm.__wbg_chattemplate_free(ptr, 1));
+const LeanFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_leanenginecpu_free(ptr, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_lean_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -1638,11 +1021,6 @@ function debugString(val) {
     return className;
 }
 
-function getArrayF32FromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
-}
-
 function getArrayU32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
@@ -1659,14 +1037,6 @@ function getDataViewMemory0() {
         cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
     }
     return cachedDataViewMemory0;
-}
-
-let cachedFloat32ArrayMemory0 = null;
-function getFloat32ArrayMemory0() {
-    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
-        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
-    }
-    return cachedFloat32ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -1728,20 +1098,6 @@ function makeMutClosure(arg0, arg1, f) {
     };
     CLOSURE_DTORS.register(real, state, state);
     return real;
-}
-
-function passArray32ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 4, 4) >>> 0;
-    getUint32ArrayMemory0().set(arg, ptr / 4);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
-}
-
-function passArray8ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 1, 1) >>> 0;
-    getUint8ArrayMemory0().set(arg, ptr / 1);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
@@ -1822,7 +1178,6 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
-    cachedFloat32ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
