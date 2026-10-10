@@ -1,5 +1,5 @@
 /* @ts-self-types="./lean.d.ts" */
-import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-10-lean-api-01';
+import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-10-lean-1fce23d';
 
 
 /**
