@@ -3,32 +3,33 @@
 //  - backend selection + capability checks: crates/lean/www/backends_common.js
 //    `capabilities()` (branch lean-release, commit b7e51a2) - vendored here
 //    as ./backends_common.js.
-//  - worker structure (load/chat/stop/reset protocol, chatGenerate/chatReset
-//    call shape, early-message buffering): crates/lean/www/chat_worker.js
-//    (same branch/commit) and web/lean-chat-worker.js (branch pages-on-lean,
-//    commit 08722b2).
+//  - engine API (Lean.load/generate/tokenCount, ChatTemplate, chatRender):
+//    web/lean-chat-worker.js (branch lean-one-turn, commit 1fce23d).
 // Model download goes through trucs.ai's own lib/model-cache.js (getModel),
 // not backends_common.js's fetchBytes, since this page already has that
 // shared cache helper (branch llm-life-demo, commit 920fbd9+).
 //
-// page -> worker:  {type:'load'} | {type:'chat', text} | {type:'stop'} | {type:'reset'}
+// page -> worker:  {type:'load'} | {type:'chat', text} | {type:'stop'}
 // worker -> page:  {type:'status', text} | {type:'ready', backend, label}
 //                   {type:'token', text} | {type:'done', tokens}
 //                   {type:'error', message}
 //
-// Single-turn: the page calls chatReset() before every chatGenerate so each
-// send starts a fresh conversation, matching this page's "single-turn chat"
-// copy. No top-level import/await: a module worker with a top-level await
-// can drop messages posted before it resolves (2026-09-22 llm-life
-// incident). self.onmessage is wired synchronously first and buffers into
-// EARLY until the real handlers are installed, then the buffer is replayed.
+// Single-turn: every chat renders just the one user message through the
+// chat template, matching this page's "single-turn chat" copy. lean itself
+// keeps no conversation of its own (see Lean.generate); there is nothing to
+// reset between turns. No top-level import/await: a module worker with a
+// top-level await can drop messages posted before it resolves (2026-09-22
+// llm-life incident). self.onmessage is wired synchronously first and
+// buffers into EARLY until the real handlers are installed, then the
+// buffer is replayed.
 const EARLY = [];
 self.onmessage = (e) => EARLY.push(e);
 
-const ENGINE_BUILD = '2026-10-06-lean-878b1a1';
+const ENGINE_BUILD = '2026-10-10-lean-1fce23d';
 
 let engine = null;
-let AbortFlagCtor = null;
+let lean = null; // the loaded wasm module (AbortFlag, ChatTemplate, chatRender)
+let chatTemplate = null;
 let abortFlag = null;
 
 function status(text) {
@@ -51,7 +52,6 @@ function loadSingle() {
     singlePromise = (async () => {
       const mod = await import(`./pkg/lean.js?v=${ENGINE_BUILD}`);
       await mod.default({ module_or_path: `./pkg/lean_bg.wasm?v=${ENGINE_BUILD}` });
-      mod.leanInit();
       return mod;
     })();
   }
@@ -63,24 +63,14 @@ function loadThreads() {
       const mod = await import(`./pkg-mt/lean.js?v=${ENGINE_BUILD}`);
       await mod.default({ module_or_path: `./pkg-mt/lean_bg.wasm?v=${ENGINE_BUILD}` });
       await mod.initThreadPool(navigator.hardwareConcurrency);
-      mod.leanInit();
       return mod;
     })();
   }
   return threadsPromise;
 }
 
-async function createEngine(which) {
-  if (which === 'webgpu') {
-    const mod = await loadSingle();
-    return { engine: await mod.LeanEngine.create(), AbortFlag: mod.AbortFlag };
-  }
-  if (which === 'threads') {
-    const mod = await loadThreads();
-    return { engine: mod.LeanEngineCpu.create(), AbortFlag: mod.AbortFlag };
-  }
-  const mod = await loadSingle();
-  return { engine: mod.LeanEngineCpu.create(), AbortFlag: mod.AbortFlag };
+function loadModule(which) {
+  return which === 'threads' ? loadThreads() : loadSingle();
 }
 
 function backendLabel(backend, threads) {
@@ -94,7 +84,7 @@ async function load(model) {
   const candidates = [caps.hasAdapter && 'webgpu', caps.threadsCapable && 'threads', 'single'].filter(Boolean);
   console.log(`[lean] capabilities: crossOriginIsolated=${caps.crossOriginIsolated} sharedArrayBuffer=${caps.sharedArrayBuffer} hardwareConcurrency=${caps.hardwareConcurrency} hasAdapter=${caps.hasAdapter} -> candidates: ${candidates.join(', ')}`);
 
-  const { getModel } = await import('../lib/model-cache.js?v=2026-10-06-lean-878b1a1');
+  const { getModel } = await import(`../lib/model-cache.js?v=${ENGINE_BUILD}`);
   const [ggufBytes, tokenizerBytes, tokenizerCfgBytes] = await getModel(
     [model.gguf, model.tokenizer, model.tokenizerCfg],
     {
@@ -116,14 +106,15 @@ async function load(model) {
   let backend = null;
   for (const c of candidates) {
     try {
-      const r = await createEngine(c);
-      r.engine.load(ggufBytes, tokenizerJson, tokenizerCfgJson, model.maxCtx);
-      engine = r.engine;
-      AbortFlagCtor = r.AbortFlag;
+      const mod = await loadModule(c);
+      const e = await mod.Lean.load({ gguf: ggufBytes, tokenizer: tokenizerJson, maxCtx: model.maxCtx, backend: c === 'webgpu' ? 'webgpu' : 'cpu' });
+      chatTemplate = mod.ChatTemplate.fromTokenizerConfig(tokenizerCfgJson);
+      engine = e;
+      lean = mod;
       backend = c;
       break;
-    } catch (e) {
-      const reason = e && e.message ? e.message : e;
+    } catch (err) {
+      const reason = err && err.message ? err.message : err;
       console.warn(`[lean] ${c} backend failed, falling back: ${reason}`);
       skipped.push(`${c}: ${reason}`);
       engine = null;
@@ -134,30 +125,19 @@ async function load(model) {
   self.postMessage({ type: 'ready', backend, label: backendLabel(backend, caps.hardwareConcurrency) });
 }
 
+const GEN_PARAMS = { maxNewTokens: 512, temperature: 0.7, topK: 40, topP: 0.9, repetitionPenalty: 1.1, seed: 0 };
+
 async function chat(text) {
   if (!engine) {
     self.postMessage({ type: 'error', phase: 'generate', message: 'engine not loaded' });
     return;
   }
-  engine.chatReset();
-  let tokens = 0;
   try {
-    abortFlag = new AbortFlagCtor();
-    await engine.chatGenerate(
-      text,
-      512,
-      0.7,
-      40,
-      0.9,
-      1.1,
-      0,
-      new Uint32Array(0),
-      (id, piece) => {
-        if (id >= 0) tokens += 1;
-        if (piece) self.postMessage({ type: 'token', text: piece });
-      },
-      abortFlag.cloneFlag()
-    );
+    const prompt = lean.chatRender(chatTemplate, [{ role: 'user', content: text }], null, true);
+    abortFlag = new lean.AbortFlag();
+    const reply = await engine.generate(prompt, GEN_PARAMS, (piece) => self.postMessage({ type: 'token', text: piece }), abortFlag.cloneFlag());
+    let tokens = 0;
+    try { tokens = engine.tokenCount(reply); } catch (_) {}
     self.postMessage({ type: 'done', tokens });
   } catch (e) {
     self.postMessage({ type: 'error', phase: 'generate', message: e && e.message ? e.message : String(e) });
