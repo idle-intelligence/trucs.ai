@@ -389,7 +389,7 @@
 
       sttClient = new SttClient({
         baseUrl: 'https://idle-intelligence.github.io/stt-web',
-        workerUrl: '../stt/worker.js?v=3',
+        workerUrl: '../stt/worker.js?v=4',
         audioProcessorUrl: '../stt/audio-processor.js',
 
         onStatus: (text, ready, progress) => {
@@ -865,7 +865,7 @@
     // reset here — only stopEverything/reset send {type:'reset'}.
     // ════════════════════════════════════════════
 
-    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-07-voice-fixes-2', import.meta.url), { type: 'module' });
+    const llmWorker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-10-lean-1fce23d', import.meta.url), { type: 'module' });
     let llmLoaded = false;
     let llmGenStart = 0;
     let llmSentenceBuffer = '';
