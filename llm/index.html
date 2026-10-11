@@ -70,11 +70,22 @@
       gap: 1em;
       margin-top: 0.75em;
     }
-    #output {
-      margin-top: 1.5em;
+    #chat:has(.msg) {
+      margin-bottom: 1.5em;
+    }
+    .msg {
+      margin-top: 0.75em;
       white-space: pre-wrap;
       word-break: break-word;
-      min-height: 4em;
+    }
+    .msg:first-child {
+      margin-top: 0;
+    }
+    .msg.user {
+      color: #555;
+    }
+    #stats:empty {
+      display: none;
     }
     #stats {
       margin-top: 0.5em;
@@ -103,7 +114,7 @@
     <p>
       A small language model running entirely in your browser.<br>
       No server, no API key. Your prompt never leaves your machine.<br>
-      <span id="model-name">SmolLM2-1.7B</span>, single-turn chat.
+      <span id="model-name">SmolLM2-1.7B</span>, multi-turn chat.
     </p>
     <p id="mobile-warning" class="panel-desc" hidden>Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try the desktop version for a much better experience with WebGPU acceleration.</p>
 
@@ -115,17 +126,16 @@
 
     <hr>
 
+    <div id="chat"><div id="stats"></div></div>
+
     <textarea id="input" placeholder="Say something..." maxlength="2000"></textarea>
     <div class="controls">
       <button id="send-btn" disabled>send</button>
     </div>
 
-    <div id="output"></div>
-    <div id="stats"></div>
-
     <hr>
 
-    <p id="desc-full" class="panel-desc"><a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, single-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.</p>
+    <p id="desc-full" class="panel-desc"><a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.</p>
     <p id="desc-mobile" class="panel-desc" hidden><a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.</p>
 
     <hr>
@@ -137,7 +147,8 @@
     const sendBtn = document.getElementById('send-btn');
     const loadBtn = document.getElementById('load-btn');
     const statusText = document.getElementById('status-text');
-    const output = document.getElementById('output');
+    const chat = document.getElementById('chat');
+    let output = null;
     const stats = document.getElementById('stats');
     const descFull = document.getElementById('desc-full');
     const descMobile = document.getElementById('desc-mobile');
@@ -264,7 +275,7 @@
       document.getElementById('voice-link').hidden = true;
     }
 
-    const worker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-10-lean-1fce23d', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./lean-chat-worker.js?v=2026-10-11-multiturn', import.meta.url), { type: 'module' });
 
     let ready = false;
     let isCached = false;
@@ -317,11 +328,7 @@
       } else if (msg.type === 'done') {
         if (sentenceBuffer.trim()) sendVoiceChunks(sentenceBuffer.trim());
         if (voiceConnected) channel.postMessage({ from: 'llm', type: 'done' });
-        if (backend === 'webgpu') {
-          const elapsed = (performance.now() - genStart) / 1000;
-          const tokSec = (msg.tokens / elapsed).toFixed(1);
-          stats.textContent = `${msg.tokens} tokens in ${elapsed.toFixed(1)}s (${tokSec} tok/s)`;
-        } else if (firstTokenTime !== null) {
+        if (firstTokenTime !== null) {
           const ttfb = ((firstTokenTime - genStart) / 1000).toFixed(1);
           const decodeTime = (performance.now() - firstTokenTime) / 1000;
           const tokSec = decodeTime > 0 ? (msg.tokens / decodeTime).toFixed(1) : '—';
@@ -344,6 +351,7 @@
           loadBtn.disabled = false;
           sendBtn.disabled = true;
         } else {
+          if (!output) addMessage('bot');
           output.textContent = 'error: ' + text;
           if (backend !== 'webgpu') statusText.textContent = 'ready';
           sendBtn.disabled = false;
@@ -358,11 +366,22 @@
       worker.postMessage({ type: 'load', model: MODEL });
     }
 
+    // Adds a message above the stats line, which stays under the latest reply.
+    function addMessage(who) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + who;
+      chat.insertBefore(el, stats);
+      if (who === 'bot') output = el;
+      return el;
+    }
+
     function generate() {
       const text = input.value.trim().slice(0, 2000);
       if (!text || !ready) return;
       sendBtn.disabled = true;
-      output.textContent = '';
+      input.value = '';
+      addMessage('user').textContent = text;
+      addMessage('bot');
       stats.textContent = '';
       sentenceBuffer = '';
       firstTokenTime = null;

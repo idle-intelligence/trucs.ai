@@ -14,10 +14,12 @@
 //                   {type:'token', text} | {type:'done', tokens}
 //                   {type:'error', message}
 //
-// Single-turn: every chat renders just the one user message through the
-// chat template, matching this page's "single-turn chat" copy. lean itself
-// keeps no conversation of its own (see Lean.generate); there is nothing to
-// reset between turns. No top-level import/await: a module worker with a
+// Multi-turn: the worker keeps the message list (a system message, then
+// user and assistant turns) and renders all of it through the chat template
+// on every turn. lean itself keeps no conversation of its own (see
+// Lean.generate); it reuses the KV cache of the longest common prefix with
+// the previous prompt. When a prompt does not fit, the oldest exchange is
+// dropped and the turn retried. No top-level import/await: a module worker with a
 // top-level await can drop messages posted before it resolves (2026-09-22
 // llm-life incident). self.onmessage is wired synchronously first and
 // buffers into EARLY until the real handlers are installed, then the
@@ -122,10 +124,57 @@ async function load(model) {
   }
   if (!engine) throw new Error(`no backend available (${skipped.join('; ')})`);
 
+  await warmUp();
+
   self.postMessage({ type: 'ready', backend, label: backendLabel(backend, caps.hardwareConcurrency) });
 }
 
-const GEN_PARAMS = { maxNewTokens: 512, temperature: 0.7, topK: 40, topP: 0.9, repetitionPenalty: 1.1, seed: 0 };
+const GEN_PARAMS = { maxNewTokens: 512, temperature: 0.7, topK: 40, topP: 0.9, repetitionPenalty: 1.0, seed: 0 };
+
+const SYSTEM_PROMPT = 'You are a small language model running entirely in the user\'s browser, on the lean inference engine, with no server. Keep your answers brief.';
+const SYSTEM = { role: 'system', content: SYSTEM_PROMPT };
+
+// The whole conversation after the system message, as {role, content}.
+let HISTORY = [];
+
+// Runs one generation over the system message alone, so the KV cache
+// already holds the system prompt when the first user turn arrives. The
+// system-only text must be a byte prefix of every later prompt for lean's
+// prefix reuse to apply; that is checked here against a sample turn.
+async function warmUp() {
+  try {
+    const prefix = lean.chatRender(chatTemplate, [SYSTEM], null, false);
+    const full = lean.chatRender(chatTemplate, [SYSTEM, { role: 'user', content: 'hi' }], null, true);
+    console.log(`[lean] warm-up prefix check: system-only prompt is a prefix of the first full prompt: ${full.startsWith(prefix)} (${engine.tokenCount(prefix)} tokens)`);
+    const t0 = performance.now();
+    await engine.generate(prefix, { ...GEN_PARAMS, maxNewTokens: 1 }, () => {}, null);
+    console.log(`[lean] warm-up done in ${((performance.now() - t0) / 1000).toFixed(2)}s`);
+  } catch (e) {
+    console.warn(`[lean] warm-up failed: ${e && e.message ? e.message : e}`);
+  }
+}
+
+async function generateOnce(turn) {
+  const prompt = lean.chatRender(chatTemplate, turn, null, true);
+  return engine.generate(prompt, GEN_PARAMS, (piece) => self.postMessage({ type: 'token', text: piece }), abortFlag.cloneFlag());
+}
+
+// Retries a turn against a shrinking message list: `turn` is the system
+// message, HISTORY and the pending user message (chatTrimOldestExchange
+// keeps that latest user turn and drops the oldest exchange before it).
+async function generateWithTrim(turn) {
+  for (;;) {
+    try {
+      return { turn, reply: await generateOnce(turn) };
+    } catch (e) {
+      if (!(e && e.name === 'ContextOverflow')) throw e;
+      const trimmed = lean.chatTrimOldestExchange(turn);
+      if (!trimmed) throw e;
+      console.log(`[lean] context overflow (needed=${e.needed} available=${e.available}); dropping the oldest turn`);
+      turn = trimmed;
+    }
+  }
+}
 
 async function chat(text) {
   if (!engine) {
@@ -133,9 +182,9 @@ async function chat(text) {
     return;
   }
   try {
-    const prompt = lean.chatRender(chatTemplate, [{ role: 'user', content: text }], null, true);
     abortFlag = new lean.AbortFlag();
-    const reply = await engine.generate(prompt, GEN_PARAMS, (piece) => self.postMessage({ type: 'token', text: piece }), abortFlag.cloneFlag());
+    const { turn, reply } = await generateWithTrim([SYSTEM, ...HISTORY, { role: 'user', content: text }]);
+    HISTORY = [...turn.slice(1), { role: 'assistant', content: reply }];
     let tokens = 0;
     try { tokens = engine.tokenCount(reply); } catch (_) {}
     self.postMessage({ type: 'done', tokens });
