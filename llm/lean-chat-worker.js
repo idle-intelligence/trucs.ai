@@ -131,7 +131,7 @@ async function load(model) {
 
 const GEN_PARAMS = { maxNewTokens: 512, temperature: 0.7, topK: 40, topP: 0.9, repetitionPenalty: 1.0, seed: 0 };
 
-const SYSTEM_PROMPT = 'You are a small language model running entirely in the user\'s browser, on the lean inference engine, with no server. Keep your answers brief.';
+const SYSTEM_PROMPT = 'You are a small language model running entirely in the user\'s browser on lean, an inference engine written in Rust and compiled to WebAssembly, with no server. Keep your answers brief.';
 const SYSTEM = { role: 'system', content: SYSTEM_PROMPT };
 
 // The whole conversation after the system message, as {role, content}.
