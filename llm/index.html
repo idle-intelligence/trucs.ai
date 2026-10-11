@@ -84,10 +84,7 @@
     .msg.user {
       color: #555;
     }
-    #stats:empty {
-      display: none;
-    }
-    #stats {
+    .stats {
       margin-top: 0.5em;
       color: #999;
       font-size: 0.8rem;
@@ -126,7 +123,7 @@
 
     <hr>
 
-    <div id="chat"><div id="stats"></div></div>
+    <div id="chat"></div>
 
     <textarea id="input" placeholder="Say something..." maxlength="2000"></textarea>
     <div class="controls">
@@ -149,7 +146,6 @@
     const statusText = document.getElementById('status-text');
     const chat = document.getElementById('chat');
     let output = null;
-    const stats = document.getElementById('stats');
     const descFull = document.getElementById('desc-full');
     const descMobile = document.getElementById('desc-mobile');
 
@@ -332,9 +328,9 @@
           const ttfb = ((firstTokenTime - genStart) / 1000).toFixed(1);
           const decodeTime = (performance.now() - firstTokenTime) / 1000;
           const tokSec = decodeTime > 0 ? (msg.tokens / decodeTime).toFixed(1) : '—';
-          stats.textContent = `TTFB ${ttfb}s · ${msg.tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`;
+          addStats(`TTFB ${ttfb}s · ${msg.tokens} tokens in ${decodeTime.toFixed(1)}s (${tokSec} tok/s)`);
         } else {
-          stats.textContent = 'no tokens generated';
+          addStats('no tokens generated');
         }
         statusText.textContent = 'ready';
         sendBtn.disabled = false;
@@ -366,13 +362,20 @@
       worker.postMessage({ type: 'load', model: MODEL });
     }
 
-    // Adds a message above the stats line, which stays under the latest reply.
     function addMessage(who) {
       const el = document.createElement('div');
       el.className = 'msg ' + who;
-      chat.insertBefore(el, stats);
+      chat.appendChild(el);
       if (who === 'bot') output = el;
       return el;
+    }
+
+    // Each reply keeps its own stats line under it.
+    function addStats(text) {
+      const el = document.createElement('div');
+      el.className = 'stats';
+      el.textContent = text;
+      chat.appendChild(el);
     }
 
     function generate() {
@@ -382,7 +385,6 @@
       input.value = '';
       addMessage('user').textContent = text;
       addMessage('bot');
-      stats.textContent = '';
       sentenceBuffer = '';
       firstTokenTime = null;
       if (backend !== 'webgpu') statusText.textContent = 'thinking...';
