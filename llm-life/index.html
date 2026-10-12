@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>llm-life · trucs.ai</title>
+  <meta name="author" content="Thomas Cambau">
+  <meta name="description" content="A language model playing Conway's Game of Life in your browser, one cell at a time.">
+  <meta property="og:title" content="llm-life · trucs.ai">
+  <meta property="og:description" content="A language model playing Conway's Game of Life in your browser, one cell at a time.">
+  <meta property="og:image" content="https://trucs.ai/assets/og/llm-life.png">
+  <meta property="og:url" content="https://trucs.ai/llm-life/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    .series-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+      margin: 0.75em 0;
+    }
+    .series-btn {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.35em 0.9em;
+      cursor: pointer;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      border-radius: 2px;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .series-btn:hover:not(:disabled) { background: #111; color: #fff; }
+    .series-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .series-btn.active {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    #board {
+      display: block;
+      margin: 1.5em auto 0;
+      border: 1px solid #ddd;
+    }
+    #cell-io {
+      margin-top: 1em;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    #cell-prompt {
+      color: #555;
+      white-space: pre-wrap;
+      height: 8em;
+      overflow: hidden;
+    }
+    #cell-answer {
+      font-weight: bold;
+      display: inline-block;
+      min-width: 1ch;
+    }
+    #cell-log {
+      color: #999;
+      margin-top: 0.5em;
+      height: 9.6em;
+      overflow: hidden;
+    }
+    #cell-log div {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>llm-life</h1>
+    <p>
+      A language model playing Conway's Game of Life, one cell at a time.<br>
+      The language model runs here, in this tab.<br>
+      Qwen2.5-0.5B-Instruct, with a LoRA adapter trained to play Life.
+    </p>
+
+    <div id="model-status">
+      <button id="load-btn">download</button>
+      <span id="status-text"><span id="status-line1">model download: ~430MB + ~4MB adapter</span><br><span id="status-line2">-- cells/s · -- s per generation</span></span>
+    </div>
+
+    <hr>
+
+    <div class="series-grid" id="pattern-grid">
+      <button class="series-btn" data-pattern="random">random</button>
+      <button class="series-btn" data-pattern="glider">glider</button>
+      <button class="series-btn" data-pattern="spaceship">spaceship</button>
+      <button class="series-btn" data-pattern="blinker">blinker</button>
+      <button class="series-btn" data-pattern="pulsar">pulsar</button>
+    </div>
+    <canvas id="board" width="320" height="320"></canvas>
+    <div id="cell-io">
+      <div id="cell-prompt"><span id="cell-prompt-text"></span><strong id="cell-answer"></strong></div>
+      <div id="cell-log">
+        <div></div><div></div><div></div><div></div><div></div><div></div>
+      </div>
+    </div>
+
+    <hr>
+
+    <p class="panel-desc">
+      <a href="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF">Qwen2.5-0.5B-Instruct</a>, with the <a href="https://huggingface.co/idle-intelligence/llm-of-life-lora">llm-of-life-lora</a> adapter.<br>
+      Engine: <a href="https://github.com/idle-intelligence/llm-web">lean</a>. Source: <a href="https://github.com/idle-intelligence/llm-life">llm-life</a>.
+    </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    const loadBtn = document.getElementById('load-btn');
+    const statusLine1 = document.getElementById('status-line1');
+    const statusLine2 = document.getElementById('status-line2');
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    const cellPromptText = document.getElementById('cell-prompt-text');
+    const cellAnswer = document.getElementById('cell-answer');
+    const cellLog = document.getElementById('cell-log');
+    const logLines = [...cellLog.children];
+    const patternGrid = document.getElementById('pattern-grid');
+
+    const WIDTH = 16, HEIGHT = 16;
+    const CELLS = WIDTH * HEIGHT;
+    const CSS_SIZE = 320;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = CSS_SIZE * dpr;
+    canvas.height = CSS_SIZE * dpr;
+    canvas.style.width = CSS_SIZE + 'px';
+    canvas.style.height = CSS_SIZE + 'px';
+    ctx.scale(dpr, dpr);
+    const CELL = CSS_SIZE / WIDTH;
+
+    // Starting patterns, placed centered on the 16x16 torus.
+    const PATTERN_ASCII = {
+      glider: ['.X.', '..X', 'XXX'],
+      spaceship: ['.X..X', 'X....', 'X...X', 'XXXX.'],
+      blinker: ['XXX'],
+      pulsar: [
+        '..XXX...XXX..',
+        '.............',
+        'X....X.X....X',
+        'X....X.X....X',
+        'X....X.X....X',
+        '..XXX...XXX..',
+        '.............',
+        '..XXX...XXX..',
+        'X....X.X....X',
+        'X....X.X....X',
+        'X....X.X....X',
+        '.............',
+        '..XXX...XXX..',
+      ],
+    };
+
+    function placeAscii(rows) {
+      const h = rows.length, w = rows[0].length;
+      const x0 = Math.floor((WIDTH - w) / 2), y0 = Math.floor((HEIGHT - h) / 2);
+      const out = new Uint8Array(CELLS);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (rows[y][x] === 'X') out[(y0 + y) * WIDTH + (x0 + x)] = 1;
+        }
+      }
+      return out;
+    }
+
+    function randomPattern() {
+      const out = new Uint8Array(CELLS);
+      for (let i = 0; i < CELLS; i++) out[i] = Math.random() < 0.3 ? 1 : 0;
+      return out;
+    }
+
+    function patternBoard(name) {
+      return name === 'random' ? randomPattern() : placeAscii(PATTERN_ASCII[name]);
+    }
+
+    let cells = new Uint8Array(CELLS);
+    let selected = -1;
+
+    // 0 = no mark, 1 = white cross (a live cell that will die), 2 = black
+    // cross (a dead cell that will live). Set from a 'cell' message by
+    // comparing the engine's answer to the CURRENT generation's value at
+    // that index (the board itself isn't touched until the sweep finishes),
+    // so a visitor can check the rule cell by cell while it runs.
+    const marks = new Uint8Array(CELLS);
+
+    function draw() {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, CSS_SIZE, CSS_SIZE);
+      for (let i = 0; i < cells.length; i++) {
+        const x = (i % WIDTH) * CELL;
+        const y = Math.floor(i / WIDTH) * CELL;
+        ctx.fillStyle = cells[i] ? '#111' : '#fff';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+        if (marks[i]) {
+          const pad = CELL * 0.25;
+          ctx.strokeStyle = marks[i] === 1 ? '#fff' : '#111';
+          ctx.lineWidth = Math.max(1.5, CELL * 0.15);
+          ctx.beginPath();
+          ctx.moveTo(x + pad, y + pad);
+          ctx.lineTo(x + CELL - pad, y + CELL - pad);
+          ctx.moveTo(x + CELL - pad, y + pad);
+          ctx.lineTo(x + pad, y + CELL - pad);
+          ctx.stroke();
+        }
+      }
+      if (selected >= 0) {
+        const x = (selected % WIDTH) * CELL;
+        const y = Math.floor(selected / WIDTH) * CELL;
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2);
+      }
+    }
+
+    const logEntries = [];
+    function renderLog() {
+      for (let i = 0; i < logLines.length; i++) logLines[i].textContent = logEntries[i] || '';
+    }
+
+    let selectedPattern = 'glider';
+    cells = patternBoard(selectedPattern);
+    draw();
+    renderLog();
+    for (const btn of patternGrid.children) btn.classList.toggle('active', btn.dataset.pattern === selectedPattern);
+
+    let worker = null;
+    let ready = false;
+    let playing = false;
+    let backendPhrase = '';
+
+    // The selector moves to the cell being computed, while the prompt and
+    // answer keep showing the last decided cell until the new answer is
+    // ready, then both are replaced together. `pendingPrompt` is the
+    // prompt of whichever cell is currently in flight; it's only painted
+    // once that cell's answer arrives. Before the very first answer of a
+    // run, the first cell's prompt is shown right away with an empty
+    // answer slot (nothing decided yet to keep showing).
+    let pendingPrompt = '';
+    let hasAnyAnswer = false;
+
+    patternGrid.addEventListener('click', (e) => {
+      const btn = e.target.closest('.series-btn');
+      if (!btn) return;
+      selectedPattern = btn.dataset.pattern;
+      for (const b of patternGrid.children) b.classList.toggle('active', b === btn);
+      cells = patternBoard(selectedPattern);
+      selected = -1;
+      marks.fill(0);
+      draw();
+      logEntries.length = 0;
+      renderLog();
+      cellPromptText.textContent = '';
+      cellAnswer.textContent = '';
+      hasAnyAnswer = false;
+      pendingPrompt = '';
+      if (worker) worker.postMessage({ type: 'reset', board: Array.from(cells) });
+    });
+
+    loadBtn.addEventListener('click', () => {
+      if (!worker) {
+        worker = new Worker('./worker.js?v=2026-10-07-cells-04', { type: 'module' });
+        worker.onmessage = (e) => {
+          const msg = e.data;
+          if (msg.type === 'progress') {
+            const pct = Math.round(msg.fraction * 100);
+            statusLine1.textContent = `downloading: ${pct}%`;
+          } else if (msg.type === 'ready') {
+            ready = true;
+            backendPhrase = msg.backendPhrase;
+            statusLine1.textContent = 'ready';
+            loadBtn.textContent = 'play';
+            loadBtn.disabled = false;
+          } else if (msg.type === 'select') {
+            selected = msg.index;
+            draw();
+            pendingPrompt = msg.prompt;
+            if (!hasAnyAnswer) {
+              cellPromptText.textContent = pendingPrompt;
+              cellAnswer.textContent = '';
+            }
+          } else if (msg.type === 'cell') {
+            // The current generation stays on screen unchanged; only mark
+            // whether this cell is about to change.
+            marks[msg.index] = msg.state === cells[msg.index] ? 0 : (cells[msg.index] ? 1 : 2);
+            draw();
+            cellPromptText.textContent = pendingPrompt;
+            cellAnswer.textContent = String(msg.state);
+            hasAnyAnswer = true;
+            if (playing) {
+              const sPerGen = CELLS / msg.cellsPerSec;
+              statusLine1.textContent = `playing on ${backendPhrase}, ${msg.tokSec} tok/s`;
+              statusLine2.textContent = `${msg.cellsPerSec.toFixed(1)} cells/s · ${sPerGen.toFixed(1)} s per generation`;
+            }
+            const entry = `(${msg.x}, ${msg.y})  dead ${msg.dead.toFixed(1)}  alive ${msg.alive.toFixed(1)}  → ${msg.state}`;
+            logEntries.unshift(entry);
+            logEntries.length = Math.min(logEntries.length, logLines.length);
+            renderLog();
+          } else if (msg.type === 'generation') {
+            // The sweep finished: apply the next generation all at once,
+            // marks disappear, then the worker holds for ~1.5s before the
+            // next sweep starts.
+            cells = Uint8Array.from(msg.cells);
+            marks.fill(0);
+            selected = -1;
+            draw();
+          } else if (msg.type === 'status') {
+            statusLine1.textContent = msg.message;
+          } else if (msg.type === 'error') {
+            statusLine1.textContent = 'error: ' + msg.message;
+            loadBtn.disabled = false;
+          }
+        };
+        loadBtn.disabled = true;
+        statusLine1.textContent = 'loading...';
+        worker.postMessage({ type: 'load', board: Array.from(cells) });
+        return;
+      }
+      if (!ready) return;
+      playing = !playing;
+      worker.postMessage({ type: playing ? 'play' : 'pause' });
+      loadBtn.textContent = playing ? 'pause' : 'play';
+      statusLine1.textContent = playing ? `playing on ${backendPhrase}` : 'paused';
+    });
+  </script>
+</body>
+</html>
