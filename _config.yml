@@ -12,4 +12,5 @@ include:
 exclude:
   - README.md
   - CLAUDE.md
+  - CLAUDE.local.md
   - LICENSE
