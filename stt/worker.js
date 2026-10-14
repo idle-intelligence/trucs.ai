@@ -199,7 +199,7 @@ async function cachedFetch(url, label) {
 // Version tag for the stt-web engine files loaded from baseUrl. Bump it after
 // each stt-web deploy so the glue module and the wasm are always fetched
 // together, never a cached old one next to a new one.
-const STT_ENGINE_TAG = '2026-10-11-simd';
+const STT_ENGINE_TAG = '2026-10-12-simd';
 
 async function handleLoad(config) {
     const base = (config.baseUrl || '').replace(/\/+$/, '');
