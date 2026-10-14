@@ -35,8 +35,8 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dt>Weather</dt>
   <dd>Browser <a href="/knn-weather/">weather</a></dd>
 
-  <dt>Game of Life</dt>
-  <dd>A language model <a href="/llm-life/">playing Life</a>, one cell at a time</dd>
+  <dt>Cellular Automata</dt>
+  <dd>LLM of <a href="/llm-life/">Life</a></dd>
 </dl>
   
 ---
