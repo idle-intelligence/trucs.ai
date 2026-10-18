@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sensors - trucs.ai</title>
+  <meta name="description" content="What the browser will tell you about your device, with and without a permission prompt.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    .prompt-btn {
+      height: 37px;
+      line-height: 1;
+      padding: 0 1em;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+      min-height: 1.7em;
+      line-height: 1.4;
+      padding: 0.15em 0;
+      border-bottom: 1px dotted #ddd;
+      font-size: 0.9rem;
+    }
+    .row .k {
+      flex: 1 1 40%;
+      min-width: 0;
+      color: #777;
+      overflow-wrap: anywhere;
+    }
+    .row .v {
+      flex: 1 1 60%;
+      min-width: 0;
+      text-align: right;
+      overflow-wrap: anywhere;
+      font-variant-numeric: tabular-nums;
+    }
+    .row.perm .k { flex: 1 1 40%; }
+    .row.perm .btn-cell { flex: 0 0 auto; }
+    .row.perm .v { flex: 1 1 auto; text-align: right; }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    #status-text {
+      font-size: 0.85rem;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>sensors</h1>
+    <p>
+      What the browser reports about the device it runs on: motion, location, network, battery, display and more.<br>
+      Only what your device actually reports is listed. Motion and location start on a click.<br>
+      No server: everything below runs and stays in your browser.
+    </p>
+
+    <hr>
+
+    <span id="status-text">probing…</span>
+
+    <hr>
+
+    <div id="motion-block">
+      <button id="start">start motion &amp; orientation</button>
+      <div id="motion"></div>
+      <div id="location"></div>
+    </div>
+
+    <div id="permission-block" hidden>
+      <hr>
+      <p class="panel-desc">needs your permission</p>
+      <div id="permission"></div>
+    </div>
+
+    <hr>
+
+    <div id="live"></div>
+
+    <hr>
+
+    <p class="panel-desc">
+      Source: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>.
+    </p>
+
+    <hr>
+    <p><a href="/sensors/plots/">live plots</a></p>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script>
+
+  (function () {
+    'use strict';
+
+    var stateEl = document.getElementById('status-text');
+    var motionEl = document.getElementById('motion');
+    var locationEl = document.getElementById('location');
+    var permEl = document.getElementById('permission');
+    var liveEl = document.getElementById('live');
+
+    function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
+    function num(x) { return typeof x === 'number' && isFinite(x); }
+
+    // ---------- row registry: rows are created once, values only ever update in place ----------
+    var cells = {};      // id -> value <span>
+    var pending = {};    // id -> latest text, flushed on a timer (never on every event)
+
+    function addRow(container, id, label, opts) {
+      opts = opts || {};
+      var row = document.createElement('div');
+      row.className = 'row' + (opts.cls ? ' ' + opts.cls : '');
+      var k = document.createElement('div');
+      k.className = 'k';
+      k.textContent = label;
+      row.appendChild(k);
+      if (opts.button) {
+        var btnCell = document.createElement('div');
+        btnCell.className = 'btn-cell';
+        var btn = document.createElement('button');
+        btn.className = 'prompt-btn';
+        btn.textContent = 'prompt';
+        btn.onclick = opts.button;
+        btnCell.appendChild(btn);
+        row.appendChild(btnCell);
+      }
+      var v = document.createElement('div');
+      v.className = 'v';
+      v.textContent = opts.initial || '';
+      row.appendChild(v);
+      container.appendChild(row);
+      cells[id] = v;
+      return row;
+    }
+
+    function addLive(id, label, initial) { addRow(liveEl, id, label, { initial: initial }); }
+    function addPermission(id, label, onPrompt) {
+      addRow(permEl, id, label, { cls: 'perm', button: onPrompt, initial: 'not requested' });
+    }
+
+    // A row for a value that only exists once it is first read.
+    function ensureRow(container, id, label) {
+      if (!cells[id]) addRow(container, id, label);
+    }
+
+    // Rows for things the device does not report are removed, never listed.
+    function removeRow(id) {
+      var cell = cells[id];
+      var row = cell ? cell.parentElement : null;
+      if (row && row.parentElement) row.parentElement.removeChild(row);
+      delete cells[id];
+      delete pending[id];
+    }
+
+    function setVal(id, text) { pending[id] = String(text); }
+
+    // Flush cached values to the DOM at a fixed cadence, decoupled from event rate,
+    // so a sensor firing at 60Hz never touches layout more than 4 times a second.
+    setInterval(function () {
+      Object.keys(pending).forEach(function (id) {
+        var el = cells[id];
+        if (!el) return;
+        var text = pending[id];
+        if (el.textContent !== text) el.textContent = text;
+      });
+      pending = {};
+      document.getElementById('permission-block').hidden = !permEl.children.length;
+      updateStatus();
+    }, 250);
+
+    // ---------- status: one sentence, replaced in place ----------
+    var motionStarted = false, motionWaitOver = false;
+    function updateStatus() {
+      var count = motionEl.children.length;
+      var text;
+      if (!motionStarted) text = 'tap start to read motion and orientation';
+      else if (count) text = count + (count === 1 ? ' motion sensor' : ' motion sensors') + ' reporting';
+      else if (motionWaitOver) text = 'no motion sensors found on this device';
+      else text = 'waiting for sensor data';
+      if (stateEl.textContent !== text) stateEl.textContent = text;
+    }
+
+    // ---------- device, network and display ----------
+
+    function buildStatic() {
+      buildNetwork();
+      buildPower();
+      buildDisplay();
+      addLive('platform', 'platform', navigator.platform);
+      addLive('hardwareConcurrency', 'CPU cores', String(navigator.hardwareConcurrency));
+      buildMemory();
+      buildGpu();
+      buildDevices();
+      addLive('touch', 'touch points', String(navigator.maxTouchPoints || 0));
+      buildMedia();
+      addLive('languages', 'languages', (navigator.languages || [navigator.language]).join(', '));
+      addLive('timezone', 'timezone', Intl.DateTimeFormat().resolvedOptions().timeZone);
+      addLive('visibility', 'page visibility', document.visibilityState);
+      document.addEventListener('visibilitychange', function () { setVal('visibility', document.visibilityState); });
+      addLive('secureContext', 'secure context', window.isSecureContext ? 'yes' : 'no, most sensors blocked');
+      buildPermissionStates();
+      buildAvailability();
+    }
+
+    function buildDisplay() {
+      function screenText() { return screen.width + 'x' + screen.height + ' @' + n(devicePixelRatio, 2) + 'x'; }
+      addLive('screen', 'screen', screenText());
+      addLive('availScreen', 'available screen', screen.availWidth + 'x' + screen.availHeight);
+      addLive('colorDepth', 'color depth', screen.colorDepth + '-bit');
+      addLive('viewport', 'viewport', innerWidth + 'x' + innerHeight);
+      function vvText() { var v = window.visualViewport; return Math.round(v.width) + 'x' + Math.round(v.height) + ' · zoom ' + n(v.scale, 2); }
+      if (window.visualViewport) {
+        addLive('visualViewport', 'visual viewport', vvText());
+        visualViewport.addEventListener('resize', function () { setVal('visualViewport', vvText()); });
+      }
+      window.addEventListener('resize', function () {
+        setVal('viewport', innerWidth + 'x' + innerHeight);
+        setVal('screen', screenText());
+      });
+      if (screen.orientation) {
+        addLive('screenOrientation', 'screen orientation', screen.orientation.type + ' ' + screen.orientation.angle + '°');
+      }
+    }
+
+    // Media-query features. A feature the browser does not know reports media "not all" and is left out.
+    function buildMedia() {
+      var items = [
+        ['colorScheme', 'color scheme', '(prefers-color-scheme)', [['(prefers-color-scheme: dark)', 'dark'], ['(prefers-color-scheme: light)', 'light']]],
+        ['reducedMotion', 'reduced motion', '(prefers-reduced-motion)', [['(prefers-reduced-motion: reduce)', 'reduce'], ['(prefers-reduced-motion: no-preference)', 'no preference']]],
+        ['contrast', 'contrast preference', '(prefers-contrast)', [['(prefers-contrast: more)', 'more'], ['(prefers-contrast: less)', 'less'], ['(prefers-contrast: no-preference)', 'no preference']]],
+        ['transparency', 'reduced transparency', '(prefers-reduced-transparency)', [['(prefers-reduced-transparency: reduce)', 'reduce'], ['(prefers-reduced-transparency: no-preference)', 'no preference']]],
+        ['forcedColors', 'forced colors', '(forced-colors)', [['(forced-colors: active)', 'active'], ['(forced-colors: none)', 'none']]],
+        ['invertedColors', 'inverted colors', '(inverted-colors)', [['(inverted-colors: inverted)', 'inverted'], ['(inverted-colors: none)', 'none']]],
+        ['colorGamut', 'color gamut', '(color-gamut)', [['(color-gamut: rec2020)', 'rec2020'], ['(color-gamut: p3)', 'p3'], ['(color-gamut: srgb)', 'srgb']]],
+        ['hdr', 'dynamic range', '(dynamic-range)', [['(dynamic-range: high)', 'high'], ['(dynamic-range: standard)', 'standard']]],
+        ['pointerCoarse', 'pointer type', '(pointer)', [['(pointer: coarse)', 'coarse (touch)'], ['(pointer: fine)', 'fine (mouse)'], ['(pointer: none)', 'none']]],
+        ['anyPointer', 'any pointer', '(any-pointer)', [['(any-pointer: fine)', 'fine'], ['(any-pointer: coarse)', 'coarse'], ['(any-pointer: none)', 'none']]],
+        ['hover', 'hover', '(hover)', [['(hover: hover)', 'yes'], ['(hover: none)', 'no']]],
+        ['displayMode', 'display mode', '(display-mode)', [['(display-mode: fullscreen)', 'fullscreen'], ['(display-mode: standalone)', 'standalone'], ['(display-mode: minimal-ui)', 'minimal ui'], ['(display-mode: browser)', 'browser']]],
+        ['mqOrientation', 'layout orientation', '(orientation)', [['(orientation: portrait)', 'portrait'], ['(orientation: landscape)', 'landscape']]]
+      ];
+      items.forEach(function (it) {
+        if (matchMedia(it[2]).media === 'not all') return;
+        function text() {
+          for (var i = 0; i < it[3].length; i++) if (matchMedia(it[3][i][0]).matches) return it[3][i][1];
+          return 'unknown';
+        }
+        if (text() === 'unknown') return;
+        addLive(it[0], it[1], text());
+        it[3].forEach(function (q) {
+          var m = matchMedia(q[0]);
+          if (m.addEventListener) m.addEventListener('change', function () { setVal(it[0], text()); });
+        });
+      });
+    }
+
+    function buildMemory() {
+      if ('deviceMemory' in navigator) addLive('deviceMemory', 'device memory', navigator.deviceMemory + ' GB');
+      if (performance.memory) {
+        addLive('jsHeap', 'JS heap', '');
+        var upd = function () { var m = performance.memory; setVal('jsHeap', Math.round(m.usedJSHeapSize / 1048576) + ' / ' + Math.round(m.jsHeapSizeLimit / 1048576) + ' MiB'); };
+        upd(); setInterval(upd, 1000);
+      }
+      if (navigator.storage && navigator.storage.estimate) {
+        addLive('storage', 'storage quota', 'checking…');
+        navigator.storage.estimate().then(function (e) {
+          setVal('storage', Math.round(e.usage / 1048576) + ' / ' + Math.round(e.quota / 1048576) + ' MiB used');
+        });
+      }
+      if (navigator.storage && navigator.storage.persisted) {
+        addLive('persisted', 'persistent storage', 'checking…');
+        navigator.storage.persisted().then(function (p) { setVal('persisted', p ? 'granted' : 'not granted'); });
+      }
+    }
+
+    function buildGpu() {
+      try {
+        var c = document.createElement('canvas');
+        var gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+        if (gl) {
+          var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          addLive('webgl', 'GPU (WebGL)', dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+          addLive('webglMax', 'WebGL max texture', gl.getParameter(gl.MAX_TEXTURE_SIZE) + ' px');
+        }
+      } catch (e) { /* no WebGL context */ }
+
+      if (navigator.gpu) {
+        addLive('webgpu', 'GPU (WebGPU)', 'checking…');
+        addLive('webgpuLimits', 'WebGPU limits', 'checking…');
+        addLive('webgpuFeatures', 'WebGPU features', 'checking…');
+        navigator.gpu.requestAdapter().then(function (adapter) {
+          if (!adapter) { removeRow('webgpu'); removeRow('webgpuLimits'); removeRow('webgpuFeatures'); return; }
+          var info = adapter.info || {};
+          setVal('webgpu', info.description || info.device || [info.vendor, info.architecture].filter(Boolean).join(' ') || 'available');
+          var l = adapter.limits;
+          setVal('webgpuLimits', 'buffer ' + Math.round(l.maxBufferSize / 1048576) + ' MiB · storage ' + Math.round(l.maxStorageBufferBindingSize / 1048576) + ' MiB · workgroup ' + l.maxComputeInvocationsPerWorkgroup);
+          setVal('webgpuFeatures', adapter.features.size + ': ' + Array.from(adapter.features).join(', '));
+        }, function () { removeRow('webgpu'); removeRow('webgpuLimits'); removeRow('webgpuFeatures'); });
+      }
+    }
+
+    function buildPower() {
+      if (navigator.getBattery) {
+        addLive('battery', 'battery', 'checking…');
+        navigator.getBattery().then(function (b) {
+          function mins(sec) { return sec >= 3600 ? n(sec / 3600, 1) + ' h' : Math.round(sec / 60) + ' min'; }
+          function upd() {
+            var t = '';
+            if (b.charging && isFinite(b.chargingTime) && b.level < 1) t = ', full in ' + mins(b.chargingTime);
+            else if (!b.charging && isFinite(b.dischargingTime)) t = ', ' + mins(b.dischargingTime) + ' left';
+            setVal('battery', Math.round(b.level * 100) + '% ' + (b.charging ? 'charging' : 'on battery') + t);
+          }
+          upd();
+          ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange'].forEach(function (ev) { b.addEventListener(ev, upd); });
+        }, function () { removeRow('battery'); });
+      }
+      if ('wakeLock' in navigator) addLive('wakeLock', 'screen wake lock', 'available');
+      if ('vibrate' in navigator) addLive('vibrate', 'vibration', 'available');
+    }
+
+    function buildNetwork() {
+      addLive('online', 'online', navigator.onLine ? 'yes' : 'no');
+      window.addEventListener('online', function () { setVal('online', 'yes'); });
+      window.addEventListener('offline', function () { setVal('online', 'no'); });
+      var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      var fields = [
+        ['netType', 'connection type', 'type', function (v) { return v; }],
+        ['netEffective', 'effective type', 'effectiveType', function (v) { return v; }],
+        ['netDownlink', 'downlink', 'downlink', function (v) { return n(v, 2) + ' Mb/s'; }],
+        ['netDownlinkMax', 'max downlink', 'downlinkMax', function (v) { return v === Infinity ? 'unknown' : n(v, 0) + ' Mb/s'; }],
+        ['netRtt', 'round trip time', 'rtt', function (v) { return v + ' ms'; }],
+        ['netSaveData', 'data saver', 'saveData', function (v) { return v ? 'on' : 'off'; }]
+      ];
+      fields.forEach(function (f) {
+        if (conn && f[2] in conn) {
+          addLive(f[0], f[1], f[3](conn[f[2]]));
+        }
+      });
+      if (conn && conn.addEventListener) {
+        conn.addEventListener('change', function () {
+          fields.forEach(function (f) { if (f[2] in conn) setVal(f[0], f[3](conn[f[2]])); });
+        });
+      }
+    }
+
+    function buildDevices() {
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        addLive('cameras', 'cameras', 'checking…');
+        addLive('microphones', 'microphones', 'checking…');
+        addLive('speakers', 'speakers', 'checking…');
+        var upd = function () {
+          navigator.mediaDevices.enumerateDevices().then(function (list) {
+            function count(kind) { return String(list.filter(function (d) { return d.kind === kind; }).length); }
+            setVal('cameras', count('videoinput'));
+            setVal('microphones', count('audioinput'));
+            setVal('speakers', count('audiooutput'));
+          });
+        };
+        upd();
+        if (navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', upd);
+      }
+      if (navigator.getGamepads) {
+        addLive('gamepads', 'gamepads connected', '0');
+        var g = function () { var c = 0; var l = navigator.getGamepads(); for (var i = 0; i < l.length; i++) if (l[i]) c++; setVal('gamepads', String(c)); };
+        window.addEventListener('gamepadconnected', g);
+        window.addEventListener('gamepaddisconnected', g);
+      }
+    }
+
+    function buildPermissionStates() {
+      if (!navigator.permissions || !navigator.permissions.query) return;
+      ['geolocation', 'camera', 'microphone', 'notifications', 'accelerometer', 'gyroscope', 'magnetometer', 'midi', 'clipboard-read', 'persistent-storage'].forEach(function (name) {
+        var id = 'perm-' + name;
+        addLive(id, 'permission: ' + name, 'checking…');
+        navigator.permissions.query({ name: name }).then(function (st) {
+          setVal(id, st.state);
+          st.addEventListener('change', function () { setVal(id, st.state); });
+        }, function () { removeRow(id); });
+      });
+    }
+
+    // Capabilities that are only a yes or no, found by feature detection.
+    function buildAvailability() {
+      [
+        ['Bluetooth', 'bluetooth' in navigator], ['WebUSB', 'usb' in navigator], ['Web Serial', 'serial' in navigator],
+        ['WebHID', 'hid' in navigator], ['NFC', 'NDEFReader' in window], ['Web MIDI', 'requestMIDIAccess' in navigator],
+        ['WebXR', 'xr' in navigator], ['Web Share', 'share' in navigator], ['clipboard', !!navigator.clipboard],
+        ['speech recognition', 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window],
+        ['speech synthesis', 'speechSynthesis' in window], ['file system access', 'showOpenFilePicker' in window],
+        ['contacts picker', 'contacts' in navigator], ['idle detection', 'IdleDetector' in window],
+        ['compute pressure', 'PressureObserver' in window], ['service workers', 'serviceWorker' in navigator],
+        ['WebAssembly', 'WebAssembly' in window], ['shared memory', typeof SharedArrayBuffer !== 'undefined' && window.crossOriginIsolated === true],
+        ['WebCodecs', 'VideoDecoder' in window], ['payment request', 'PaymentRequest' in window],
+        ['credentials', !!navigator.credentials], ['fullscreen', !!document.fullscreenEnabled]
+      ].forEach(function (a) {
+        if (a[1]) addLive('avail-' + a[0], a[0], 'available');
+      });
+    }
+
+    // ---------- motion and orientation: a row appears with its first reading ----------
+
+    function rad2deg(x) { return x * 180 / Math.PI; }
+    function xyz(unit, scale) {
+      return function (s) { var k = scale || 1; return 'x ' + n(s.x * k, 2) + ' · y ' + n(s.y * k, 2) + ' · z ' + n(s.z * k, 2) + ' ' + unit; };
+    }
+    function quatText(s) {
+      var q = s.quaternion, x = q[0], y = q[1], z = q[2], w = q[3];
+      var yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
+      var pitch = Math.asin(Math.max(-1, Math.min(1, 2 * (w * y - z * x))));
+      var roll = Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
+      return 'yaw ' + n(rad2deg(yaw), 0) + '° · pitch ' + n(rad2deg(pitch), 0) + '° · roll ' + n(rad2deg(roll), 0) + '°';
+    }
+    var fromSensorApi = {};   // ids already fed by the Generic Sensor API; the legacy events fill the rest
+    function motionValue(id, label, text, viaApi) {
+      if (viaApi) fromSensorApi[id] = true; else if (fromSensorApi[id]) return;
+      ensureRow(motionEl, id, label);
+      setVal(id, text);
+    }
+
+    var motionListening = false;
+    function startGenericSensor(id, label, ctor, opts, fmt) {
+      if (!(ctor in window)) return false;
+      try {
+        var s = new window[ctor](opts);
+        s.addEventListener('reading', function () {
+          if (s.x === null || s.illuminance === null) return;
+          motionValue(id, label, fmt(s), true);
+        });
+        s.addEventListener('error', function () {});
+        s.start();
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function startMotion() {
+      var f = { frequency: 10 };
+      startGenericSensor('accelerometer', 'accelerometer', 'Accelerometer', f, xyz('m/s²'));
+      startGenericSensor('linearAccel', 'linear acceleration', 'LinearAccelerationSensor', f, xyz('m/s²'));
+      startGenericSensor('gravity', 'gravity', 'GravitySensor', f, xyz('m/s²'));
+      startGenericSensor('gyroscope', 'gyroscope', 'Gyroscope', f, xyz('°/s', 180 / Math.PI));
+      startGenericSensor('magnetometer', 'magnetometer', 'Magnetometer', f, xyz('µT'));
+      startGenericSensor('orientation', 'orientation', 'AbsoluteOrientationSensor', f, quatText);
+      startGenericSensor('ambientLight', 'ambient light', 'AmbientLightSensor', { frequency: 2 }, function (s) { return n(s.illuminance, 0) + ' lux'; });
+
+      if (motionListening) return;
+      motionListening = true;
+      window.addEventListener('devicemotion', function (e) {
+        var a = e.accelerationIncludingGravity;
+        if (a && num(a.x)) motionValue('accelerometer', 'accelerometer', 'x ' + n(a.x, 2) + ' · y ' + n(a.y, 2) + ' · z ' + n(a.z, 2) + ' m/s²');
+        var l = e.acceleration;
+        if (l && num(l.x)) motionValue('linearAccel', 'linear acceleration', 'x ' + n(l.x, 2) + ' · y ' + n(l.y, 2) + ' · z ' + n(l.z, 2) + ' m/s²');
+        var r = e.rotationRate;
+        if (r && num(r.alpha)) motionValue('gyroscope', 'gyroscope', 'alpha ' + n(r.alpha, 1) + ' · beta ' + n(r.beta, 1) + ' · gamma ' + n(r.gamma, 1) + ' °/s');
+      });
+      window.addEventListener('deviceorientation', function (e) {
+        if (num(e.alpha) && num(e.beta) && num(e.gamma)) motionValue('orientation', 'orientation', 'alpha ' + n(e.alpha, 0) + '° · beta ' + n(e.beta, 0) + '° · gamma ' + n(e.gamma, 0) + '°');
+      });
+    }
+
+    // ---------- needs your permission: location, camera, microphone, notifications ----------
+
+    function buildPermissionRows() {
+      if (navigator.geolocation) addPermission('geolocation', 'location', promptGeolocation);
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) addPermission('camera', 'camera', promptCamera);
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.AudioContext) {
+        addPermission('microphone', 'microphone', promptMicrophone);
+      }
+      if ('Notification' in window && Notification.permission !== 'denied') {
+        addPermission('notifications', 'notifications', promptNotifications);
+      }
+    }
+
+    function promptCamera() {
+      setVal('camera', 'requesting…');
+      navigator.mediaDevices.getUserMedia({ video: true }).then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        setVal('camera', 'granted');
+      }, function () { removeRow('camera'); });
+    }
+
+    var micStream = null, micCtx = null, micAnalyser = null, micData = null;
+    function promptMicrophone() {
+      setVal('microphone', 'requesting…');
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        micStream = stream;
+        micCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var src = micCtx.createMediaStreamSource(stream);
+        micAnalyser = micCtx.createAnalyser();
+        micAnalyser.fftSize = 1024;
+        micData = new Float32Array(micAnalyser.fftSize);
+        src.connect(micAnalyser);
+        setVal('microphone', 'granted');
+      }, function () { removeRow('microphone'); });
+    }
+    function sampleMic() {
+      if (!micAnalyser) return;
+      micAnalyser.getFloatTimeDomainData(micData);
+      var sum = 0;
+      for (var i = 0; i < micData.length; i++) sum += micData[i] * micData[i];
+      var rms = Math.sqrt(sum / micData.length);
+      var db = rms > 0 ? 20 * Math.log10(rms) : -100;
+      setVal('microphone', n(db, 1) + ' dBFS');
+    }
+    function stopMic() {
+      if (micStream) { micStream.getTracks().forEach(function (t) { t.stop(); }); micStream = null; }
+      if (micCtx) { micCtx.close(); micCtx = null; }
+      micAnalyser = null;
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stopMic();
+    });
+
+    function promptNotifications() {
+      setVal('notifications', 'requesting…');
+      Notification.requestPermission().then(function (state) {
+        if (state === 'granted') setVal('notifications', 'granted'); else removeRow('notifications');
+      });
+    }
+
+    // ---------- location: one watch, each field shown once it has a value ----------
+
+    var geoWatchId = null, geoFixes = [], geoLast = 0, geoPromoted = false;
+    function promptGeolocation() {
+      setVal('geolocation', 'requesting…');
+      if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(updateGeolocation, function () {
+        if (!geoPromoted) removeRow('geolocation');
+      }, { enableHighAccuracy: true, maximumAge: 0 });
+    }
+    function geoField(id, label, value, text) {
+      if (num(value)) { ensureRow(locationEl, id, label); setVal(id, text); }
+      else if (cells[id]) setVal(id, 'unavailable');
+    }
+    function updateGeolocation(pos) {
+      var c = pos.coords;
+      if (!geoPromoted) promoteGeolocation();
+      geoLast = pos.timestamp;
+      geoFixes.push(performance.now());
+      if (geoFixes.length > 8) geoFixes.shift();
+      setVal('geoPosition', 'lat ' + n(c.latitude, 5) + ' · lon ' + n(c.longitude, 5));
+      setVal('geoAccuracy', '±' + n(c.accuracy, 0) + ' m');
+      geoField('geoAltitude', 'altitude', c.altitude, n(c.altitude, 1) + ' m' + (num(c.altitudeAccuracy) ? ' (±' + n(c.altitudeAccuracy, 0) + ' m)' : ''));
+      geoField('geoHeading', 'heading', c.heading, n(c.heading, 0) + '°');
+      geoField('geoSpeed', 'speed', c.speed, n(c.speed, 2) + ' m/s (' + n(c.speed * 3.6, 1) + ' km/h)');
+      if (geoFixes.length > 1) {
+        var span = (geoFixes[geoFixes.length - 1] - geoFixes[0]) / 1000;
+        ensureRow(locationEl, 'geoRate', 'location updates');
+        setVal('geoRate', n((geoFixes.length - 1) / span, 2) + ' per second');
+      }
+    }
+    setInterval(function () {
+      if (geoLast && cells.geoAge) setVal('geoAge', n(Math.max(0, (Date.now() - geoLast) / 1000), 0) + ' s ago');
+    }, 1000);
+    function promoteGeolocation() {
+      geoPromoted = true;
+      removeRow('geolocation');
+      ensureRow(locationEl, 'geoPosition', 'location');
+      ensureRow(locationEl, 'geoAccuracy', 'location accuracy');
+      ensureRow(locationEl, 'geoAge', 'last fix');
+    }
+
+    // ---------- boot ----------
+
+    buildStatic();
+    buildPermissionRows();
+    if (!('DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window || 'Accelerometer' in window || 'Magnetometer' in window || 'AbsoluteOrientationSensor' in window)) {
+      document.getElementById('start').hidden = true;
+    }
+
+    document.getElementById('start').onclick = function () {
+      this.textContent = 'restart motion & orientation';
+      motionStarted = true;
+      var go = function () {
+        startMotion();
+        setTimeout(function () { motionWaitOver = true; }, 3000);
+      };
+      if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission().then(go, go);
+      } else {
+        go();
+      }
+    };
+
+    setInterval(sampleMic, 250);
+    updateStatus();
+  })();
+  </script>
+</body>
+</html>
