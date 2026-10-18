@@ -21,6 +21,10 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>A <a href="/swarm/">swarm</a> of LLMs running on users idle compute</dd>
   <dd>A small <a href="/classifier/">BERT Classifier</a></dd>
 
+  <dt>sensors (some)</dt>
+  <dd>What the browser will tell you about your device, with and without a permission prompt: <a href="/sensors/">sensors</a></dd>
+  <dd>Live <a href="/sensors/plots/">sensor plots</a>: motion, orientation, position, network and battery</dd>
+
   <dt>STT → LLM → TTS</dt>
   <dd>Browser <a href="/stt/">Speech-to-text</a></dd>
   <dd>Browser <a href="/llm/">LLM</a></dd>

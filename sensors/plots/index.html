@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sensor plots - trucs.ai</title>
+  <meta name="description" content="Live plots of the motion, orientation, magnetic, light, position, network and battery readings of your device, read in your browser.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    .plot {
+      margin-bottom: 1.5em;
+    }
+    .plot:last-child {
+      margin-bottom: 0;
+    }
+    .plot-head {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0 1em;
+      font-size: 0.8rem;
+      color: #555;
+      margin-bottom: 0.25em;
+    }
+    .plot-head .unit {
+      color: #999;
+    }
+    .legend span {
+      margin-left: 0.75em;
+      white-space: nowrap;
+    }
+    .legend i {
+      display: inline-block;
+      width: 10px;
+      height: 0;
+      border-top: 2px solid;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 160px;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>sensor plots</h1>
+    <p>
+      Live plots of the motion, orientation, magnetic, light, position, network and battery readings of this device.<br>
+      No server: the readings stay in your browser.<br>
+      Each plot shows the last 10 seconds.
+    </p>
+
+    <div id="model-status">
+      <button id="start-btn">start</button>
+      <span id="status-text"></span>
+    </div>
+
+    <hr>
+
+    <div id="plots"></div>
+
+    <hr>
+
+    <p class="panel-desc">
+      Source: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>.
+    </p>
+
+    <hr>
+    <p><a href="/sensors/">all sensors</a></p>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    const WINDOW_S = 10;
+    const PAD_L = 44, PAD_R = 8, PAD_T = 10, PAD_B = 20;
+    const TRACE_COLORS = ['#111', '#777', '#bbb'];
+    const FONT = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    const NO_DATA_MS = 20000;
+
+    const startBtn = document.getElementById('start-btn');
+    const statusText = document.getElementById('status-text');
+    const plotsEl = document.getElementById('plots');
+
+    function setStatus(text) { statusText.textContent = text; }
+
+    // Title, unit, channel names, smallest y-range worth showing and axis decimals.
+    // A plot is created when its first reading arrives, in this order.
+    const SENSORS = {
+      accel:    { title: 'accelerometer', unit: 'm/s², with gravity', names: ['x', 'y', 'z'], minSpan: 4, dec: 1 },
+      gyro:     { title: 'gyroscope', unit: '°/s', names: ['alpha', 'beta', 'gamma'], minSpan: 20, dec: 0 },
+      orient:   { title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0 },
+      mag:      { title: 'magnetometer', unit: 'µT', names: ['x', 'y', 'z'], minSpan: 20, dec: 0 },
+      light:    { title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
+      speed:    { title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
+      altitude: { title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
+      accuracy: { title: 'position accuracy', unit: 'm', names: ['accuracy'], minSpan: 20, dec: 0 },
+      heading:  { title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0 },
+      downlink: { title: 'network downlink', unit: 'Mb/s', names: ['downlink'], minSpan: 2, dec: 1 },
+      rtt:      { title: 'network round trip', unit: 'ms', names: ['rtt'], minSpan: 100, dec: 0 },
+      battery:  { title: 'battery level', unit: '%', names: ['level'], minSpan: 2, dec: 1 },
+    };
+    const ORDER = Object.keys(SENSORS);
+
+    const plots = {};   // id -> { def, buf, latest, canvas, ctx, vals, wrap }
+
+    function addPlot(id) {
+      const def = SENSORS[id];
+      const wrap = document.createElement('div');
+      wrap.className = 'plot';
+      wrap.dataset.order = ORDER.indexOf(id);
+      const legend = def.names.map((n, i) =>
+        '<span><i style="border-color:' + TRACE_COLORS[i] + '"></i>' + n + ' <b></b></span>').join('');
+      wrap.innerHTML =
+        '<div class="plot-head"><span>' + def.title + ' <span class="unit">· ' + def.unit + '</span></span>' +
+        '<span class="legend">' + legend + '</span></div><canvas></canvas>';
+      const next = Array.from(plotsEl.children).find((c) => Number(c.dataset.order) > ORDER.indexOf(id));
+      plotsEl.insertBefore(wrap, next || null);
+      const canvas = wrap.querySelector('canvas');
+      plots[id] = {
+        def, wrap, canvas, buf: [], latest: null,
+        ctx: canvas.getContext('2d'),
+        vals: Array.from(wrap.querySelectorAll('.legend b')),
+      };
+      const n = Object.keys(plots).length;
+      setStatus('reading ' + n + (n === 1 ? ' sensor' : ' sensors'));
+    }
+
+    function push(id, values) {
+      if (values.some((x) => typeof x !== 'number' || !isFinite(x))) return;
+      if (!plots[id]) addPlot(id);
+      const p = plots[id];
+      p.buf.push({ t: performance.now(), v: values });
+      p.latest = values;
+    }
+
+    function fitCanvas(canvas, ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { w: rect.width, h: rect.height };
+    }
+
+    function drawGrid(ctx, w, h, xAt, domain, dec) {
+      const plotH = h - PAD_T - PAD_B;
+      const yAt = (v) => PAD_T + plotH - ((v - domain.lo) / (domain.hi - domain.lo)) * plotH;
+      ctx.strokeStyle = '#eee';
+      ctx.fillStyle = '#999';
+      ctx.font = FONT;
+      ctx.lineWidth = 1;
+      for (let t = 0; t <= 4; t++) {
+        const v = domain.lo + (t / 4) * (domain.hi - domain.lo);
+        const y = yAt(v);
+        ctx.beginPath();
+        ctx.moveTo(PAD_L, y);
+        ctx.lineTo(w - PAD_R, y);
+        ctx.stroke();
+        ctx.fillText(v.toFixed(dec), 2, y + 3);
+      }
+      for (let s = 0; s <= WINDOW_S; s += 2) {
+        const x = xAt(-s);
+        ctx.beginPath();
+        ctx.moveTo(x, PAD_T);
+        ctx.lineTo(x, h - PAD_B);
+        ctx.stroke();
+        ctx.textAlign = s === 0 ? 'right' : 'left';
+        ctx.fillText(s === 0 ? 'now' : '-' + s + 's', s === 0 ? x - 2 : x + 2, h - 6);
+        ctx.textAlign = 'left';
+      }
+      return yAt;
+    }
+
+    function drawPlot(p, now) {
+      const { w, h } = fitCanvas(p.canvas, p.ctx);
+      const ctx = p.ctx;
+      ctx.clearRect(0, 0, w, h);
+      const cutoff = now - WINDOW_S * 1000;
+      while (p.buf.length && p.buf[0].t < cutoff - 1000) p.buf.shift();
+      const nch = p.def.names.length;
+
+      let lo = Infinity, hi = -Infinity;
+      for (const pt of p.buf) for (let c = 0; c < nch; c++) { lo = Math.min(lo, pt.v[c]); hi = Math.max(hi, pt.v[c]); }
+      if (!isFinite(lo)) { lo = 0; hi = 0; }
+      const mid = (lo + hi) / 2;
+      const span = Math.max(p.def.minSpan, (hi - lo) * 1.1);
+      const domain = { lo: mid - span / 2, hi: mid + span / 2 };
+
+      const plotW = w - PAD_L - PAD_R;
+      const xAt = (sec) => PAD_L + ((sec + WINDOW_S) / WINDOW_S) * plotW;
+      const yAt = drawGrid(ctx, w, h, xAt, domain, p.def.dec);
+
+      for (let c = nch - 1; c >= 0; c--) {
+        ctx.strokeStyle = TRACE_COLORS[c];
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let started = false;
+        for (const pt of p.buf) {
+          const sec = (pt.t - now) / 1000;
+          if (sec < -WINDOW_S) continue;
+          const x = xAt(sec), y = yAt(pt.v[c]);
+          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      if (p.latest) for (let c = 0; c < nch; c++) p.vals[c].textContent = p.latest[c].toFixed(p.def.dec + 1);
+    }
+
+    function frame() {
+      const now = performance.now();
+      for (const id in plots) drawPlot(plots[id], now);
+      requestAnimationFrame(frame);
+    }
+
+    function onMotion(e) {
+      const a = e.accelerationIncludingGravity, r = e.rotationRate;
+      if (a && a.x !== null) push('accel', [a.x, a.y, a.z]);
+      if (r && r.alpha !== null) push('gyro', [r.alpha, r.beta, r.gamma]);
+    }
+    function onOrientation(e) {
+      if (e.alpha !== null && e.beta !== null && e.gamma !== null) push('orient', [e.alpha, e.beta, e.gamma]);
+    }
+    function startGeneric(name, id, read) {
+      if (!(name in window)) return;
+      try {
+        const sensor = new window[name]({ frequency: 30 });
+        sensor.addEventListener('reading', () => push(id, read(sensor)));
+        sensor.addEventListener('error', () => {});
+        sensor.start();
+      } catch (err) { /* blocked by policy or not allowed: no plot */ }
+    }
+
+    function startGeolocation() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.watchPosition((pos) => {
+        const c = pos.coords;
+        push('speed', [c.speed]);
+        push('altitude', [c.altitude]);
+        push('accuracy', [c.accuracy]);
+        push('heading', [c.heading]);
+      }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+    }
+
+    // Network and battery values change rarely and are read once a second.
+    function startPolled() {
+      const conn = navigator.connection;
+      if (conn) setInterval(() => {
+        if ('downlink' in conn) push('downlink', [conn.downlink]);
+        if ('rtt' in conn) push('rtt', [conn.rtt]);
+      }, 1000);
+      if (navigator.getBattery) navigator.getBattery().then((b) => {
+        setInterval(() => push('battery', [b.level * 100]), 1000);
+      }, () => {});
+    }
+
+    async function requestPermissions() {
+      let denied = false;
+      for (const E of [window.DeviceMotionEvent, window.DeviceOrientationEvent]) {
+        if (E && typeof E.requestPermission === 'function') {
+          try { if ((await E.requestPermission()) === 'denied') denied = true; } catch (err) { /* no prompt available: listen anyway */ }
+        }
+      }
+      return !denied;
+    }
+
+    requestAnimationFrame(frame);
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      setStatus('waiting for sensor data');
+      if (await requestPermissions()) {
+        window.addEventListener('devicemotion', onMotion);
+        window.addEventListener('deviceorientation', onOrientation);
+        startGeneric('Magnetometer', 'mag', (s) => [s.x, s.y, s.z]);
+        startGeneric('AmbientLightSensor', 'light', (s) => [s.illuminance]);
+      }
+      startGeolocation();
+      startPolled();
+      setTimeout(() => {
+        if (!Object.keys(plots).length) setStatus('no sensor data on this device');
+      }, NO_DATA_MS);
+    });
+    setStatus('tap start to read the sensors of this device');
+  </script>
+</body>
+</html>
