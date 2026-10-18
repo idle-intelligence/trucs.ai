@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sensors - trucs.ai</title>
-  <meta name="description" content="What the browser will tell you about your device, with and without a permission prompt.">
+  <meta name="description" content="Live readings of the motion, orientation, location, network and battery sensors of your device, read in your browser.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../assets/style.css">
@@ -31,12 +31,14 @@
       background: #fff;
       color: #111;
     }
-    .prompt-btn {
-      height: 37px;
-      line-height: 1;
-      padding: 0 1em;
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
       font-size: 0.85rem;
-      white-space: nowrap;
     }
     .row {
       display: flex;
@@ -61,16 +63,9 @@
       overflow-wrap: anywhere;
       font-variant-numeric: tabular-nums;
     }
-    .row.perm .k { flex: 1 1 40%; }
-    .row.perm .btn-cell { flex: 0 0 auto; }
-    .row.perm .v { flex: 1 1 auto; text-align: right; }
     .panel-desc {
       color: #999;
       font-size: 0.8rem;
-    }
-    #status-text {
-      font-size: 0.85rem;
-      color: #555;
     }
   </style>
 </head>
@@ -78,38 +73,26 @@
   <main>
     <h1>sensors</h1>
     <p>
-      What the browser reports about the device it runs on: motion, location, network, battery, display and more.<br>
-      Only what your device actually reports is listed. Motion and location start on a click.<br>
-      No server: everything below runs and stays in your browser.
+      Live readings of the motion, orientation, location, network and battery sensors of this device.<br>
+      Motion and location start on a click.<br>
+      No server: everything stays in your browser.
     </p>
 
-    <hr>
-
-    <span id="status-text">probing…</span>
-
-    <hr>
-
-    <div id="motion-block">
-      <button id="start">start motion &amp; orientation</button>
-      <div id="motion"></div>
-      <div id="location"></div>
-    </div>
-
-    <div id="permission-block" hidden>
-      <hr>
-      <p class="panel-desc">needs your permission</p>
-      <div id="permission"></div>
+    <div id="model-status">
+      <button id="start">start</button>
+      <span id="status-text"></span>
     </div>
 
     <hr>
 
-    <div id="live"></div>
+    <div id="motion"></div>
+    <div id="location"></div>
+    <div id="network"></div>
+    <div id="battery"></div>
 
     <hr>
 
-    <p class="panel-desc">
-      Source: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>.
-    </p>
+    <p class="panel-desc">Source: sensors-web.</p>
 
     <hr>
     <p><a href="/sensors/plots/">live plots</a></p>
@@ -117,54 +100,38 @@
   </main>
 
   <script>
-
   (function () {
     'use strict';
 
     var stateEl = document.getElementById('status-text');
     var motionEl = document.getElementById('motion');
     var locationEl = document.getElementById('location');
-    var permEl = document.getElementById('permission');
-    var liveEl = document.getElementById('live');
+    var networkEl = document.getElementById('network');
+    var batteryEl = document.getElementById('battery');
 
     function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
     function num(x) { return typeof x === 'number' && isFinite(x); }
 
     // ---------- row registry: rows are created once, values only ever update in place ----------
-    var cells = {};      // id -> value <span>
+    var cells = {};      // id -> value <div>
     var pending = {};    // id -> latest text, flushed on a timer (never on every event)
 
-    function addRow(container, id, label, opts) {
-      opts = opts || {};
+    function addRow(container, id, label, initial) {
       var row = document.createElement('div');
-      row.className = 'row' + (opts.cls ? ' ' + opts.cls : '');
+      row.className = 'row';
       var k = document.createElement('div');
       k.className = 'k';
       k.textContent = label;
-      row.appendChild(k);
-      if (opts.button) {
-        var btnCell = document.createElement('div');
-        btnCell.className = 'btn-cell';
-        var btn = document.createElement('button');
-        btn.className = 'prompt-btn';
-        btn.textContent = 'prompt';
-        btn.onclick = opts.button;
-        btnCell.appendChild(btn);
-        row.appendChild(btnCell);
-      }
       var v = document.createElement('div');
       v.className = 'v';
-      v.textContent = opts.initial || '';
+      v.textContent = initial || '';
+      row.appendChild(k);
       row.appendChild(v);
       container.appendChild(row);
       cells[id] = v;
-      return row;
     }
-
-    function addLive(id, label, initial) { addRow(liveEl, id, label, { initial: initial }); }
-    function addPermission(id, label, onPrompt) {
-      addRow(permEl, id, label, { cls: 'perm', button: onPrompt, initial: 'not requested' });
-    }
+    function addNet(id, label, initial) { addRow(networkEl, id, label, initial); }
+    function addBattery(id, label, initial) { addRow(batteryEl, id, label, initial); }
 
     // A row for a value that only exists once it is first read.
     function ensureRow(container, id, label) {
@@ -192,162 +159,25 @@
         if (el.textContent !== text) el.textContent = text;
       });
       pending = {};
-      document.getElementById('permission-block').hidden = !permEl.children.length;
       updateStatus();
     }, 250);
 
     // ---------- status: one sentence, replaced in place ----------
-    var motionStarted = false, motionWaitOver = false;
+    var started = false, waitOver = false;
     function updateStatus() {
-      var count = motionEl.children.length;
+      var count = motionEl.children.length + locationEl.children.length;
       var text;
-      if (!motionStarted) text = 'tap start to read motion and orientation';
-      else if (count) text = count + (count === 1 ? ' motion sensor' : ' motion sensors') + ' reporting';
-      else if (motionWaitOver) text = 'no motion sensors found on this device';
+      if (!started) text = 'tap start to read motion and location';
+      else if (count) text = 'reading ' + count + (count === 1 ? ' value' : ' values') + ' from motion and location';
+      else if (waitOver) text = 'no motion or location readings on this device';
       else text = 'waiting for sensor data';
       if (stateEl.textContent !== text) stateEl.textContent = text;
     }
 
-    // ---------- device, network and display ----------
-
-    function buildStatic() {
-      buildNetwork();
-      buildPower();
-      buildDisplay();
-      addLive('platform', 'platform', navigator.platform);
-      addLive('hardwareConcurrency', 'CPU cores', String(navigator.hardwareConcurrency));
-      buildMemory();
-      buildGpu();
-      buildDevices();
-      addLive('touch', 'touch points', String(navigator.maxTouchPoints || 0));
-      buildMedia();
-      addLive('languages', 'languages', (navigator.languages || [navigator.language]).join(', '));
-      addLive('timezone', 'timezone', Intl.DateTimeFormat().resolvedOptions().timeZone);
-      addLive('visibility', 'page visibility', document.visibilityState);
-      document.addEventListener('visibilitychange', function () { setVal('visibility', document.visibilityState); });
-      addLive('secureContext', 'secure context', window.isSecureContext ? 'yes' : 'no, most sensors blocked');
-      buildPermissionStates();
-      buildAvailability();
-    }
-
-    function buildDisplay() {
-      function screenText() { return screen.width + 'x' + screen.height + ' @' + n(devicePixelRatio, 2) + 'x'; }
-      addLive('screen', 'screen', screenText());
-      addLive('availScreen', 'available screen', screen.availWidth + 'x' + screen.availHeight);
-      addLive('colorDepth', 'color depth', screen.colorDepth + '-bit');
-      addLive('viewport', 'viewport', innerWidth + 'x' + innerHeight);
-      function vvText() { var v = window.visualViewport; return Math.round(v.width) + 'x' + Math.round(v.height) + ' · zoom ' + n(v.scale, 2); }
-      if (window.visualViewport) {
-        addLive('visualViewport', 'visual viewport', vvText());
-        visualViewport.addEventListener('resize', function () { setVal('visualViewport', vvText()); });
-      }
-      window.addEventListener('resize', function () {
-        setVal('viewport', innerWidth + 'x' + innerHeight);
-        setVal('screen', screenText());
-      });
-      if (screen.orientation) {
-        addLive('screenOrientation', 'screen orientation', screen.orientation.type + ' ' + screen.orientation.angle + '°');
-      }
-    }
-
-    // Media-query features. A feature the browser does not know reports media "not all" and is left out.
-    function buildMedia() {
-      var items = [
-        ['colorScheme', 'color scheme', '(prefers-color-scheme)', [['(prefers-color-scheme: dark)', 'dark'], ['(prefers-color-scheme: light)', 'light']]],
-        ['reducedMotion', 'reduced motion', '(prefers-reduced-motion)', [['(prefers-reduced-motion: reduce)', 'reduce'], ['(prefers-reduced-motion: no-preference)', 'no preference']]],
-        ['contrast', 'contrast preference', '(prefers-contrast)', [['(prefers-contrast: more)', 'more'], ['(prefers-contrast: less)', 'less'], ['(prefers-contrast: no-preference)', 'no preference']]],
-        ['transparency', 'reduced transparency', '(prefers-reduced-transparency)', [['(prefers-reduced-transparency: reduce)', 'reduce'], ['(prefers-reduced-transparency: no-preference)', 'no preference']]],
-        ['forcedColors', 'forced colors', '(forced-colors)', [['(forced-colors: active)', 'active'], ['(forced-colors: none)', 'none']]],
-        ['invertedColors', 'inverted colors', '(inverted-colors)', [['(inverted-colors: inverted)', 'inverted'], ['(inverted-colors: none)', 'none']]],
-        ['colorGamut', 'color gamut', '(color-gamut)', [['(color-gamut: rec2020)', 'rec2020'], ['(color-gamut: p3)', 'p3'], ['(color-gamut: srgb)', 'srgb']]],
-        ['hdr', 'dynamic range', '(dynamic-range)', [['(dynamic-range: high)', 'high'], ['(dynamic-range: standard)', 'standard']]],
-        ['pointerCoarse', 'pointer type', '(pointer)', [['(pointer: coarse)', 'coarse (touch)'], ['(pointer: fine)', 'fine (mouse)'], ['(pointer: none)', 'none']]],
-        ['anyPointer', 'any pointer', '(any-pointer)', [['(any-pointer: fine)', 'fine'], ['(any-pointer: coarse)', 'coarse'], ['(any-pointer: none)', 'none']]],
-        ['hover', 'hover', '(hover)', [['(hover: hover)', 'yes'], ['(hover: none)', 'no']]],
-        ['displayMode', 'display mode', '(display-mode)', [['(display-mode: fullscreen)', 'fullscreen'], ['(display-mode: standalone)', 'standalone'], ['(display-mode: minimal-ui)', 'minimal ui'], ['(display-mode: browser)', 'browser']]],
-        ['mqOrientation', 'layout orientation', '(orientation)', [['(orientation: portrait)', 'portrait'], ['(orientation: landscape)', 'landscape']]]
-      ];
-      items.forEach(function (it) {
-        if (matchMedia(it[2]).media === 'not all') return;
-        function text() {
-          for (var i = 0; i < it[3].length; i++) if (matchMedia(it[3][i][0]).matches) return it[3][i][1];
-          return 'unknown';
-        }
-        if (text() === 'unknown') return;
-        addLive(it[0], it[1], text());
-        it[3].forEach(function (q) {
-          var m = matchMedia(q[0]);
-          if (m.addEventListener) m.addEventListener('change', function () { setVal(it[0], text()); });
-        });
-      });
-    }
-
-    function buildMemory() {
-      if ('deviceMemory' in navigator) addLive('deviceMemory', 'device memory', navigator.deviceMemory + ' GB');
-      if (performance.memory) {
-        addLive('jsHeap', 'JS heap', '');
-        var upd = function () { var m = performance.memory; setVal('jsHeap', Math.round(m.usedJSHeapSize / 1048576) + ' / ' + Math.round(m.jsHeapSizeLimit / 1048576) + ' MiB'); };
-        upd(); setInterval(upd, 1000);
-      }
-      if (navigator.storage && navigator.storage.estimate) {
-        addLive('storage', 'storage quota', 'checking…');
-        navigator.storage.estimate().then(function (e) {
-          setVal('storage', Math.round(e.usage / 1048576) + ' / ' + Math.round(e.quota / 1048576) + ' MiB used');
-        });
-      }
-      if (navigator.storage && navigator.storage.persisted) {
-        addLive('persisted', 'persistent storage', 'checking…');
-        navigator.storage.persisted().then(function (p) { setVal('persisted', p ? 'granted' : 'not granted'); });
-      }
-    }
-
-    function buildGpu() {
-      try {
-        var c = document.createElement('canvas');
-        var gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
-        if (gl) {
-          var dbg = gl.getExtension('WEBGL_debug_renderer_info');
-          addLive('webgl', 'GPU (WebGL)', dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-          addLive('webglMax', 'WebGL max texture', gl.getParameter(gl.MAX_TEXTURE_SIZE) + ' px');
-        }
-      } catch (e) { /* no WebGL context */ }
-
-      if (navigator.gpu) {
-        addLive('webgpu', 'GPU (WebGPU)', 'checking…');
-        addLive('webgpuLimits', 'WebGPU limits', 'checking…');
-        addLive('webgpuFeatures', 'WebGPU features', 'checking…');
-        navigator.gpu.requestAdapter().then(function (adapter) {
-          if (!adapter) { removeRow('webgpu'); removeRow('webgpuLimits'); removeRow('webgpuFeatures'); return; }
-          var info = adapter.info || {};
-          setVal('webgpu', info.description || info.device || [info.vendor, info.architecture].filter(Boolean).join(' ') || 'available');
-          var l = adapter.limits;
-          setVal('webgpuLimits', 'buffer ' + Math.round(l.maxBufferSize / 1048576) + ' MiB · storage ' + Math.round(l.maxStorageBufferBindingSize / 1048576) + ' MiB · workgroup ' + l.maxComputeInvocationsPerWorkgroup);
-          setVal('webgpuFeatures', adapter.features.size + ': ' + Array.from(adapter.features).join(', '));
-        }, function () { removeRow('webgpu'); removeRow('webgpuLimits'); removeRow('webgpuFeatures'); });
-      }
-    }
-
-    function buildPower() {
-      if (navigator.getBattery) {
-        addLive('battery', 'battery', 'checking…');
-        navigator.getBattery().then(function (b) {
-          function mins(sec) { return sec >= 3600 ? n(sec / 3600, 1) + ' h' : Math.round(sec / 60) + ' min'; }
-          function upd() {
-            var t = '';
-            if (b.charging && isFinite(b.chargingTime) && b.level < 1) t = ', full in ' + mins(b.chargingTime);
-            else if (!b.charging && isFinite(b.dischargingTime)) t = ', ' + mins(b.dischargingTime) + ' left';
-            setVal('battery', Math.round(b.level * 100) + '% ' + (b.charging ? 'charging' : 'on battery') + t);
-          }
-          upd();
-          ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange'].forEach(function (ev) { b.addEventListener(ev, upd); });
-        }, function () { removeRow('battery'); });
-      }
-      if ('wakeLock' in navigator) addLive('wakeLock', 'screen wake lock', 'available');
-      if ('vibrate' in navigator) addLive('vibrate', 'vibration', 'available');
-    }
+    // ---------- network and battery: readable without a click ----------
 
     function buildNetwork() {
-      addLive('online', 'online', navigator.onLine ? 'yes' : 'no');
+      addNet('online', 'online', navigator.onLine ? 'yes' : 'no');
       window.addEventListener('online', function () { setVal('online', 'yes'); });
       window.addEventListener('offline', function () { setVal('online', 'no'); });
       var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -361,7 +191,7 @@
       ];
       fields.forEach(function (f) {
         if (conn && f[2] in conn) {
-          addLive(f[0], f[1], f[3](conn[f[2]]));
+          addNet(f[0], f[1], f[3](conn[f[2]]));
         }
       });
       if (conn && conn.addEventListener) {
@@ -371,58 +201,21 @@
       }
     }
 
-    function buildDevices() {
-      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        addLive('cameras', 'cameras', 'checking…');
-        addLive('microphones', 'microphones', 'checking…');
-        addLive('speakers', 'speakers', 'checking…');
-        var upd = function () {
-          navigator.mediaDevices.enumerateDevices().then(function (list) {
-            function count(kind) { return String(list.filter(function (d) { return d.kind === kind; }).length); }
-            setVal('cameras', count('videoinput'));
-            setVal('microphones', count('audioinput'));
-            setVal('speakers', count('audiooutput'));
-          });
-        };
-        upd();
-        if (navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', upd);
+    function buildPower() {
+      if (navigator.getBattery) {
+        addBattery('battery', 'battery', 'checking…');
+        navigator.getBattery().then(function (b) {
+          function mins(sec) { return sec >= 3600 ? n(sec / 3600, 1) + ' h' : Math.round(sec / 60) + ' min'; }
+          function upd() {
+            var t = '';
+            if (b.charging && isFinite(b.chargingTime) && b.level < 1) t = ', full in ' + mins(b.chargingTime);
+            else if (!b.charging && isFinite(b.dischargingTime)) t = ', ' + mins(b.dischargingTime) + ' left';
+            setVal('battery', Math.round(b.level * 100) + '% ' + (b.charging ? 'charging' : 'on battery') + t);
+          }
+          upd();
+          ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange'].forEach(function (ev) { b.addEventListener(ev, upd); });
+        }, function () { removeRow('battery'); });
       }
-      if (navigator.getGamepads) {
-        addLive('gamepads', 'gamepads connected', '0');
-        var g = function () { var c = 0; var l = navigator.getGamepads(); for (var i = 0; i < l.length; i++) if (l[i]) c++; setVal('gamepads', String(c)); };
-        window.addEventListener('gamepadconnected', g);
-        window.addEventListener('gamepaddisconnected', g);
-      }
-    }
-
-    function buildPermissionStates() {
-      if (!navigator.permissions || !navigator.permissions.query) return;
-      ['geolocation', 'camera', 'microphone', 'notifications', 'accelerometer', 'gyroscope', 'magnetometer', 'midi', 'clipboard-read', 'persistent-storage'].forEach(function (name) {
-        var id = 'perm-' + name;
-        addLive(id, 'permission: ' + name, 'checking…');
-        navigator.permissions.query({ name: name }).then(function (st) {
-          setVal(id, st.state);
-          st.addEventListener('change', function () { setVal(id, st.state); });
-        }, function () { removeRow(id); });
-      });
-    }
-
-    // Capabilities that are only a yes or no, found by feature detection.
-    function buildAvailability() {
-      [
-        ['Bluetooth', 'bluetooth' in navigator], ['WebUSB', 'usb' in navigator], ['Web Serial', 'serial' in navigator],
-        ['WebHID', 'hid' in navigator], ['NFC', 'NDEFReader' in window], ['Web MIDI', 'requestMIDIAccess' in navigator],
-        ['WebXR', 'xr' in navigator], ['Web Share', 'share' in navigator], ['clipboard', !!navigator.clipboard],
-        ['speech recognition', 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window],
-        ['speech synthesis', 'speechSynthesis' in window], ['file system access', 'showOpenFilePicker' in window],
-        ['contacts picker', 'contacts' in navigator], ['idle detection', 'IdleDetector' in window],
-        ['compute pressure', 'PressureObserver' in window], ['service workers', 'serviceWorker' in navigator],
-        ['WebAssembly', 'WebAssembly' in window], ['shared memory', typeof SharedArrayBuffer !== 'undefined' && window.crossOriginIsolated === true],
-        ['WebCodecs', 'VideoDecoder' in window], ['payment request', 'PaymentRequest' in window],
-        ['credentials', !!navigator.credentials], ['fullscreen', !!document.fullscreenEnabled]
-      ].forEach(function (a) {
-        if (a[1]) addLive('avail-' + a[0], a[0], 'available');
-      });
     }
 
     // ---------- motion and orientation: a row appears with its first reading ----------
@@ -485,75 +278,13 @@
       });
     }
 
-    // ---------- needs your permission: location, camera, microphone, notifications ----------
-
-    function buildPermissionRows() {
-      if (navigator.geolocation) addPermission('geolocation', 'location', promptGeolocation);
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) addPermission('camera', 'camera', promptCamera);
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.AudioContext) {
-        addPermission('microphone', 'microphone', promptMicrophone);
-      }
-      if ('Notification' in window && Notification.permission !== 'denied') {
-        addPermission('notifications', 'notifications', promptNotifications);
-      }
-    }
-
-    function promptCamera() {
-      setVal('camera', 'requesting…');
-      navigator.mediaDevices.getUserMedia({ video: true }).then(function (stream) {
-        stream.getTracks().forEach(function (t) { t.stop(); });
-        setVal('camera', 'granted');
-      }, function () { removeRow('camera'); });
-    }
-
-    var micStream = null, micCtx = null, micAnalyser = null, micData = null;
-    function promptMicrophone() {
-      setVal('microphone', 'requesting…');
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-        micStream = stream;
-        micCtx = new (window.AudioContext || window.webkitAudioContext)();
-        var src = micCtx.createMediaStreamSource(stream);
-        micAnalyser = micCtx.createAnalyser();
-        micAnalyser.fftSize = 1024;
-        micData = new Float32Array(micAnalyser.fftSize);
-        src.connect(micAnalyser);
-        setVal('microphone', 'granted');
-      }, function () { removeRow('microphone'); });
-    }
-    function sampleMic() {
-      if (!micAnalyser) return;
-      micAnalyser.getFloatTimeDomainData(micData);
-      var sum = 0;
-      for (var i = 0; i < micData.length; i++) sum += micData[i] * micData[i];
-      var rms = Math.sqrt(sum / micData.length);
-      var db = rms > 0 ? 20 * Math.log10(rms) : -100;
-      setVal('microphone', n(db, 1) + ' dBFS');
-    }
-    function stopMic() {
-      if (micStream) { micStream.getTracks().forEach(function (t) { t.stop(); }); micStream = null; }
-      if (micCtx) { micCtx.close(); micCtx = null; }
-      micAnalyser = null;
-    }
-    document.addEventListener('visibilitychange', function () {
-      if (document.hidden) stopMic();
-    });
-
-    function promptNotifications() {
-      setVal('notifications', 'requesting…');
-      Notification.requestPermission().then(function (state) {
-        if (state === 'granted') setVal('notifications', 'granted'); else removeRow('notifications');
-      });
-    }
-
     // ---------- location: one watch, each field shown once it has a value ----------
 
     var geoWatchId = null, geoFixes = [], geoLast = 0, geoPromoted = false;
-    function promptGeolocation() {
-      setVal('geolocation', 'requesting…');
+    function startLocation() {
+      if (!navigator.geolocation) return;
       if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
-      geoWatchId = navigator.geolocation.watchPosition(updateGeolocation, function () {
-        if (!geoPromoted) removeRow('geolocation');
-      }, { enableHighAccuracy: true, maximumAge: 0 });
+      geoWatchId = navigator.geolocation.watchPosition(updateGeolocation, function () {}, { enableHighAccuracy: true, maximumAge: 0 });
     }
     function geoField(id, label, value, text) {
       if (num(value)) { ensureRow(locationEl, id, label); setVal(id, text); }
@@ -581,7 +312,6 @@
     }, 1000);
     function promoteGeolocation() {
       geoPromoted = true;
-      removeRow('geolocation');
       ensureRow(locationEl, 'geoPosition', 'location');
       ensureRow(locationEl, 'geoAccuracy', 'location accuracy');
       ensureRow(locationEl, 'geoAge', 'last fix');
@@ -589,18 +319,16 @@
 
     // ---------- boot ----------
 
-    buildStatic();
-    buildPermissionRows();
-    if (!('DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window || 'Accelerometer' in window || 'Magnetometer' in window || 'AbsoluteOrientationSensor' in window)) {
-      document.getElementById('start').hidden = true;
-    }
+    buildNetwork();
+    buildPower();
 
     document.getElementById('start').onclick = function () {
-      this.textContent = 'restart motion & orientation';
-      motionStarted = true;
+      this.textContent = 'restart';
+      started = true;
       var go = function () {
         startMotion();
-        setTimeout(function () { motionWaitOver = true; }, 3000);
+        startLocation();
+        setTimeout(function () { waitOver = true; }, 5000);
       };
       if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
         DeviceMotionEvent.requestPermission().then(go, go);
@@ -609,7 +337,6 @@
       }
     };
 
-    setInterval(sampleMic, 250);
     updateStatus();
   })();
   </script>

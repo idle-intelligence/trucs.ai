@@ -87,9 +87,8 @@
   <main>
     <h1>sensor plots</h1>
     <p>
-      Live plots of the motion, orientation, magnetic, light, position, network and battery readings of this device.<br>
-      No server: the readings stay in your browser.<br>
-      Each plot shows the last 10 seconds.
+      Live plots of the motion, orientation, position, network and battery readings of this device.<br>
+      No server: the readings stay in your browser.
     </p>
 
     <div id="model-status">
@@ -104,7 +103,7 @@
     <hr>
 
     <p class="panel-desc">
-      Source: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>.
+      Source: sensors-web.
     </p>
 
     <hr>
@@ -130,13 +129,13 @@
     const SENSORS = {
       accel:    { title: 'accelerometer', unit: 'm/s², with gravity', names: ['x', 'y', 'z'], minSpan: 4, dec: 1 },
       gyro:     { title: 'gyroscope', unit: '°/s', names: ['alpha', 'beta', 'gamma'], minSpan: 20, dec: 0 },
-      orient:   { title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0 },
+      orient:   { title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0, unwrap: 0 },
       mag:      { title: 'magnetometer', unit: 'µT', names: ['x', 'y', 'z'], minSpan: 20, dec: 0 },
       light:    { title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
       speed:    { title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
       altitude: { title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
       accuracy: { title: 'position accuracy', unit: 'm', names: ['accuracy'], minSpan: 20, dec: 0 },
-      heading:  { title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0 },
+      heading:  { title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0 },
       downlink: { title: 'network downlink', unit: 'Mb/s', names: ['downlink'], minSpan: 2, dec: 1 },
       rtt:      { title: 'network round trip', unit: 'ms', names: ['rtt'], minSpan: 100, dec: 0 },
       battery:  { title: 'battery level', unit: '%', names: ['level'], minSpan: 2, dec: 1 },
@@ -171,8 +170,20 @@
       if (values.some((x) => typeof x !== 'number' || !isFinite(x))) return;
       if (!plots[id]) addPlot(id);
       const p = plots[id];
+      const shown = values;
+      // An angle that wraps at 360 degrees is drawn as a continuous trace.
+      if (p.def.unwrap !== undefined) {
+        const c = p.def.unwrap, raw = values[c];
+        if (p.lastRaw !== undefined) {
+          const d = raw - p.lastRaw;
+          if (d > 180) p.offset -= 360; else if (d < -180) p.offset += 360;
+        } else p.offset = 0;
+        p.lastRaw = raw;
+        values = values.slice();
+        values[c] = raw + p.offset;
+      }
       p.buf.push({ t: performance.now(), v: values });
-      p.latest = values;
+      p.latest = shown;
     }
 
     function fitCanvas(canvas, ctx) {
@@ -184,15 +195,22 @@
       return { w: rect.width, h: rect.height };
     }
 
-    function drawGrid(ctx, w, h, xAt, domain, dec) {
+    // Tick step of 1, 2 or 5 times a power of ten, so labels are round numbers.
+    function niceStep(range) {
+      const raw = range / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+      return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag;
+    }
+
+    function drawGrid(ctx, w, h, xAt, domain) {
       const plotH = h - PAD_T - PAD_B;
       const yAt = (v) => PAD_T + plotH - ((v - domain.lo) / (domain.hi - domain.lo)) * plotH;
       ctx.strokeStyle = '#eee';
       ctx.fillStyle = '#999';
       ctx.font = FONT;
       ctx.lineWidth = 1;
-      for (let t = 0; t <= 4; t++) {
-        const v = domain.lo + (t / 4) * (domain.hi - domain.lo);
+      const step = niceStep(domain.hi - domain.lo);
+      const dec = step >= 1 ? 0 : Math.ceil(-Math.log10(step));
+      for (let v = Math.ceil(domain.lo / step) * step; v <= domain.hi + step * 1e-9; v += step) {
         const y = yAt(v);
         ctx.beginPath();
         ctx.moveTo(PAD_L, y);
@@ -230,7 +248,7 @@
 
       const plotW = w - PAD_L - PAD_R;
       const xAt = (sec) => PAD_L + ((sec + WINDOW_S) / WINDOW_S) * plotW;
-      const yAt = drawGrid(ctx, w, h, xAt, domain, p.def.dec);
+      const yAt = drawGrid(ctx, w, h, xAt, domain);
 
       for (let c = nch - 1; c >= 0; c--) {
         ctx.strokeStyle = TRACE_COLORS[c];
@@ -245,7 +263,7 @@
         }
         ctx.stroke();
       }
-      if (p.latest) for (let c = 0; c < nch; c++) p.vals[c].textContent = p.latest[c].toFixed(p.def.dec + 1);
+      if (p.latest) for (let c = 0; c < nch; c++) p.vals[c].textContent = p.latest[c].toFixed(p.def.dec);
     }
 
     function frame() {
@@ -274,13 +292,17 @@
 
     function startGeolocation() {
       if (!navigator.geolocation) return;
-      navigator.geolocation.watchPosition((pos) => {
-        const c = pos.coords;
-        push('speed', [c.speed]);
-        push('altitude', [c.altitude]);
-        push('accuracy', [c.accuracy]);
-        push('heading', [c.heading]);
-      }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+      let last = null;
+      const pushLast = () => {
+        if (!last) return;
+        push('speed', [last.speed]);
+        push('altitude', [last.altitude]);
+        push('accuracy', [last.accuracy]);
+        push('heading', [last.heading]);
+      };
+      navigator.geolocation.watchPosition((pos) => { last = pos.coords; pushLast(); }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+      // Fixes arrive about once a second: the last one is repeated each second so the line keeps drawing.
+      setInterval(pushLast, 1000);
     }
 
     // Network and battery values change rarely and are read once a second.
