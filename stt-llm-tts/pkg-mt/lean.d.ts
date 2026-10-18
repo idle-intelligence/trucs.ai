@@ -132,10 +132,11 @@ export interface InitOutput {
     readonly wbg_rayon_poolbuilder_numThreads: (a: number) => number;
     readonly wbg_rayon_poolbuilder_receiver: (a: number) => number;
     readonly wbg_rayon_start_worker: (a: number) => void;
-    readonly wasm_bindgen_b77a37fac4d28a6___convert__closures_____invoke___js_sys_8e401467e1b17989___Function_fn_wasm_bindgen_b77a37fac4d28a6___JsValue_____wasm_bindgen_b77a37fac4d28a6___sys__Undefined___js_sys_8e401467e1b17989___Function_fn_wasm_bindgen_b77a37fac4d28a6___JsValue_____wasm_bindgen_b77a37fac4d28a6___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen_b77a37fac4d28a6___convert__closures_____invoke___wasm_bindgen_b77a37fac4d28a6___JsValue__core_69630a7fb43a177___result__Result_____wasm_bindgen_b77a37fac4d28a6___JsError___true_: (a: number, b: number, c: any) => [number, number];
-    readonly wasm_bindgen_b77a37fac4d28a6___convert__closures_____invoke___js_sys_8e401467e1b17989___futures__task__wait_async_polyfill__MessageEvent______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_b77a37fac4d28a6___convert__closures_____invoke___wasm_bindgen_b77a37fac4d28a6___JsValue______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___js_sys_1ca67c61c74302c3___Function_fn_wasm_bindgen_c5a209400a6a505___JsValue_____wasm_bindgen_c5a209400a6a505___sys__Undefined___js_sys_1ca67c61c74302c3___Function_fn_wasm_bindgen_c5a209400a6a505___JsValue_____wasm_bindgen_c5a209400a6a505___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___wasm_bindgen_c5a209400a6a505___JsValue__core_69630a7fb43a177___result__Result_____wasm_bindgen_c5a209400a6a505___JsError___true_: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___js_sys_1ca67c61c74302c3___futures__task__wait_async_polyfill__MessageEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke___wasm_bindgen_c5a209400a6a505___JsValue______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_c5a209400a6a505___convert__closures_____invoke_______true_: (a: number, b: number) => void;
     readonly memory: WebAssembly.Memory;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
