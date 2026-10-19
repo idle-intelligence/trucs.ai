@@ -22,7 +22,7 @@
 import { pickLeanBackend, createLifeEngine } from './lean-backend.js?v=2026-10-05-mem-01';
 import { getModel } from '../lib/model-cache.js?v=2026-10-04-cache-01';
 
-const ENGINE_BUILD = '2026-10-04-release-02';
+const ENGINE_BUILD = '2026-10-19-lean-6a4bb25';
 const pending = [];
 self.onmessage = (e) => pending.push(e);
 

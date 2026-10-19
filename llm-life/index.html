@@ -307,7 +307,7 @@
 
     loadBtn.addEventListener('click', () => {
       if (!worker) {
-        worker = new Worker('./worker.js?v=2026-10-07-cells-04', { type: 'module' });
+        worker = new Worker('./worker.js?v=2026-10-19-lean-6a4bb25', { type: 'module' });
         worker.onmessage = (e) => {
           const msg = e.data;
           if (msg.type === 'progress') {
