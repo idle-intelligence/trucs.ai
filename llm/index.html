@@ -113,7 +113,7 @@
       No server, no API key. Your prompt never leaves your machine.<br>
       <span id="model-name">SmolLM2-1.7B</span>, multi-turn chat.
     </p>
-    <p id="mobile-warning" class="panel-desc" hidden>Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try the desktop version for a much better experience with WebGPU acceleration.</p>
+    <p id="mobile-warning" class="panel-desc" hidden></p>
 
     <div id="model-status">
       <button id="load-btn">download</button>
@@ -133,7 +133,7 @@
     <hr>
 
     <p id="desc-full" class="panel-desc"><a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.</p>
-    <p id="desc-mobile" class="panel-desc" hidden><a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.</p>
+    <p id="desc-mobile" class="panel-desc" hidden><a href="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF">Qwen2.5-0.5B-Instruct Q4_0</a> (~429MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.</p>
 
     <hr>
     <p><a href="/">← trucs.ai</a></p>
@@ -237,7 +237,7 @@
 
     // ════════════════════════════════════════════
     // lean engine, in a Worker. mobileMode picks the model (1.7B desktop,
-    // 360M mobile/no-WebGPU); lean itself still picks the best backend it
+    // 0.5B mobile/no-WebGPU); lean itself still picks the best backend it
     // can run that model on (WebGPU, then CPU threads, then single-thread —
     // see lean-chat-worker.js).
     // ════════════════════════════════════════════
@@ -251,23 +251,23 @@
       maxCtx: 2048,
       name: 'SmolLM2-1.7B',
     };
-    const MODEL_360M = {
-      size: '~271MB',
-      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
-      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
-      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
-      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+    const MODEL_MOBILE = {
+      size: '~429MB',
+      cache: 'llm-qwen2.5-0.5b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_0.gguf',
+      tokenizer: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/tokenizer_config.json',
       maxCtx: 2048,
-      name: 'SmolLM2-360M',
+      name: 'Qwen2.5-0.5B',
     };
 
-    const MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+    const MODEL = mobileMode ? MODEL_MOBILE : MODEL_1_7B;
+    const PATH_TEXT = { webgpu: 'on the GPU with WebGPU', threads: 'on the CPU with WebAssembly threads', single: 'on a single CPU thread with WebAssembly' };
 
     if (mobileMode) {
       descFull.hidden = true;
       descMobile.hidden = false;
       document.getElementById('model-name').textContent = MODEL.name;
-      document.getElementById('mobile-warning').hidden = false;
       document.getElementById('voice-link').hidden = true;
     }
 
@@ -296,6 +296,11 @@
       } else if (msg.type === 'ready') {
         ready = true;
         backend = msg.backend;
+        if (mobileMode) {
+          const note = document.getElementById('mobile-warning');
+          note.textContent = `Running a smaller model ${PATH_TEXT[backend]}.` + (backend === 'webgpu' ? '' : ' Expect slower responses. A desktop browser with WebGPU is much faster.');
+          note.hidden = false;
+        }
         console.log(`[llm] backend: ${msg.backend} (${msg.label})`);
         statusText.textContent = 'ready';
         loadBtn.disabled = true;

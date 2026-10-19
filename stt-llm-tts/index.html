@@ -227,7 +227,7 @@
     }
 
     // LLM model choice: same mobileMode split as the STT model/UX above (1.7B desktop,
-    // 360M mobile/no-WebGPU). lean's own backend selection (webgpu/threads/single, in
+    // 0.5B mobile/no-WebGPU). lean's own backend selection (webgpu/threads/single, in
     // lean-chat-worker.js) replaces the old WebLLM storage-buffer-count workaround this
     // page used to need.
     const MODEL_1_7B = {
@@ -238,15 +238,16 @@
       tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const MODEL_360M = {
-      size: '~271MB',
-      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
-      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
-      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
-      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+    const MODEL_MOBILE = {
+      size: '~429MB',
+      cache: 'llm-qwen2.5-0.5b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_0.gguf',
+      tokenizer: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const LLM_MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+    const LLM_MODEL = mobileMode ? MODEL_MOBILE : MODEL_1_7B;
+    const PATH_TEXT = { webgpu: 'on the GPU with WebGPU', threads: 'on the CPU with WebAssembly threads', single: 'on a single CPU thread with WebAssembly' };
 
     // Console toggle: setMode('mobile') or setMode('full')
     window.setMode = (mode) => { location.href = `?mode=${mode}`; };
@@ -254,7 +255,7 @@
     // Mode info text
     const modeInfo = document.getElementById('mode-info');
     if (mobileMode) {
-      modeInfo.textContent = 'Mobile mode: smaller models running on CPU via WebAssembly. For streaming and near-realtime experience, try a desktop browser.';
+      modeInfo.textContent = '';
     } else {
       modeInfo.textContent = 'Turn-by-turn with streaming STT — speech is transcribed in real-time. Silence triggers the response automatically.';
     }
@@ -287,7 +288,7 @@
         ? 'STT: <a href="https://huggingface.co/ggerganov/whisper.cpp">Whisper Tiny Q5_1</a> (~31MB) via <a href="https://github.com/idle-intelligence/stt-web">whisper.cpp</a> compiled to WebAssembly.'
         : 'STT: <a href="https://huggingface.co/idle-intelligence/stt-1b-en_fr-q4_0-webgpu">Quantized</a> <a href="https://github.com/kyutai-labs/delayed-streams-modeling">Kyutai STT</a> model (Mimi audio codec + text decoder), <a href="https://github.com/idle-intelligence/stt-web">custom Rust inference</a> compiled to WebAssembly, GPU acceleration via WebGPU.';
       const llmLine = mobileMode
-        ? 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.'
+        ? 'LLM: <a href="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF">Qwen2.5-0.5B-Instruct Q4_0</a> (~429MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.'
         : 'LLM: <a href="https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF">SmolLM2-1.7B-Instruct Q4_0</a>, multi-turn chat via WebGPU with <a href="https://github.com/idle-intelligence/llm-web">lean</a>.';
       const ttsLine = 'TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.';
       document.getElementById('bottom-desc').innerHTML = `${sttLine}<br>${llmLine}<br>${ttsLine}`;
@@ -880,6 +881,9 @@
         llmLoaded = true;
         llmReady = true;
         llmStatusText.textContent = 'ready';
+        if (mobileMode) {
+          modeInfo.textContent = `Mobile mode: the language model runs ${PATH_TEXT[msg.backend]}, speech recognition and voice on the CPU with WebAssembly.` + (msg.backend === 'webgpu' ? '' : ' For streaming and near-realtime experience, try a desktop browser.');
+        }
         if (llmResolveReady) { llmResolveReady(); llmResolveReady = null; llmRejectReady = null; }
       } else if (msg.type === 'token') {
         llmOutput.textContent += msg.text;

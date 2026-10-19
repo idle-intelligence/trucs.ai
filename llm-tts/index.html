@@ -162,7 +162,7 @@
 
     <!-- ── Mobile: single-column layout ── -->
     <div id="mobile-layout">
-      <p class="panel-desc">Mobile mode: running a smaller model on CPU via WebAssembly. Expect slower responses. Try a desktop browser for a much better experience with WebGPU acceleration.</p>
+      <p class="panel-desc" id="mobile-note" hidden></p>
 
       <div class="model-status">
         <button id="m-llm-load-btn">download</button>
@@ -200,7 +200,7 @@
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
     <p id="desc-mobile" class="panel-desc" hidden>
-      LLM: <a href="https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF">SmolLM2-360M-Instruct Q4_0</a> (~271MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.<br>
+      LLM: <a href="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF">Qwen2.5-0.5B-Instruct Q4_0</a> (~429MB) via <a href="https://github.com/idle-intelligence/llm-web">lean</a> compiled to WebAssembly.<br>
       TTS: <a href="https://huggingface.co/idle-intelligence/pocket-tts-gguf">Quantized</a> <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket-TTS</a> model, <a href="https://github.com/idle-intelligence/tts-web">custom Rust inference</a> compiled to WebAssembly.
     </p>
 
@@ -244,7 +244,7 @@
     }
 
     // ── LLM model choice: same mobileMode split as the panel layout above
-    // (1.7B desktop, 360M mobile/no-WebGPU). lean itself still picks the
+    // (1.7B desktop, 0.5B mobile/no-WebGPU). lean itself still picks the
     // best backend it can run that model on (see lean-chat-worker.js).
 
     const MODEL_1_7B = {
@@ -255,15 +255,16 @@
       tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/resolve/main/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const MODEL_360M = {
-      size: '~271MB',
-      cache: 'llm-smollm2-360m-q4_0-gguf-v1',
-      gguf: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
-      tokenizer: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer.json',
-      tokenizerCfg: 'https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/main/tokenizer_config.json',
+    const MODEL_MOBILE = {
+      size: '~429MB',
+      cache: 'llm-qwen2.5-0.5b-q4_0-gguf-v1',
+      gguf: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_0.gguf',
+      tokenizer: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/tokenizer.json',
+      tokenizerCfg: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/7ae557604adf67be50417f59c2c2f167def9a775/tokenizer_config.json',
       maxCtx: 2048,
     };
-    const MODEL = mobileMode ? MODEL_360M : MODEL_1_7B;
+    const MODEL = mobileMode ? MODEL_MOBILE : MODEL_1_7B;
+    const PATH_TEXT = { webgpu: 'on the GPU with WebGPU', threads: 'on the CPU with WebAssembly threads', single: 'on a single CPU thread with WebAssembly' };
 
     // ── TTS constants (shared) ──
 
@@ -712,6 +713,9 @@
           llmStatusText.textContent = 'ready';
           llmLoadBtn.disabled = true;
           llmSendBtn.disabled = false;
+          const note = document.getElementById('mobile-note');
+          note.textContent = `Mobile mode: the language model runs ${PATH_TEXT[msg.backend]}, the voice on the CPU with WebAssembly.` + (msg.backend === 'webgpu' ? '' : ' Expect slower responses. A desktop browser with WebGPU is much faster.');
+          note.hidden = false;
         } else if (msg.type === 'token') {
           if (llmFirstTokenTime === null) {
             llmFirstTokenTime = performance.now();
