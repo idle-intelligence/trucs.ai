@@ -51,10 +51,6 @@
       margin-bottom: 0;
     }
     .plot-head {
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 0 1em;
       font-size: 0.8rem;
       color: #555;
       margin-bottom: 0.25em;
@@ -62,9 +58,15 @@
     .plot-head .unit {
       color: #999;
     }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 0.5em;
+      min-height: 1.4em;
+    }
     .legend span {
-      margin-left: 0.75em;
-      white-space: nowrap;
+      white-space: pre;
+      font-variant-numeric: tabular-nums;
     }
     .legend i {
       display: inline-block;
@@ -116,6 +118,7 @@
     const PAD_L = 44, PAD_R = 8, PAD_T = 10, PAD_B = 20;
     const TRACE_COLORS = ['#111', '#777', '#bbb'];
     const FONT = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    const VAL_W = 5;
     const NO_DATA_MS = 20000;
 
     const startBtn = document.getElementById('start-btn');
@@ -134,7 +137,6 @@
       light:    { title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
       speed:    { title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
       altitude: { title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
-      accuracy: { title: 'position accuracy', unit: 'm', names: ['accuracy'], minSpan: 20, dec: 0 },
       heading:  { title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0 },
       downlink: { title: 'network downlink', unit: 'Mb/s', names: ['downlink'], minSpan: 2, dec: 1 },
       rtt:      { title: 'network round trip', unit: 'ms', names: ['rtt'], minSpan: 100, dec: 0 },
@@ -150,10 +152,10 @@
       wrap.className = 'plot';
       wrap.dataset.order = ORDER.indexOf(id);
       const legend = def.names.map((n, i) =>
-        '<span><i style="border-color:' + TRACE_COLORS[i] + '"></i>' + n + ' <b></b></span>').join('');
+        '<span><i style="border-color:' + TRACE_COLORS[i] + '"></i>' + n + ' <b>' + ''.padStart(VAL_W) + '</b></span>').join('');
       wrap.innerHTML =
-        '<div class="plot-head"><span>' + def.title + ' <span class="unit">· ' + def.unit + '</span></span>' +
-        '<span class="legend">' + legend + '</span></div><canvas></canvas>';
+        '<div class="plot-head"><div>' + def.title + ' <span class="unit">· ' + def.unit + '</span></div>' +
+        '<div class="legend">' + legend + '</div></div><canvas></canvas>';
       const next = Array.from(plotsEl.children).find((c) => Number(c.dataset.order) > ORDER.indexOf(id));
       plotsEl.insertBefore(wrap, next || null);
       const canvas = wrap.querySelector('canvas');
@@ -263,7 +265,7 @@
         }
         ctx.stroke();
       }
-      if (p.latest) for (let c = 0; c < nch; c++) p.vals[c].textContent = p.latest[c].toFixed(p.def.dec);
+      if (p.latest) for (let c = 0; c < nch; c++) p.vals[c].textContent = p.latest[c].toFixed(p.def.dec).padStart(VAL_W);
     }
 
     function frame() {
@@ -297,7 +299,6 @@
         if (!last) return;
         push('speed', [last.speed]);
         push('altitude', [last.altitude]);
-        push('accuracy', [last.accuracy]);
         push('heading', [last.heading]);
       };
       navigator.geolocation.watchPosition((pos) => { last = pos.coords; pushLast(); }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });

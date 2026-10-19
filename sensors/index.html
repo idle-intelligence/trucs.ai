@@ -42,7 +42,7 @@
     }
     .row {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 0.75em;
       min-height: 1.7em;
       line-height: 1.4;
@@ -62,6 +62,10 @@
       text-align: right;
       overflow-wrap: anywhere;
       font-variant-numeric: tabular-nums;
+      white-space: pre;
+    }
+    .row.note .v {
+      white-space: normal;
     }
     .panel-desc {
       color: #999;
@@ -138,6 +142,15 @@
       if (!cells[id]) addRow(container, id, label);
     }
 
+    // A plain sentence in place of a reading, for a sensor that is allowed but gives nothing.
+    function setNote(container, id, label, text) {
+      if (!cells[id]) {
+        addRow(container, id, label);
+        cells[id].parentElement.className = 'row note';
+      }
+      cells[id].textContent = text;
+    }
+
     // Rows for things the device does not report are removed, never listed.
     function removeRow(id) {
       var cell = cells[id];
@@ -145,6 +158,14 @@
       if (row && row.parentElement) row.parentElement.removeChild(row);
       delete cells[id];
       delete pending[id];
+    }
+
+    // One component per line, labels and numbers padded so the columns stay put as values change.
+    function lines(pairs, d, width) {
+      var lw = Math.max.apply(null, pairs.map(function (p) { return p[0].length; }));
+      return pairs.map(function (p) {
+        return p[0] + new Array(lw - p[0].length + 2).join(' ') + n(p[1], d).padStart(width || 8);
+      }).join('\n');
     }
 
     function setVal(id, text) { pending[id] = String(text); }
@@ -165,7 +186,7 @@
     // ---------- status: one sentence, replaced in place ----------
     var started = false, waitOver = false;
     function updateStatus() {
-      var count = motionEl.children.length + locationEl.children.length;
+      var count = document.querySelectorAll('#motion .row:not(.note), #location .row:not(.note)').length;
       var text;
       if (!started) text = 'tap start to read motion and location';
       else if (count) text = 'reading ' + count + (count === 1 ? ' value' : ' values') + ' from motion and location';
@@ -221,15 +242,15 @@
     // ---------- motion and orientation: a row appears with its first reading ----------
 
     function rad2deg(x) { return x * 180 / Math.PI; }
-    function xyz(unit, scale) {
-      return function (s) { var k = scale || 1; return 'x ' + n(s.x * k, 2) + ' · y ' + n(s.y * k, 2) + ' · z ' + n(s.z * k, 2) + ' ' + unit; };
+    function xyz(scale) {
+      return function (s) { var k = scale || 1; return lines([['x', s.x * k], ['y', s.y * k], ['z', s.z * k]], 2); };
     }
     function quatText(s) {
       var q = s.quaternion, x = q[0], y = q[1], z = q[2], w = q[3];
       var yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
       var pitch = Math.asin(Math.max(-1, Math.min(1, 2 * (w * y - z * x))));
       var roll = Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
-      return 'yaw ' + n(rad2deg(yaw), 0) + '° · pitch ' + n(rad2deg(pitch), 0) + '° · roll ' + n(rad2deg(roll), 0) + '°';
+      return lines([['yaw', rad2deg(yaw)], ['pitch', rad2deg(pitch)], ['roll', rad2deg(roll)]], 0);
     }
     var fromSensorApi = {};   // ids already fed by the Generic Sensor API; the legacy events fill the rest
     function motionValue(id, label, text, viaApi) {
@@ -238,7 +259,8 @@
       setVal(id, text);
     }
 
-    var motionListening = false;
+    var L_ACCEL = 'accelerometer (m/s²)', L_LINEAR = 'linear acceleration (m/s²)', L_GYRO = 'gyroscope (°/s)', L_ORIENT = 'orientation (°)';
+    var motionListening = false, sensorBlocked = false, motionDenied = false;
     function startGenericSensor(id, label, ctor, opts, fmt) {
       if (!(ctor in window)) return false;
       try {
@@ -247,7 +269,9 @@
           if (s.x === null || s.illuminance === null) return;
           motionValue(id, label, fmt(s), true);
         });
-        s.addEventListener('error', function () {});
+        s.addEventListener('error', function (e) {
+          if (e.error && e.error.name === 'NotAllowedError') sensorBlocked = true;
+        });
         s.start();
         return true;
       } catch (e) { return false; }
@@ -255,26 +279,26 @@
 
     function startMotion() {
       var f = { frequency: 10 };
-      startGenericSensor('accelerometer', 'accelerometer', 'Accelerometer', f, xyz('m/s²'));
-      startGenericSensor('linearAccel', 'linear acceleration', 'LinearAccelerationSensor', f, xyz('m/s²'));
-      startGenericSensor('gravity', 'gravity', 'GravitySensor', f, xyz('m/s²'));
-      startGenericSensor('gyroscope', 'gyroscope', 'Gyroscope', f, xyz('°/s', 180 / Math.PI));
-      startGenericSensor('magnetometer', 'magnetometer', 'Magnetometer', f, xyz('µT'));
-      startGenericSensor('orientation', 'orientation', 'AbsoluteOrientationSensor', f, quatText);
+      startGenericSensor('accelerometer', L_ACCEL, 'Accelerometer', f, xyz());
+      startGenericSensor('linearAccel', L_LINEAR, 'LinearAccelerationSensor', f, xyz());
+      startGenericSensor('gravity', 'gravity (m/s²)', 'GravitySensor', f, xyz());
+      startGenericSensor('gyroscope', L_GYRO, 'Gyroscope', f, xyz(180 / Math.PI));
+      startGenericSensor('magnetometer', 'magnetometer (µT)', 'Magnetometer', f, xyz());
+      startGenericSensor('orientation', L_ORIENT, 'AbsoluteOrientationSensor', f, quatText);
       startGenericSensor('ambientLight', 'ambient light', 'AmbientLightSensor', { frequency: 2 }, function (s) { return n(s.illuminance, 0) + ' lux'; });
 
       if (motionListening) return;
       motionListening = true;
       window.addEventListener('devicemotion', function (e) {
         var a = e.accelerationIncludingGravity;
-        if (a && num(a.x)) motionValue('accelerometer', 'accelerometer', 'x ' + n(a.x, 2) + ' · y ' + n(a.y, 2) + ' · z ' + n(a.z, 2) + ' m/s²');
+        if (a && num(a.x)) motionValue('accelerometer', L_ACCEL, lines([['x', a.x], ['y', a.y], ['z', a.z]], 2));
         var l = e.acceleration;
-        if (l && num(l.x)) motionValue('linearAccel', 'linear acceleration', 'x ' + n(l.x, 2) + ' · y ' + n(l.y, 2) + ' · z ' + n(l.z, 2) + ' m/s²');
+        if (l && num(l.x)) motionValue('linearAccel', L_LINEAR, lines([['x', l.x], ['y', l.y], ['z', l.z]], 2));
         var r = e.rotationRate;
-        if (r && num(r.alpha)) motionValue('gyroscope', 'gyroscope', 'alpha ' + n(r.alpha, 1) + ' · beta ' + n(r.beta, 1) + ' · gamma ' + n(r.gamma, 1) + ' °/s');
+        if (r && num(r.alpha)) motionValue('gyroscope', L_GYRO, lines([['alpha', r.alpha], ['beta', r.beta], ['gamma', r.gamma]], 1));
       });
       window.addEventListener('deviceorientation', function (e) {
-        if (num(e.alpha) && num(e.beta) && num(e.gamma)) motionValue('orientation', 'orientation', 'alpha ' + n(e.alpha, 0) + '° · beta ' + n(e.beta, 0) + '° · gamma ' + n(e.gamma, 0) + '°');
+        if (num(e.alpha) && num(e.beta) && num(e.gamma)) motionValue('orientation', L_ORIENT, lines([['alpha', e.alpha], ['beta', e.beta], ['gamma', e.gamma]], 0));
       });
     }
 
@@ -284,7 +308,11 @@
     function startLocation() {
       if (!navigator.geolocation) return;
       if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
-      geoWatchId = navigator.geolocation.watchPosition(updateGeolocation, function () {}, { enableHighAccuracy: true, maximumAge: 0 });
+      geoWatchId = navigator.geolocation.watchPosition(updateGeolocation, geoError, { enableHighAccuracy: true, maximumAge: 0 });
+    }
+    function geoError(err) {
+      if (geoPromoted) return;
+      setNote(locationEl, 'geoNote', 'location', err && err.code === 1 ? 'permission denied' : 'permission given, location is off on this device');
     }
     function geoField(id, label, value, text) {
       if (num(value)) { ensureRow(locationEl, id, label); setVal(id, text); }
@@ -293,10 +321,11 @@
     function updateGeolocation(pos) {
       var c = pos.coords;
       if (!geoPromoted) promoteGeolocation();
+      removeRow('geoNote');
       geoLast = pos.timestamp;
       geoFixes.push(performance.now());
       if (geoFixes.length > 8) geoFixes.shift();
-      setVal('geoPosition', 'lat ' + n(c.latitude, 5) + ' · lon ' + n(c.longitude, 5));
+      setVal('geoPosition', lines([['lat', c.latitude], ['lon', c.longitude]], 5, 10));
       setVal('geoAccuracy', '±' + n(c.accuracy, 0) + ' m');
       geoField('geoAltitude', 'altitude', c.altitude, n(c.altitude, 1) + ' m' + (num(c.altitudeAccuracy) ? ' (±' + n(c.altitudeAccuracy, 0) + ' m)' : ''));
       geoField('geoHeading', 'heading', c.heading, n(c.heading, 0) + '°');
@@ -312,7 +341,7 @@
     }, 1000);
     function promoteGeolocation() {
       geoPromoted = true;
-      ensureRow(locationEl, 'geoPosition', 'location');
+      ensureRow(locationEl, 'geoPosition', 'location (°)');
       ensureRow(locationEl, 'geoAccuracy', 'location accuracy');
       ensureRow(locationEl, 'geoAge', 'last fix');
     }
@@ -328,10 +357,13 @@
       var go = function () {
         startMotion();
         startLocation();
-        setTimeout(function () { waitOver = true; }, 5000);
+        setTimeout(function () {
+          waitOver = true;
+          if (!motionEl.children.length && (sensorBlocked || motionDenied)) setNote(motionEl, 'motionNote', 'motion', 'permission denied');
+        }, 5000);
       };
       if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
-        DeviceMotionEvent.requestPermission().then(go, go);
+        DeviceMotionEvent.requestPermission().then(function (r) { if (r === 'denied') motionDenied = true; go(); }, go);
       } else {
         go();
       }
