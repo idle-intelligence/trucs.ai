@@ -27,7 +27,7 @@
 const EARLY = [];
 self.onmessage = (e) => EARLY.push(e);
 
-const ENGINE_BUILD = '2026-10-10-lean-1fce23d';
+const ENGINE_BUILD = '2026-10-18-lean-6a4bb25';
 
 let engine = null;
 let lean = null; // the loaded wasm module (AbortFlag, ChatTemplate, chatRender)
