@@ -41,6 +41,9 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
 
   <dt>Cellular Automata</dt>
   <dd>LLM of <a href="/llm-life/">Life</a></dd>
+
+  <dt>Fluids</dt>
+  <dd>A lattice gas <a href="/flow/">flowing past a plate</a></dd>
 </dl>
   
 ---
