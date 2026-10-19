@@ -70,7 +70,7 @@
   </main>
 
   <script type="module">
-    const ENGINE_BUILD = '2026-10-19-flow-v2-01';
+    const ENGINE_BUILD = '2026-10-19-flow-v2-02';
     const statusText = document.getElementById('status-text');
     const canvas = document.getElementById('view');
     const ctx = canvas.getContext('2d');
@@ -116,7 +116,7 @@
       statusText.textContent = 'failed to start: ' + (e.message || 'worker error');
     };
     window.addEventListener('resize', paint);
-    worker.postMessage({ type: 'init' });
+    worker.postMessage({ type: 'init', vertical: main.clientWidth < 520 });
   </script>
 </body>
 </html>

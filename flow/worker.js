@@ -3,18 +3,21 @@
 // than one hardware thread, else wasm single thread), loads that build, and
 // steps the simulation, posting the vorticity field and obstacle mask after
 // every batch of steps.
-//   in:  { type: 'init' }
+//   in:  { type: 'init', vertical } (vertical: the narrow-column layout, which runs a smaller street)
 //   out: { type: 'frame', field, obstacle, width, height, status }
 //        { type: 'error', status }
 const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
 const MODEL = 'signed';
-const W = 1536;
-const H = 512;
 const U = 0.25;
 const MODE = 'randomize';
-const BLOCK = 16;
 const REFBLOCK = 8;
+// Lattice size and display block: the street the page was tuned on, and a
+// smaller one (a third of the sites, Re about 59 instead of 118) for the
+// narrow column, where an alternating street forms in about a third of the
+// steps.
+const FULL = { w: 1536, h: 512, block: 16 };
+const SMALL = { w: 1024, h: 256, block: 8 };
 
 let stepsPerFrame = 10;
 
@@ -30,7 +33,8 @@ async function hasAdapter() {
   }
 }
 
-async function init() {
+async function init(vertical) {
+  const { w: W, h: H, block: BLOCK } = vertical ? SMALL : FULL;
   const threadsOk = self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' && navigator.hardwareConcurrency > 1;
   const path = (await hasAdapter()) ? 'webgpu' : threadsOk ? 'threads' : 'single';
   let sim, label;
@@ -90,9 +94,9 @@ async function loop({ sim, label }) {
   }
 }
 
-self.onmessage = async () => {
+self.onmessage = async (e) => {
   try {
-    await loop(await init());
+    await loop(await init(!!e.data.vertical));
   } catch (err) {
     post({ type: 'error', status: `failed to start: ${err.message || err}` });
   }
