@@ -236,7 +236,8 @@
       const ctx = p.ctx;
       ctx.clearRect(0, 0, w, h);
       const cutoff = now - WINDOW_S * 1000;
-      while (p.buf.length && p.buf[0].t < cutoff - 1000) p.buf.shift();
+      // Keep one sample older than the window: a value holds until the next one.
+      while (p.buf.length > 1 && p.buf[1].t <= cutoff) p.buf.shift();
       const nch = p.def.names.length;
 
       let lo = Infinity, hi = -Infinity;
@@ -254,13 +255,13 @@
         ctx.strokeStyle = TRACE_COLORS[c];
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        let started = false;
+        let started = false, y = 0;
         for (const pt of p.buf) {
-          const sec = (pt.t - now) / 1000;
-          if (sec < -WINDOW_S) continue;
-          const x = xAt(sec), y = yAt(pt.v[c]);
+          const x = xAt(Math.max(-WINDOW_S, (pt.t - now) / 1000));
+          y = yAt(pt.v[c]);
           if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
         }
+        if (started) ctx.lineTo(xAt(0), y);
         ctx.stroke();
       }
     }
