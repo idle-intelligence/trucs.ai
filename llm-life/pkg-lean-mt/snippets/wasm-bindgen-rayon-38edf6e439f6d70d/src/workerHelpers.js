@@ -51,7 +51,7 @@ waitForMsgType(self, 'wasm_bindgen_worker_init').then(async ({ init, receiver })
   // OTOH, even though it can't be inlined, it should be still reasonably
   // cheap since the requested file is already in cache (it was loaded by
   // the main thread).
-  const pkg = await import('../../../llm_life_lean.js?v=2026-10-04-release-02');
+  const pkg = await import('../../../llm_life_lean.js?v=2026-10-19-lean-6a4bb25');
   await pkg.default(init);
   postMessage({ type: 'wasm_bindgen_worker_ready' });
   pkg.wbg_rayon_start_worker(receiver);
@@ -95,7 +95,7 @@ export async function startWorkers(module, memory, builder) {
       //
       // The only way to work around that is to have side effect code
       // in an entry point such as Worker file itself.
-      const worker = new Worker(new URL('./workerHelpers.js?v=2026-10-04-release-02', import.meta.url), {
+      const worker = new Worker(new URL('./workerHelpers.js?v=2026-10-19-lean-6a4bb25', import.meta.url), {
         type: 'module'
       });
       worker.postMessage(workerInit);
