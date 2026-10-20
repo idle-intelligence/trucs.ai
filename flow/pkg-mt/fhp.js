@@ -1,5 +1,5 @@
 /* @ts-self-types="./fhp.d.ts" */
-import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-06-physics-engine-01';
+import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-20-flow-v2-03';
 
 
 export class Sim {
