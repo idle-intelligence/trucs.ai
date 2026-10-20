@@ -3,17 +3,17 @@
 // than one hardware thread, else wasm single thread), loads that build, and
 // steps the simulation, posting the vorticity field and obstacle mask after
 // every batch of steps.
-//   in:  { type: 'init', vertical } (vertical: the narrow-column layout, which runs a smaller street)
+//   in:  { type: 'init' }
 //   out: { type: 'frame', field, obstacle, width, height, status }
 //        { type: 'error', status }
 const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
 const MODE = 'randomize';
-// The street the page was tuned on, and a faster one for the narrow column
-// (phones): the ternary model at a higher speed, Re about 85, where a street
-// forms in about 16k steps.
+// The street the page was tuned on, run on WebGPU, and a smaller one for the
+// CPU paths (a third of the sites, Re about 78), where the street forms in
+// about 8k steps.
 const FULL = { model: 'signed', w: 1536, h: 512, u: 0.25, block: 16, refblock: 8 };
-const SMALL = { model: 'ternary', w: 1536, h: 512, u: 0.35, block: 16, refblock: 0 };
+const SMALL = { model: 'signed', w: 896, h: 336, u: 0.25, block: 8, refblock: 8 };
 
 let stepsPerFrame = 10;
 
@@ -29,10 +29,10 @@ async function hasAdapter() {
   }
 }
 
-async function init(vertical) {
-  const { model: MODEL, w: W, h: H, u: U, block: BLOCK, refblock: REFBLOCK } = vertical ? SMALL : FULL;
+async function init() {
   const threadsOk = self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' && navigator.hardwareConcurrency > 1;
   const path = (await hasAdapter()) ? 'webgpu' : threadsOk ? 'threads' : 'single';
+  const { model: MODEL, w: W, h: H, u: U, block: BLOCK, refblock: REFBLOCK } = path === 'webgpu' ? FULL : SMALL;
   let sim, label;
   if (path === 'threads') {
     const mod = await import(`./pkg-mt/fhp.js?v=${ENGINE_BUILD}`);
@@ -92,7 +92,7 @@ async function loop({ sim, label }) {
 
 self.onmessage = async (e) => {
   try {
-    await loop(await init(!!e.data.vertical));
+    await loop(await init());
   } catch (err) {
     post({ type: 'error', status: `failed to start: ${err.message || err}` });
   }
