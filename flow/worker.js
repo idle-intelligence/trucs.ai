@@ -8,16 +8,12 @@
 //        { type: 'error', status }
 const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
-const MODEL = 'signed';
-const U = 0.25;
 const MODE = 'randomize';
-const REFBLOCK = 8;
-// Lattice size and display block: the street the page was tuned on, and a
-// smaller one (a third of the sites, Re about 59 instead of 118) for the
-// narrow column, where an alternating street forms in about a third of the
-// steps.
-const FULL = { w: 1536, h: 512, block: 16 };
-const SMALL = { w: 1024, h: 256, block: 8 };
+// The street the page was tuned on, and a faster one for the narrow column
+// (phones): the ternary model at a higher speed, Re about 85, where a street
+// forms in about 16k steps.
+const FULL = { model: 'signed', w: 1536, h: 512, u: 0.25, block: 16, refblock: 8 };
+const SMALL = { model: 'ternary', w: 1536, h: 512, u: 0.35, block: 16, refblock: 0 };
 
 let stepsPerFrame = 10;
 
@@ -34,7 +30,7 @@ async function hasAdapter() {
 }
 
 async function init(vertical) {
-  const { w: W, h: H, block: BLOCK } = vertical ? SMALL : FULL;
+  const { model: MODEL, w: W, h: H, u: U, block: BLOCK, refblock: REFBLOCK } = vertical ? SMALL : FULL;
   const threadsOk = self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' && navigator.hardwareConcurrency > 1;
   const path = (await hasAdapter()) ? 'webgpu' : threadsOk ? 'threads' : 'single';
   let sim, label;
