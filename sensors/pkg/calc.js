@@ -12,6 +12,14 @@ export class Calc {
         wasm.__wbg_calc_free(ptr, 0);
     }
     /**
+     * The last raw compass heading in degrees, 0 to 360, NaN until one arrived.
+     * @returns {number}
+     */
+    compass() {
+        const ret = wasm.calc_compass(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Heading in degrees, 0 to 360, NaN until a compass or gyro reading arrived.
      * @returns {number}
      */
@@ -82,6 +90,14 @@ export class Calc {
     speed() {
         const ret = wasm.calc_speed(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Whether the last acceleration reading was judged still (the moments the speed is zeroed).
+     * @returns {boolean}
+     */
+    still() {
+        const ret = wasm.calc_still(this.__wbg_ptr);
+        return ret !== 0;
     }
 }
 if (Symbol.dispose) Calc.prototype[Symbol.dispose] = Calc.prototype.free;
