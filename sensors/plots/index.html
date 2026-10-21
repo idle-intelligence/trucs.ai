@@ -105,7 +105,7 @@
       <span id="status-text"></span>
     </div>
 
-    <hr>
+    <hr id="hr-top">
 
     <p class="part" id="part-sensors" style="margin-top:0">Sensors</p>
     <div id="plots-sensors"></div>
@@ -118,16 +118,16 @@
     <p class="part" id="part-calc" style="margin-top:0">Calculated</p>
     <div id="plots-calc"></div>
 
-    <hr>
+    <hr id="hr-explain">
 
-    <p>
+    <p id="plots-note">
       Each plot shows the last ten seconds of one sensor of this device.
     </p>
 
     <hr>
 
     <p class="panel-desc">
-      Source code: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>, which also keeps a list of all the <a href="https://idle-intelligence.github.io/sensors-web/">sensors</a> a browser can expose, read or not.
+      Source code: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>.
     </p>
 
     <hr>
@@ -140,7 +140,7 @@
     const PAD_L = 44, PAD_R = 8, PAD_T = 10, PAD_B = 20;
     const TRACE_COLORS = ['#111', '#777', '#bbb'];
     const FONT = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-    const NO_DATA_MS = 20000;
+    const NO_DATA_MS = 5000;
 
     const startBtn = document.getElementById('start-btn');
     const statusText = document.getElementById('status-text');
@@ -151,6 +151,8 @@
     };
 
     const gate = createGate([
+      { label: 'hr-top', box: ['plots-sensors', 'plots-location', 'plots-calc'] },
+      { label: 'plots-note', box: ['plots-sensors', 'plots-location', 'plots-calc'], also: ['hr-explain'] },
       { label: 'part-sensors', box: 'plots-sensors' },
       { label: 'part-location', box: 'plots-location' },
       { label: 'part-calc', box: 'plots-calc', also: ['hr-calc'] },
@@ -358,8 +360,10 @@
         pushCalc();
       }
     }
+    const startedGeneric = {};
     function startGeneric(name, id, read) {
-      if (!(name in window)) return;
+      if (!(name in window) || startedGeneric[name]) return;
+      startedGeneric[name] = true;
       try {
         const sensor = new window[name]({ frequency: 30 });
         sensor.addEventListener('reading', () => push(id, read(sensor)));
@@ -368,8 +372,11 @@
       } catch (err) { /* blocked by policy or not allowed: no plot */ }
     }
 
+    let geoWatch = null, geoTimer = null;
     function startGeolocation() {
       if (!navigator.geolocation) return;
+      if (geoWatch !== null) navigator.geolocation.clearWatch(geoWatch);
+      clearInterval(geoTimer);
       let last = null;
       const pushLast = () => {
         if (!last) return;
@@ -377,9 +384,9 @@
         push('altitude', [last.altitude]);
         push('heading', [last.heading]);
       };
-      navigator.geolocation.watchPosition((pos) => { last = pos.coords; pushLast(); }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+      geoWatch = navigator.geolocation.watchPosition((pos) => { last = pos.coords; pushLast(); }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
       // Fixes arrive about once a second: the last one is repeated each second so the line keeps drawing.
-      setInterval(pushLast, 1000);
+      geoTimer = setInterval(pushLast, 1000);
     }
 
     async function requestPermissions() {
@@ -395,7 +402,7 @@
     requestAnimationFrame(frame);
 
     startBtn.addEventListener('click', async () => {
-      startBtn.disabled = true;
+      startBtn.textContent = 'restart';
       setStatus('waiting for sensor data');
       if (await requestPermissions()) {
         window.addEventListener('devicemotion', onMotion);
@@ -406,7 +413,7 @@
       }
       startGeolocation();
       setTimeout(() => {
-        if (!Object.keys(plots).length) setStatus('no sensor data on this device');
+        if (!Object.keys(plots).length) setStatus('no motion or location readings on this device');
       }, NO_DATA_MS);
     });
     setStatus('tap start to read the sensors of this device');

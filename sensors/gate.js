@@ -1,6 +1,6 @@
 // Rows and plots exist only once a source they need has delivered on this device.
 // A row or plot declares the sources it needs (any one of them is enough); a part label
-// (and anything listed with it) is shown only while its container holds something.
+// (and anything listed with it) is shown only while its container, or any of its containers, holds something.
 export function createGate(parts) {
   const seen = new Set();
   const defs = [];
@@ -8,7 +8,7 @@ export function createGate(parts) {
 
   function refresh() {
     parts.forEach((p) => {
-      const shown = el(p.box).children.length > 0;
+      const shown = [].concat(p.box).some((id) => el(id).children.length > 0);
       [p.label].concat(p.also || []).forEach((id) => { el(id).hidden = !shown; });
     });
   }

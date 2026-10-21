@@ -95,7 +95,7 @@
       <span id="status-text"></span>
     </div>
 
-    <hr>
+    <hr id="hr-top">
 
     <p class="part" id="part-sensors" style="margin-top:0">Sensors</p>
     <div id="motion"></div>
@@ -128,6 +128,7 @@
     var locationEl = document.getElementById('location');
     var calcEl = document.getElementById('calc');
     var gate = createGate([
+      { label: 'hr-top', box: ['motion', 'location', 'calc'] },
       { label: 'part-sensors', box: 'motion' },
       { label: 'part-location', box: 'location' },
       { label: 'part-calc', box: 'calc', also: ['hr-calc'] }
