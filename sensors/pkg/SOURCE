@@ -1,0 +1,4 @@
+Built from https://github.com/idle-intelligence/sensors-web at d0b9da4 (crates/calc)
+Command: wasm-pack build --target web --release (wasm-pack 0.13.1), in crates/calc
+calc_bg.wasm md5 b50fa0e062e6942d6b668d4983c4b4d4
+calc.js      md5 32eef7601f902ef2faf8fb475897a364

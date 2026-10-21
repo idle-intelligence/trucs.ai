@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sensors - trucs.ai</title>
+  <meta name="description" content="Live readings of the motion, orientation and location sensors of your device, read in your browser.">
+  <meta property="og:title" content="sensors · trucs.ai">
+  <meta property="og:description" content="A selection of a few interesting sensors the browser has access to, more interesting on a phone. Allow geolocation for speed and heading.">
+  <meta property="og:image" content="https://trucs.ai/assets/og/sensors.png?v=1">
+  <meta property="og:url" content="https://trucs.ai/sensors/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 0.5em 1.5em;
+      border: 1px solid #111;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover {
+      background: #111;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    button:disabled:hover {
+      background: #fff;
+      color: #111;
+    }
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75em;
+      min-height: 1.7em;
+      line-height: 1.4;
+      padding: 0.15em 0;
+      border-bottom: 1px dotted #ddd;
+      font-size: 0.9rem;
+    }
+    .row .k {
+      flex: 0 0 auto;
+      color: #777;
+      white-space: nowrap;
+    }
+    .row .k .u {
+      display: block;
+    }
+    .row .v {
+      flex: 1 1 60%;
+      min-width: 0;
+      text-align: right;
+      overflow-wrap: anywhere;
+      font-variant-numeric: tabular-nums;
+      white-space: pre;
+    }
+    .row.note .v {
+      white-space: normal;
+    }
+    .part {
+      color: #555;
+      font-size: 0.85rem;
+      margin: 1.2em 0 0.3em;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>sensors</h1>
+    <p>
+      A selection of a few interesting sensors the browser has access to (more interesting on a phone).<br>
+      Allow geolocation for speed, heading, ...<br>
+      If you'd rather watch <a href="/sensors/plots/">plots</a>.<br>
+      For more (all), go to the <a href="https://idle-intelligence.github.io/sensors-web/">sensors-web demo</a>.
+    </p>
+
+    <div id="model-status">
+      <button id="start">start</button>
+      <span id="status-text"></span>
+    </div>
+
+    <hr id="hr-top">
+
+    <p class="part" id="part-sensors" style="margin-top:0">Sensors</p>
+    <div id="motion"></div>
+
+    <p class="part" id="part-location">Location</p>
+    <div id="location"></div>
+
+    <hr id="hr-calc">
+
+    <p class="part" id="part-calc" style="margin-top:0">Calculated</p>
+    <div id="calc"></div>
+
+    <hr>
+
+    <p class="panel-desc">
+      Source code: <a href="https://github.com/idle-intelligence/sensors-web">sensors-web</a>.
+    </p>
+
+    <hr>
+    <p><a href="/">← trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+  import { createGate } from './gate.js?v=2';
+  (function () {
+    'use strict';
+
+    var stateEl = document.getElementById('status-text');
+    var motionEl = document.getElementById('motion');
+    var locationEl = document.getElementById('location');
+    var calcEl = document.getElementById('calc');
+    var gate = createGate([
+      { label: 'hr-top', box: ['motion', 'location', 'calc'] },
+      { label: 'part-sensors', box: 'motion' },
+      { label: 'part-location', box: 'location' },
+      { label: 'part-calc', box: 'calc', also: ['hr-calc'] }
+    ], { orientation: ['deviceorientationabsolute', 'deviceorientation'] });
+
+    function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
+    function num(x) { return typeof x === 'number' && isFinite(x); }
+
+    // ---------- row registry: rows are created once, values only ever update in place ----------
+    var cells = {};      // id -> value <div>
+    var pending = {};    // id -> latest text, flushed on a timer (never on every event)
+
+    function addRow(container, id, label, initial) {
+      var row = document.createElement('div');
+      row.className = 'row';
+      var k = document.createElement('div');
+      k.className = 'k';
+      var m = /^(.*) \((.*)\)$/.exec(label);
+      k.textContent = m ? m[1] : label;
+      if (m) {
+        var u = document.createElement('span');
+        u.className = 'u';
+        u.textContent = m[2];
+        k.appendChild(u);
+      }
+      var v = document.createElement('div');
+      v.className = 'v';
+      v.textContent = initial || '';
+      row.appendChild(k);
+      row.appendChild(v);
+      container.appendChild(row);
+      cells[id] = v;
+    }
+
+    // A row declares the sources it needs and appears once one of them has delivered.
+    function defineRow(container, id, label, needs) {
+      gate.define(needs, function () { addRow(container, id, label, '--'); });
+    }
+
+    // A plain sentence in place of a reading, for a sensor that is allowed but gives nothing.
+    function setNote(container, id, label, text) {
+      if (!cells[id]) {
+        addRow(container, id, label);
+        cells[id].parentElement.className = 'row note';
+      }
+      cells[id].textContent = text;
+      gate.refresh();
+    }
+
+    // Rows for things the device does not report are removed, never listed.
+    function removeRow(id) {
+      var cell = cells[id];
+      var row = cell ? cell.parentElement : null;
+      if (row && row.parentElement) row.parentElement.removeChild(row);
+      delete cells[id];
+      delete pending[id];
+      gate.refresh();
+    }
+
+    // One component per line, labels and numbers padded so the columns stay put as values change.
+    function lines(pairs, d, width) {
+      var lw = Math.max.apply(null, pairs.map(function (p) { return p[0].length; }));
+      return pairs.map(function (p) {
+        return p[0] + new Array(lw - p[0].length + 2).join(' ') + n(p[1], d).padStart(width || 8);
+      }).join('\n');
+    }
+
+    function setVal(id, text) { pending[id] = String(text); }
+
+    // Flush cached values to the DOM at a fixed cadence, decoupled from event rate,
+    // so a sensor firing at 60Hz never touches layout more than 4 times a second.
+    setInterval(function () {
+      Object.keys(pending).forEach(function (id) {
+        var el = cells[id];
+        if (!el) return;
+        var text = pending[id];
+        if (el.textContent !== text) el.textContent = text;
+      });
+      pending = {};
+      updateStatus();
+    }, 250);
+
+    // ---------- status: one sentence, replaced in place ----------
+    var started = false, waitOver = false;
+    function updateStatus() {
+      var count = document.querySelectorAll('#motion .row:not(.note)').length;
+      Array.prototype.forEach.call(document.querySelectorAll('#location .row:not(.note) .v'), function (v) {
+        if (v.textContent !== '--') count++;
+      });
+      var text;
+      if (!started) text = 'tap start to read motion and location';
+      else if (count) text = 'reading ' + count + (count === 1 ? ' value' : ' values') + ' from motion and location';
+      else if (waitOver) text = 'no motion or location readings on this device';
+      else text = 'waiting for sensor data';
+      if (stateEl.textContent !== text) stateEl.textContent = text;
+    }
+
+    // ---------- motion and orientation: a row appears with its first reading ----------
+
+    function rad2deg(x) { return x * 180 / Math.PI; }
+    function xyz(scale) {
+      return function (s) { var k = scale || 1; return lines([['x', s.x * k], ['y', s.y * k], ['z', s.z * k]], 2); };
+    }
+    function quatText(s) {
+      var q = s.quaternion, x = q[0], y = q[1], z = q[2], w = q[3];
+      var yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
+      var pitch = Math.asin(Math.max(-1, Math.min(1, 2 * (w * y - z * x))));
+      var roll = Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
+      return lines([['yaw', (rad2deg(yaw) + 360) % 360], ['pitch', rad2deg(pitch)], ['roll', rad2deg(roll)]], 0);
+    }
+    var fromSensorApi = {};   // ids already fed by the Generic Sensor API; the legacy events fill the rest
+    function motionValue(id, label, text, viaApi) {
+      if (viaApi) fromSensorApi[id] = true; else if (fromSensorApi[id]) return;
+      gate.mark(id);
+      setVal(id, text);
+    }
+
+    var L_ACCEL = 'accelerometer (m/s²)', L_LINEAR = 'linear acceleration (m/s²)', L_GYRO = 'gyroscope (°/s)', L_ORIENT = 'orientation (°)';
+    [['accelerometer', L_ACCEL], ['linearAccel', L_LINEAR], ['gravity', 'gravity (m/s²)'], ['gyroscope', L_GYRO],
+     ['magnetometer', 'magnetometer (µT)'], ['orientation', L_ORIENT], ['ambientLight', 'ambient light']
+    ].forEach(function (f) { defineRow(motionEl, f[0], f[1], [f[0]]); });
+    var motionListening = false, sensorBlocked = false, motionDenied = false;
+    function startGenericSensor(id, label, ctor, opts, fmt) {
+      if (!(ctor in window)) return false;
+      try {
+        var s = new window[ctor](opts);
+        s.addEventListener('reading', function () {
+          if (s.x === null || s.illuminance === null) return;
+          motionValue(id, label, fmt(s), true);
+        });
+        s.addEventListener('error', function (e) {
+          if (e.error && e.error.name === 'NotAllowedError') sensorBlocked = true;
+        });
+        s.start();
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function startMotion() {
+      var f = { frequency: 10 };
+      startGenericSensor('accelerometer', L_ACCEL, 'Accelerometer', f, xyz());
+      startGenericSensor('linearAccel', L_LINEAR, 'LinearAccelerationSensor', f, xyz());
+      startGenericSensor('gravity', 'gravity (m/s²)', 'GravitySensor', f, xyz());
+      startGenericSensor('gyroscope', L_GYRO, 'Gyroscope', f, xyz(180 / Math.PI));
+      startGenericSensor('magnetometer', 'magnetometer (µT)', 'Magnetometer', f, xyz());
+      startGenericSensor('orientation', L_ORIENT, 'AbsoluteOrientationSensor', f, quatText);
+      startGenericSensor('ambientLight', 'ambient light', 'AmbientLightSensor', { frequency: 2 }, function (s) { return n(s.illuminance, 0) + ' lux'; });
+
+      if (motionListening) return;
+      motionListening = true;
+      window.addEventListener('devicemotion', function (e) {
+        var a = e.accelerationIncludingGravity;
+        if (a && num(a.x)) motionValue('accelerometer', L_ACCEL, lines([['x', a.x], ['y', a.y], ['z', a.z]], 2));
+        var l = e.acceleration;
+        if (l && num(l.x)) motionValue('linearAccel', L_LINEAR, lines([['x', l.x], ['y', l.y], ['z', l.z]], 2));
+        calcMotion(e);
+        var r = e.rotationRate;
+        if (r && num(r.alpha)) motionValue('gyroscope', L_GYRO, lines([['alpha', r.alpha], ['beta', r.beta], ['gamma', r.gamma]], 1));
+      });
+      window.addEventListener('deviceorientationabsolute', onOrientation);
+      window.addEventListener('deviceorientation', onOrientation);
+      function onOrientation(e) {
+        calcOrientation(e);
+        if (!(num(e.alpha) && num(e.beta) && num(e.gamma)) || !gate.accept('orientation', e.type)) return;
+        motionValue('orientation', L_ORIENT, lines([['alpha', e.alpha], ['beta', e.beta], ['gamma', e.gamma]], 0));
+      }
+    }
+
+    // ---------- calculated: speed and heading derived from motion and orientation ----------
+
+    defineRow(calcEl, 'calcSpeed', 'speed', ['linear-acceleration']);
+    defineRow(calcEl, 'calcHeading', 'heading (°)', ['gyro-rate', 'compass']);
+
+    // The numbers come from the wasm module; this side only passes raw readings in and paints what comes out.
+    var calc = null;
+    var CALC_TAG = '4';
+    import('./pkg/calc.js?v=' + CALC_TAG).then(function (m) {
+      return m.default(new URL('./pkg/calc_bg.wasm?v=' + CALC_TAG, import.meta.url)).then(function () { calc = new m.Calc(); });
+    }).catch(function () {});
+    function paintCalc() {
+      var sp = calc.speed(), hd = calc.heading();
+      setVal('calcSpeed', isFinite(sp) ? lines([['m/s', sp], ['km/h', sp * 3.6]], 1) : '--');
+      setVal('calcHeading', isFinite(hd) ? Math.round(hd) % 360 + '° ' + calc.heading_letter() : '--');
+    }
+    function calcMotion(e) {
+      if (!calc) return;
+      var l = e.acceleration || {}, r = e.rotationRate || {};
+      if (num(l.x) && num(l.y) && num(l.z)) gate.mark('linear-acceleration');
+      if (num(r.alpha)) gate.mark('gyro-rate');
+      calc.push_motion(performance.now(), num(l.x) ? l.x : NaN, num(l.y) ? l.y : NaN, num(l.z) ? l.z : NaN,
+        num(r.beta) ? r.beta : NaN, num(r.gamma) ? r.gamma : NaN, num(r.alpha) ? r.alpha : NaN);
+      paintCalc();
+    }
+    function calcOrientation(e) {
+      if (!calc) return;
+      if (num(e.webkitCompassHeading) || (e.type === 'deviceorientationabsolute' && num(e.alpha))) gate.mark('compass');
+      if (num(e.alpha) && num(e.beta) && num(e.gamma) && gate.accept('orientation', e.type)) calc.push_attitude(e.alpha, e.beta, e.gamma);
+      var absolute = e.type === 'deviceorientationabsolute' && num(e.alpha) ? e.alpha : NaN;
+      calc.push_orientation(performance.now(), num(e.webkitCompassHeading) ? e.webkitCompassHeading : NaN, absolute);
+      paintCalc();
+    }
+
+    // ---------- location: one watch, each field shown once it has a value ----------
+
+    var geoWatchId = null, geoFixes = [], geoLast = 0, geoPromoted = false;
+    function startLocation() {
+      if (!navigator.geolocation) return;
+      if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(updateGeolocation, geoError, { enableHighAccuracy: true, maximumAge: 0 });
+    }
+    function geoError(err) {
+      if (geoPromoted) return;
+      var fresh = !cells.geoNote;
+      setNote(locationEl, 'geoNote', 'location', err && err.code === 1 ? 'permission denied' : 'permission given, location is off on this device');
+      if (fresh) locationEl.insertBefore(cells.geoNote.parentElement, locationEl.firstChild);
+    }
+    function geoField(id, label, value, text) {
+      setVal(id, num(value) ? text : '--');
+    }
+    function updateGeolocation(pos) {
+      var c = pos.coords;
+      gate.mark('geo');
+      geoPromoted = true;
+      removeRow('geoNote');
+      geoLast = pos.timestamp;
+      geoFixes.push(performance.now());
+      if (geoFixes.length > 8) geoFixes.shift();
+      setVal('geoPosition', lines([['lat', c.latitude], ['lon', c.longitude]], 5, 10));
+      setVal('geoAccuracy', '±' + n(c.accuracy, 0) + ' m');
+      geoField('geoAltitude', null, c.altitude, n(c.altitude, 1) + ' m' + (num(c.altitudeAccuracy) ? ' (±' + n(c.altitudeAccuracy, 0) + ' m)' : ''));
+      geoField('geoHeading', null, c.heading, n(c.heading, 0) + '°');
+      geoField('geoSpeed', null, c.speed, lines([['m/s', c.speed], ['km/h', c.speed * 3.6]], 1));
+      if (geoFixes.length > 1) {
+        var span = (geoFixes[geoFixes.length - 1] - geoFixes[0]) / 1000;
+        setVal('geoRate', n((geoFixes.length - 1) / span, 2) + ' per second');
+      }
+    }
+    setInterval(function () {
+      if (geoLast && cells.geoAge) setVal('geoAge', n(Math.max(0, (Date.now() - geoLast) / 1000), 0) + ' s ago');
+    }, 1000);
+    [['geoPosition', 'location (°)'], ['geoAccuracy', 'location accuracy'], ['geoAge', 'last fix'],
+     ['geoAltitude', 'altitude'], ['geoHeading', 'heading'], ['geoSpeed', 'speed'], ['geoRate', 'location updates']
+    ].forEach(function (f) { defineRow(locationEl, f[0], f[1], ['geo']); });
+
+    // ---------- boot ----------
+
+
+    document.getElementById('start').onclick = function () {
+      this.textContent = 'restart';
+      started = true;
+      var go = function () {
+        startMotion();
+        startLocation();
+        setTimeout(function () {
+          waitOver = true;
+          if (!motionEl.children.length && (sensorBlocked || motionDenied)) setNote(motionEl, 'motionNote', 'motion', 'permission denied');
+        }, 5000);
+      };
+      if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission().then(function (r) { if (r === 'denied') motionDenied = true; go(); }, go);
+      } else {
+        go();
+      }
+    };
+
+    updateStatus();
+  })();
+  </script>
+</body>
+</html>
