@@ -69,6 +69,11 @@
     .row.note .v {
       white-space: normal;
     }
+    .part {
+      color: #555;
+      font-size: 0.85rem;
+      margin: 1.2em 0 0.3em;
+    }
     .panel-desc {
       color: #999;
       font-size: 0.8rem;
@@ -91,10 +96,18 @@
 
     <hr>
 
+    <p class="part" style="margin-top:0">Sensors</p>
     <div id="motion"></div>
-    <div id="location"></div>
     <div id="network"></div>
     <div id="battery"></div>
+
+    <p class="part">Location</p>
+    <div id="location"></div>
+
+    <hr>
+
+    <p class="part" style="margin-top:0">Calculated</p>
+    <div id="calc"></div>
 
     <hr>
 
@@ -106,7 +119,7 @@
     <p><a href="/">← trucs.ai</a></p>
   </main>
 
-  <script>
+  <script type="module">
   (function () {
     'use strict';
 
@@ -115,6 +128,7 @@
     var locationEl = document.getElementById('location');
     var networkEl = document.getElementById('network');
     var batteryEl = document.getElementById('battery');
+    var calcEl = document.getElementById('calc');
 
     function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
     function num(x) { return typeof x === 'number' && isFinite(x); }
@@ -196,7 +210,10 @@
     // ---------- status: one sentence, replaced in place ----------
     var started = false, waitOver = false;
     function updateStatus() {
-      var count = document.querySelectorAll('#motion .row:not(.note), #location .row:not(.note)').length;
+      var count = document.querySelectorAll('#motion .row:not(.note)').length;
+      Array.prototype.forEach.call(document.querySelectorAll('#location .row:not(.note) .v'), function (v) {
+        if (v.textContent !== '--') count++;
+      });
       var text;
       if (!started) text = 'tap start to read motion and location';
       else if (count) text = 'reading ' + count + (count === 1 ? ' value' : ' values') + ' from motion and location';
@@ -304,12 +321,44 @@
         if (a && num(a.x)) motionValue('accelerometer', L_ACCEL, lines([['x', a.x], ['y', a.y], ['z', a.z]], 2));
         var l = e.acceleration;
         if (l && num(l.x)) motionValue('linearAccel', L_LINEAR, lines([['x', l.x], ['y', l.y], ['z', l.z]], 2));
+        calcMotion(e);
         var r = e.rotationRate;
         if (r && num(r.alpha)) motionValue('gyroscope', L_GYRO, lines([['alpha', r.alpha], ['beta', r.beta], ['gamma', r.gamma]], 1));
       });
+      window.addEventListener('deviceorientationabsolute', calcOrientation);
       window.addEventListener('deviceorientation', function (e) {
+        calcOrientation(e);
         if (num(e.alpha) && num(e.beta) && num(e.gamma)) motionValue('orientation', L_ORIENT, lines([['alpha', e.alpha], ['beta', e.beta], ['gamma', e.gamma]], 0));
       });
+    }
+
+    // ---------- calculated: speed and heading derived from motion and orientation ----------
+
+    addRow(calcEl, 'calcSpeed', 'speed (m/s)', '--');
+    addRow(calcEl, 'calcHeading', 'heading (°)', '--');
+
+    // The numbers come from the wasm module; this side only passes raw readings in and paints what comes out.
+    var calc = null;
+    var CALC_TAG = '1';
+    import('./pkg/calc.js?v=' + CALC_TAG).then(function (m) {
+      return m.default(new URL('./pkg/calc_bg.wasm?v=' + CALC_TAG, import.meta.url)).then(function () { calc = new m.Calc(); });
+    }).catch(function () {});
+    function paintCalc() {
+      var sp = calc.speed(), hd = calc.heading();
+      setVal('calcSpeed', isFinite(sp) ? n(sp, 2) : '--');
+      setVal('calcHeading', isFinite(hd) ? Math.round(hd) % 360 + '° ' + calc.heading_letter() : '--');
+    }
+    function calcMotion(e) {
+      if (!calc) return;
+      var l = e.acceleration || {}, r = e.rotationRate || {};
+      calc.push_motion(performance.now(), num(l.x) ? l.x : NaN, num(l.y) ? l.y : NaN, num(l.z) ? l.z : NaN, num(r.alpha) ? r.alpha : NaN);
+      paintCalc();
+    }
+    function calcOrientation(e) {
+      if (!calc) return;
+      var absolute = e.type === 'deviceorientationabsolute' && num(e.alpha) ? e.alpha : NaN;
+      calc.push_orientation(num(e.webkitCompassHeading) ? e.webkitCompassHeading : NaN, absolute);
+      paintCalc();
     }
 
     // ---------- location: one watch, each field shown once it has a value ----------
@@ -322,39 +371,36 @@
     }
     function geoError(err) {
       if (geoPromoted) return;
+      var fresh = !cells.geoNote;
       setNote(locationEl, 'geoNote', 'location', err && err.code === 1 ? 'permission denied' : 'permission given, location is off on this device');
+      if (fresh) locationEl.insertBefore(cells.geoNote.parentElement, locationEl.firstChild);
     }
     function geoField(id, label, value, text) {
-      if (num(value)) { ensureRow(locationEl, id, label); setVal(id, text); }
-      else if (cells[id]) setVal(id, 'unavailable');
+      setVal(id, num(value) ? text : '--');
     }
     function updateGeolocation(pos) {
       var c = pos.coords;
-      if (!geoPromoted) promoteGeolocation();
+      geoPromoted = true;
       removeRow('geoNote');
       geoLast = pos.timestamp;
       geoFixes.push(performance.now());
       if (geoFixes.length > 8) geoFixes.shift();
       setVal('geoPosition', lines([['lat', c.latitude], ['lon', c.longitude]], 5, 10));
       setVal('geoAccuracy', '±' + n(c.accuracy, 0) + ' m');
-      geoField('geoAltitude', 'altitude', c.altitude, n(c.altitude, 1) + ' m' + (num(c.altitudeAccuracy) ? ' (±' + n(c.altitudeAccuracy, 0) + ' m)' : ''));
-      geoField('geoHeading', 'heading', c.heading, n(c.heading, 0) + '°');
-      geoField('geoSpeed', 'speed', c.speed, n(c.speed, 2) + ' m/s (' + n(c.speed * 3.6, 1) + ' km/h)');
+      geoField('geoAltitude', null, c.altitude, n(c.altitude, 1) + ' m' + (num(c.altitudeAccuracy) ? ' (±' + n(c.altitudeAccuracy, 0) + ' m)' : ''));
+      geoField('geoHeading', null, c.heading, n(c.heading, 0) + '°');
+      geoField('geoSpeed', null, c.speed, n(c.speed, 2) + ' m/s (' + n(c.speed * 3.6, 1) + ' km/h)');
       if (geoFixes.length > 1) {
         var span = (geoFixes[geoFixes.length - 1] - geoFixes[0]) / 1000;
-        ensureRow(locationEl, 'geoRate', 'location updates');
         setVal('geoRate', n((geoFixes.length - 1) / span, 2) + ' per second');
       }
     }
     setInterval(function () {
       if (geoLast && cells.geoAge) setVal('geoAge', n(Math.max(0, (Date.now() - geoLast) / 1000), 0) + ' s ago');
     }, 1000);
-    function promoteGeolocation() {
-      geoPromoted = true;
-      ensureRow(locationEl, 'geoPosition', 'location (°)');
-      ensureRow(locationEl, 'geoAccuracy', 'location accuracy');
-      ensureRow(locationEl, 'geoAge', 'last fix');
-    }
+    [['geoPosition', 'location (°)'], ['geoAccuracy', 'location accuracy'], ['geoAge', 'last fix'],
+     ['geoAltitude', 'altitude'], ['geoHeading', 'heading'], ['geoSpeed', 'speed'], ['geoRate', 'location updates']
+    ].forEach(function (f) { addRow(locationEl, f[0], f[1], '--'); });
 
     // ---------- boot ----------
 
