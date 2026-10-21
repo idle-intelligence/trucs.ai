@@ -339,7 +339,7 @@
 
     // The numbers come from the wasm module; this side only passes raw readings in and paints what comes out.
     var calc = null;
-    var CALC_TAG = '1';
+    var CALC_TAG = '2';
     import('./pkg/calc.js?v=' + CALC_TAG).then(function (m) {
       return m.default(new URL('./pkg/calc_bg.wasm?v=' + CALC_TAG, import.meta.url)).then(function () { calc = new m.Calc(); });
     }).catch(function () {});
@@ -356,6 +356,7 @@
     }
     function calcOrientation(e) {
       if (!calc) return;
+      if (e.type === 'deviceorientation') calc.push_attitude(num(e.alpha) ? e.alpha : NaN, num(e.beta) ? e.beta : NaN, num(e.gamma) ? e.gamma : NaN);
       var absolute = e.type === 'deviceorientationabsolute' && num(e.alpha) ? e.alpha : NaN;
       calc.push_orientation(num(e.webkitCompassHeading) ? e.webkitCompassHeading : NaN, absolute);
       paintCalc();
