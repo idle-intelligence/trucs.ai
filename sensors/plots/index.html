@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sensor plots - trucs.ai</title>
   <meta name="description" content="Live plots of the motion, orientation, magnetic, light and position readings of your device, read in your browser.">
+  <meta property="og:title" content="sensor plots · trucs.ai">
+  <meta property="og:description" content="A selection of a few interesting sensors the browser has access to, drawn as live plots of the last ten seconds. Allow geolocation for speed and heading.">
+  <meta property="og:image" content="https://trucs.ai/assets/og/sensor-plots.png?v=1">
+  <meta property="og:url" content="https://trucs.ai/sensors/plots/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../../assets/style.css">
@@ -387,14 +393,13 @@
       geoTimer = setInterval(pushLast, 1000);
     }
 
+    // Asks where the browser asks; the answer is not needed, listeners are added either way and only readings that arrive show.
     async function requestPermissions() {
-      let denied = false;
       for (const E of [window.DeviceMotionEvent, window.DeviceOrientationEvent]) {
         if (E && typeof E.requestPermission === 'function') {
-          try { if ((await E.requestPermission()) === 'denied') denied = true; } catch (err) { /* no prompt available: listen anyway */ }
+          try { await E.requestPermission(); } catch (err) { /* no prompt available: listen anyway */ }
         }
       }
-      return !denied;
     }
 
     requestAnimationFrame(frame);
@@ -402,13 +407,12 @@
     startBtn.addEventListener('click', async () => {
       startBtn.textContent = 'restart';
       setStatus('waiting for sensor data');
-      if (await requestPermissions()) {
-        window.addEventListener('devicemotion', onMotion);
-        window.addEventListener('deviceorientation', onOrientation);
-        window.addEventListener('deviceorientationabsolute', onOrientation);
-        startGeneric('Magnetometer', 'mag', (s) => [s.x, s.y, s.z]);
-        startGeneric('AmbientLightSensor', 'light', (s) => [s.illuminance]);
-      }
+      await requestPermissions();
+      window.addEventListener('devicemotion', onMotion);
+      window.addEventListener('deviceorientation', onOrientation);
+      window.addEventListener('deviceorientationabsolute', onOrientation);
+      startGeneric('Magnetometer', 'mag', (s) => [s.x, s.y, s.z]);
+      startGeneric('AmbientLightSensor', 'light', (s) => [s.illuminance]);
       startGeolocation();
       setTimeout(() => {
         if (!Object.keys(plots).length) setStatus('no motion or location readings on this device');

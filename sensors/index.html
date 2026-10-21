@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sensors - trucs.ai</title>
   <meta name="description" content="Live readings of the motion, orientation and location sensors of your device, read in your browser.">
+  <meta property="og:title" content="sensors · trucs.ai">
+  <meta property="og:description" content="A selection of a few interesting sensors the browser has access to, more interesting on a phone. Allow geolocation for speed and heading.">
+  <meta property="og:image" content="https://trucs.ai/assets/og/sensors.png?v=1">
+  <meta property="og:url" content="https://trucs.ai/sensors/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../assets/style.css">
@@ -237,7 +243,7 @@
       var yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
       var pitch = Math.asin(Math.max(-1, Math.min(1, 2 * (w * y - z * x))));
       var roll = Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
-      return lines([['yaw', rad2deg(yaw)], ['pitch', rad2deg(pitch)], ['roll', rad2deg(roll)]], 0);
+      return lines([['yaw', (rad2deg(yaw) + 360) % 360], ['pitch', rad2deg(pitch)], ['roll', rad2deg(roll)]], 0);
     }
     var fromSensorApi = {};   // ids already fed by the Generic Sensor API; the legacy events fill the rest
     function motionValue(id, label, text, viaApi) {
