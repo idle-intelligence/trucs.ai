@@ -55,7 +55,7 @@
 
     <canvas id="view" width="128" height="32"></canvas>
     <p>
-      A lattice gas is a fluid made of particles that hop between the points of a hexagonal grid and collide by a fixed rule, an idea of Frisch, Hasslacher and Pomeau from 1986. Nothing else is programmed: the flow around the plate and the vortex street behind it emerge from those collisions alone. Ternary means that each link holds -1, 0 or +1 relative to a local reference, which makes the gas less noisy and lets it reach a higher Reynolds number on the same grid. Black and gray are the two directions of rotation, and the darker the shade, the stronger it is.
+      A lattice gas is a fluid made of particles that hop between the points of a hexagonal grid and collide by a fixed rule, an idea of Frisch, Hasslacher and Pomeau from 1986. Nothing else is programmed: the flow around the plate and the vortex street behind it emerge from those collisions alone. Ternary means that each link holds -1, 0 or +1 relative to a local reference, which makes the gas less noisy and lets it reach a higher Reynolds number on the same grid. Black and white are the two directions of rotation, on a grey background; the further from grey, the stronger it is.
     </p>
 
     <hr>
@@ -70,7 +70,7 @@
   </main>
 
   <script type="module">
-    const ENGINE_BUILD = '2026-10-21-flow-v2-06';
+    const ENGINE_BUILD = '2026-10-21-flow-v2-07';
     const statusText = document.getElementById('status-text');
     const canvas = document.getElementById('view');
     const ctx = canvas.getContext('2d');
@@ -80,8 +80,8 @@
     const worker = new Worker(`./worker.js?v=${ENGINE_BUILD}`, { type: 'module' });
     let frame = null;
 
-    // Levels of grey: 0 is white, positive vorticity goes to black, negative
-    // to mid gray, the obstacle is black.
+    // Levels of grey: 0 is mid grey, positive vorticity goes to black, negative
+    // to white, the obstacle is black.
     function paint() {
       if (!frame) return;
       const { field, obstacle, width, height } = frame;
@@ -90,7 +90,7 @@
       const img = flatCtx.createImageData(width, height);
       for (let i = 0; i < field.length; i++) {
         const v = Math.max(-1, Math.min(1, field[i]));
-        const g = obstacle[i] ? 0 : v > 0 ? 255 * (1 - v) : 255 + 127 * v;
+        const g = obstacle[i] ? 0 : 128 - 127 * v;
         img.data.set([g, g, g, 255], 4 * i);
       }
       flatCtx.putImageData(img, 0, 0);
