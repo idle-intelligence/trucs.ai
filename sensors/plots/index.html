@@ -165,14 +165,14 @@
     const SENSORS = {
       accel:    { part: 'sensors', title: 'accelerometer', unit: 'm/s², with gravity', names: ['x', 'y', 'z'], minSpan: 4, dec: 1 },
       gyro:     { part: 'sensors', title: 'gyroscope', unit: '°/s', names: ['alpha', 'beta', 'gamma'], minSpan: 20, dec: 0 },
-      orient:   { part: 'sensors', title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0, unwrap: 0 },
+      orient:   { part: 'sensors', title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0, angles: [0] },
       mag:      { part: 'sensors', title: 'magnetometer', unit: 'µT', names: ['x', 'y', 'z'], minSpan: 20, dec: 0 },
       light:    { part: 'sensors', title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
       speed:    { part: 'location', title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1, gaps: true },
       altitude: { part: 'location', title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0, gaps: true },
-      heading:  { part: 'location', title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0, gaps: true },
+      heading:  { part: 'location', title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, angles: [0], fixed: [0, 360, 90], gaps: true },
       calcSpeed:   { part: 'calc', title: 'speed', unit: 'm/s · shaded when still', names: ['speed'], minSpan: 2, dec: 1 },
-      calcHeading: { part: 'calc', title: 'heading', unit: '°', names: ['filtered', 'compass'], minSpan: 90, dec: 0, unwrap: 0, follow: 1, optional: true },
+      calcHeading: { part: 'calc', title: 'heading', unit: '°', names: ['filtered', 'compass'], minSpan: 90, dec: 0, angles: [0, 1], fixed: [0, 360, 90], optional: true },
     };
     const ORDER = Object.keys(SENSORS);
     // Sources a plot needs, any one of which is enough. A raw plot needs its own readings.
@@ -212,21 +212,10 @@
       const p = plots[id];
       if (!p) return;
       const shown = values;
-      // An angle that wraps at 360 degrees is drawn as a continuous trace.
-      if (p.def.unwrap !== undefined) {
-        const c = p.def.unwrap, raw = values[c];
-        if (!finite(raw)) {
-          // a gap: nothing to unwrap
-        } else if (p.lastRaw !== undefined) {
-          const d = raw - p.lastRaw;
-          if (d > 180) p.offset -= 360; else if (d < -180) p.offset += 360;
-        } else p.offset = 0;
-        if (finite(raw)) p.lastRaw = raw;
+      // Angles are compass-style, 0 to 360 degrees clockwise from north.
+      if (p.def.angles) {
         values = values.slice();
-        if (finite(raw)) values[c] = raw + p.offset;
-        // A second angle is drawn at the 360-degree multiple nearest the first.
-        const f = p.def.follow;
-        if (f !== undefined && finite(values[f])) values[f] += 360 * Math.round((values[c] - values[f]) / 360);
+        for (const c of p.def.angles) if (finite(values[c])) values[c] = ((values[c] % 360) + 360) % 360;
       }
       p.buf.push({ t: performance.now(), v: values, still: !!still });
       p.latest = shown;
@@ -254,7 +243,7 @@
       ctx.fillStyle = '#999';
       ctx.font = FONT;
       ctx.lineWidth = 1;
-      const step = niceStep(domain.hi - domain.lo);
+      const step = domain.step || niceStep(domain.hi - domain.lo);
       const dec = step >= 1 ? 0 : Math.ceil(-Math.log10(step));
       for (let v = Math.ceil(domain.lo / step) * step; v <= domain.hi + step * 1e-9; v += step) {
         const y = yAt(v);
@@ -291,7 +280,7 @@
       if (!isFinite(lo)) { lo = 0; hi = 0; }
       const mid = (lo + hi) / 2;
       const span = Math.max(p.def.minSpan, (hi - lo) * 1.1);
-      const domain = { lo: mid - span / 2, hi: mid + span / 2 };
+      const domain = p.def.fixed ? { lo: p.def.fixed[0], hi: p.def.fixed[1], step: p.def.fixed[2] } : { lo: mid - span / 2, hi: mid + span / 2 };
 
       const plotW = w - PAD_L - PAD_R;
       const xAt = (sec) => PAD_L + ((sec + WINDOW_S) / WINDOW_S) * plotW;
@@ -310,9 +299,13 @@
         ctx.strokeStyle = TRACE_COLORS[c];
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        let started = false, y = 0;
+        let started = false, y = 0, prev = NaN;
+        const isAngle = p.def.angles && p.def.angles.includes(c);
         for (const pt of p.buf) {
           if (!finite(pt.v[c])) { started = false; continue; }
+          // A jump across the 360-degree wrap breaks the line instead of striking across the plot.
+          if (isAngle && finite(prev) && Math.abs(pt.v[c] - prev) > 180) started = false;
+          prev = pt.v[c];
           const x = xAt(Math.max(-WINDOW_S, (pt.t - now) / 1000));
           y = yAt(pt.v[c]);
           if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
