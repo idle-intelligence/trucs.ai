@@ -168,15 +168,15 @@
       orient:   { part: 'sensors', title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0, unwrap: 0 },
       mag:      { part: 'sensors', title: 'magnetometer', unit: 'µT', names: ['x', 'y', 'z'], minSpan: 20, dec: 0 },
       light:    { part: 'sensors', title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
-      speed:    { part: 'location', title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
-      altitude: { part: 'location', title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
-      heading:  { part: 'location', title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0 },
+      speed:    { part: 'location', title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1, gaps: true },
+      altitude: { part: 'location', title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0, gaps: true },
+      heading:  { part: 'location', title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0, gaps: true },
       calcSpeed:   { part: 'calc', title: 'speed', unit: 'm/s · shaded when still', names: ['speed'], minSpan: 2, dec: 1 },
       calcHeading: { part: 'calc', title: 'heading', unit: '°', names: ['filtered', 'compass'], minSpan: 90, dec: 0, unwrap: 0, follow: 1, optional: true },
     };
     const ORDER = Object.keys(SENSORS);
     // Sources a plot needs, any one of which is enough. A raw plot needs its own readings.
-    const NEEDS = { calcSpeed: ['linear-acceleration'], calcHeading: ['gyro-rate', 'compass'] };
+    const NEEDS = { speed: ['geo'], altitude: ['geo'], heading: ['geo'], calcSpeed: ['linear-acceleration'], calcHeading: ['gyro-rate', 'compass'] };
 
     const plots = {};   // id -> { def, buf, latest, canvas, ctx, wrap }
 
@@ -204,7 +204,9 @@
 
     const finite = (x) => typeof x === 'number' && isFinite(x);
     function push(id, values, still) {
-      const need = SENSORS[id].optional ? [values[0]] : values;
+      // Location values are null while unknown: they stay in the buffer as gaps in the line.
+      const def = SENSORS[id];
+      const need = def.gaps ? [] : def.optional ? [values[0]] : values;
       if (!need.every(finite)) return;
       gate.mark(id);
       const p = plots[id];
@@ -213,13 +215,15 @@
       // An angle that wraps at 360 degrees is drawn as a continuous trace.
       if (p.def.unwrap !== undefined) {
         const c = p.def.unwrap, raw = values[c];
-        if (p.lastRaw !== undefined) {
+        if (!finite(raw)) {
+          // a gap: nothing to unwrap
+        } else if (p.lastRaw !== undefined) {
           const d = raw - p.lastRaw;
           if (d > 180) p.offset -= 360; else if (d < -180) p.offset += 360;
         } else p.offset = 0;
-        p.lastRaw = raw;
+        if (finite(raw)) p.lastRaw = raw;
         values = values.slice();
-        values[c] = raw + p.offset;
+        if (finite(raw)) values[c] = raw + p.offset;
         // A second angle is drawn at the 360-degree multiple nearest the first.
         const f = p.def.follow;
         if (f !== undefined && finite(values[f])) values[f] += 360 * Math.round((values[c] - values[f]) / 360);
@@ -380,11 +384,11 @@
       let last = null;
       const pushLast = () => {
         if (!last) return;
-        push('speed', [last.speed]);
-        push('altitude', [last.altitude]);
-        push('heading', [last.heading]);
+        push('speed', [orNaN(last.speed)]);
+        push('altitude', [orNaN(last.altitude)]);
+        push('heading', [orNaN(last.heading)]);
       };
-      geoWatch = navigator.geolocation.watchPosition((pos) => { last = pos.coords; pushLast(); }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
+      geoWatch = navigator.geolocation.watchPosition((pos) => { last = pos.coords; gate.mark('geo'); pushLast(); }, () => {}, { enableHighAccuracy: true, maximumAge: 0 });
       // Fixes arrive about once a second: the last one is repeated each second so the line keeps drawing.
       geoTimer = setInterval(pushLast, 1000);
     }
