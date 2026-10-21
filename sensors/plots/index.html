@@ -44,6 +44,11 @@
       color: #999;
       font-size: 0.8rem;
     }
+    .part {
+      color: #555;
+      font-size: 0.85rem;
+      margin: 1.2em 0 0.3em;
+    }
     .plot {
       margin-bottom: 1.5em;
     }
@@ -100,7 +105,16 @@
 
     <hr>
 
-    <div id="plots"></div>
+    <p class="part" id="part-sensors" style="margin-top:0">Sensors</p>
+    <div id="plots-sensors"></div>
+
+    <p class="part" id="part-location">Location</p>
+    <div id="plots-location"></div>
+
+    <hr id="hr-calc">
+
+    <p class="part" id="part-calc" style="margin-top:0">Calculated</p>
+    <div id="plots-calc"></div>
 
     <hr>
 
@@ -120,6 +134,7 @@
   </main>
 
   <script type="module">
+    import { createGate } from '../gate.js?v=1';
     const WINDOW_S = 10;
     const PAD_L = 44, PAD_R = 8, PAD_T = 10, PAD_B = 20;
     const TRACE_COLORS = ['#111', '#777', '#bbb'];
@@ -128,23 +143,37 @@
 
     const startBtn = document.getElementById('start-btn');
     const statusText = document.getElementById('status-text');
-    const plotsEl = document.getElementById('plots');
+    const plotsEls = {
+      sensors: document.getElementById('plots-sensors'),
+      location: document.getElementById('plots-location'),
+      calc: document.getElementById('plots-calc'),
+    };
+
+    const gate = createGate([
+      { label: 'part-sensors', box: 'plots-sensors' },
+      { label: 'part-location', box: 'plots-location' },
+      { label: 'part-calc', box: 'plots-calc', also: ['hr-calc'] },
+    ]);
 
     function setStatus(text) { statusText.textContent = text; }
 
     // Title, unit, channel names, smallest y-range worth showing and axis decimals.
     // A plot is created when its first reading arrives, in this order.
     const SENSORS = {
-      accel:    { title: 'accelerometer', unit: 'm/s², with gravity', names: ['x', 'y', 'z'], minSpan: 4, dec: 1 },
-      gyro:     { title: 'gyroscope', unit: '°/s', names: ['alpha', 'beta', 'gamma'], minSpan: 20, dec: 0 },
-      orient:   { title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0, unwrap: 0 },
-      mag:      { title: 'magnetometer', unit: 'µT', names: ['x', 'y', 'z'], minSpan: 20, dec: 0 },
-      light:    { title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
-      speed:    { title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
-      altitude: { title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
-      heading:  { title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0 },
+      accel:    { part: 'sensors', title: 'accelerometer', unit: 'm/s², with gravity', names: ['x', 'y', 'z'], minSpan: 4, dec: 1 },
+      gyro:     { part: 'sensors', title: 'gyroscope', unit: '°/s', names: ['alpha', 'beta', 'gamma'], minSpan: 20, dec: 0 },
+      orient:   { part: 'sensors', title: 'orientation', unit: '°', names: ['alpha', 'beta', 'gamma'], minSpan: 60, dec: 0, unwrap: 0 },
+      mag:      { part: 'sensors', title: 'magnetometer', unit: 'µT', names: ['x', 'y', 'z'], minSpan: 20, dec: 0 },
+      light:    { part: 'sensors', title: 'ambient light', unit: 'lux', names: ['lux'], minSpan: 10, dec: 0 },
+      speed:    { part: 'location', title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
+      altitude: { part: 'location', title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
+      heading:  { part: 'location', title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0 },
+      calcSpeed:   { part: 'calc', title: 'speed', unit: 'm/s · shaded when still', names: ['speed'], minSpan: 2, dec: 1 },
+      calcHeading: { part: 'calc', title: 'heading', unit: '°', names: ['filtered', 'compass'], minSpan: 90, dec: 0, unwrap: 0, follow: 1, optional: true },
     };
     const ORDER = Object.keys(SENSORS);
+    // Sources a plot needs, any one of which is enough. A raw plot needs its own readings.
+    const NEEDS = { calcSpeed: ['linear-acceleration'], calcHeading: ['gyro-rate', 'compass'] };
 
     const plots = {};   // id -> { def, buf, latest, canvas, ctx, wrap }
 
@@ -158,6 +187,7 @@
       wrap.innerHTML =
         '<div class="plot-head"><div>' + def.title + ' <span class="unit">· ' + def.unit + '</span></div>' +
         (legend ? '<div class="legend">' + legend + '</div>' : '') + '</div><canvas></canvas>';
+      const plotsEl = plotsEls[def.part];
       const next = Array.from(plotsEl.children).find((c) => Number(c.dataset.order) > ORDER.indexOf(id));
       plotsEl.insertBefore(wrap, next || null);
       const canvas = wrap.querySelector('canvas');
@@ -169,10 +199,13 @@
       setStatus('reading ' + n + (n === 1 ? ' sensor' : ' sensors'));
     }
 
-    function push(id, values) {
-      if (values.some((x) => typeof x !== 'number' || !isFinite(x))) return;
-      if (!plots[id]) addPlot(id);
+    const finite = (x) => typeof x === 'number' && isFinite(x);
+    function push(id, values, still) {
+      const need = SENSORS[id].optional ? [values[0]] : values;
+      if (!need.every(finite)) return;
+      gate.mark(id);
       const p = plots[id];
+      if (!p) return;
       const shown = values;
       // An angle that wraps at 360 degrees is drawn as a continuous trace.
       if (p.def.unwrap !== undefined) {
@@ -184,8 +217,11 @@
         p.lastRaw = raw;
         values = values.slice();
         values[c] = raw + p.offset;
+        // A second angle is drawn at the 360-degree multiple nearest the first.
+        const f = p.def.follow;
+        if (f !== undefined && finite(values[f])) values[f] += 360 * Math.round((values[c] - values[f]) / 360);
       }
-      p.buf.push({ t: performance.now(), v: values });
+      p.buf.push({ t: performance.now(), v: values, still: !!still });
       p.latest = shown;
     }
 
@@ -244,7 +280,7 @@
       const nch = p.def.names.length;
 
       let lo = Infinity, hi = -Infinity;
-      for (const pt of p.buf) for (let c = 0; c < nch; c++) { lo = Math.min(lo, pt.v[c]); hi = Math.max(hi, pt.v[c]); }
+      for (const pt of p.buf) for (let c = 0; c < nch; c++) if (finite(pt.v[c])) { lo = Math.min(lo, pt.v[c]); hi = Math.max(hi, pt.v[c]); }
       if (!isFinite(lo)) { lo = 0; hi = 0; }
       const mid = (lo + hi) / 2;
       const span = Math.max(p.def.minSpan, (hi - lo) * 1.1);
@@ -254,12 +290,22 @@
       const xAt = (sec) => PAD_L + ((sec + WINDOW_S) / WINDOW_S) * plotW;
       const yAt = drawGrid(ctx, w, h, xAt, domain);
 
+      // Stretches the wasm counts as still are shaded behind the traces.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.07)';
+      p.buf.forEach((pt, i) => {
+        if (!pt.still) return;
+        const x0 = xAt(Math.max(-WINDOW_S, (pt.t - now) / 1000));
+        const x1 = i + 1 < p.buf.length ? xAt(Math.max(-WINDOW_S, (p.buf[i + 1].t - now) / 1000)) : xAt(0);
+        ctx.fillRect(x0, PAD_T, x1 - x0, h - PAD_T - PAD_B);
+      });
+
       for (let c = nch - 1; c >= 0; c--) {
         ctx.strokeStyle = TRACE_COLORS[c];
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         let started = false, y = 0;
         for (const pt of p.buf) {
+          if (!finite(pt.v[c])) { started = false; continue; }
           const x = xAt(Math.max(-WINDOW_S, (pt.t - now) / 1000));
           y = yAt(pt.v[c]);
           if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
@@ -275,13 +321,41 @@
       requestAnimationFrame(frame);
     }
 
+    // The calculated plots come from the wasm module: raw readings go in, its values are drawn.
+    let calc = null;
+    const CALC_TAG = '4';
+    import('../pkg/calc.js?v=' + CALC_TAG).then((m) =>
+      m.default(new URL('../pkg/calc_bg.wasm?v=' + CALC_TAG, import.meta.url)).then(() => { calc = new m.Calc(); })
+    ).catch(() => {});
+    const orNaN = (x) => (finite(x) ? x : NaN);
+    function pushCalc() {
+      push('calcSpeed', [calc.speed()], calc.still());
+      push('calcHeading', [calc.heading(), calc.compass()]);
+    }
+
+    ORDER.forEach((id) => gate.define(NEEDS[id] || [id], () => addPlot(id)));
+
     function onMotion(e) {
       const a = e.accelerationIncludingGravity, r = e.rotationRate;
       if (a && a.x !== null) push('accel', [a.x, a.y, a.z]);
       if (r && r.alpha !== null) push('gyro', [r.alpha, r.beta, r.gamma]);
+      if (calc) {
+        const l = e.acceleration || {}, w = r || {};
+        if (finite(l.x) && finite(l.y) && finite(l.z)) gate.mark('linear-acceleration');
+        if (finite(w.alpha)) gate.mark('gyro-rate');
+        calc.push_motion(performance.now(), orNaN(l.x), orNaN(l.y), orNaN(l.z), orNaN(w.beta), orNaN(w.gamma), orNaN(w.alpha));
+        pushCalc();
+      }
     }
     function onOrientation(e) {
       if (e.alpha !== null && e.beta !== null && e.gamma !== null) push('orient', [e.alpha, e.beta, e.gamma]);
+      if (calc) {
+        if (e.type === 'deviceorientation') calc.push_attitude(orNaN(e.alpha), orNaN(e.beta), orNaN(e.gamma));
+        if (finite(e.webkitCompassHeading) || (e.type === 'deviceorientationabsolute' && finite(e.alpha))) gate.mark('compass');
+        const absolute = e.type === 'deviceorientationabsolute' ? orNaN(e.alpha) : NaN;
+        calc.push_orientation(performance.now(), orNaN(e.webkitCompassHeading), absolute);
+        pushCalc();
+      }
     }
     function startGeneric(name, id, read) {
       if (!(name in window)) return;
@@ -325,6 +399,7 @@
       if (await requestPermissions()) {
         window.addEventListener('devicemotion', onMotion);
         window.addEventListener('deviceorientation', onOrientation);
+        window.addEventListener('deviceorientationabsolute', onOrientation);
         startGeneric('Magnetometer', 'mag', (s) => [s.x, s.y, s.z]);
         startGeneric('AmbientLightSensor', 'light', (s) => [s.illuminance]);
       }

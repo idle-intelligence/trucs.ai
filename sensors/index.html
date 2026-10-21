@@ -96,15 +96,15 @@
 
     <hr>
 
-    <p class="part" style="margin-top:0">Sensors</p>
+    <p class="part" id="part-sensors" style="margin-top:0">Sensors</p>
     <div id="motion"></div>
 
-    <p class="part">Location</p>
+    <p class="part" id="part-location">Location</p>
     <div id="location"></div>
 
-    <hr>
+    <hr id="hr-calc">
 
-    <p class="part" style="margin-top:0">Calculated</p>
+    <p class="part" id="part-calc" style="margin-top:0">Calculated</p>
     <div id="calc"></div>
 
     <hr>
@@ -118,6 +118,7 @@
   </main>
 
   <script type="module">
+  import { createGate } from './gate.js?v=1';
   (function () {
     'use strict';
 
@@ -125,6 +126,11 @@
     var motionEl = document.getElementById('motion');
     var locationEl = document.getElementById('location');
     var calcEl = document.getElementById('calc');
+    var gate = createGate([
+      { label: 'part-sensors', box: 'motion' },
+      { label: 'part-location', box: 'location' },
+      { label: 'part-calc', box: 'calc', also: ['hr-calc'] }
+    ]);
 
     function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
     function num(x) { return typeof x === 'number' && isFinite(x); }
@@ -155,9 +161,9 @@
       cells[id] = v;
     }
 
-    // A row for a value that only exists once it is first read.
-    function ensureRow(container, id, label) {
-      if (!cells[id]) addRow(container, id, label);
+    // A row declares the sources it needs and appears once one of them has delivered.
+    function defineRow(container, id, label, needs) {
+      gate.define(needs, function () { addRow(container, id, label, '--'); });
     }
 
     // A plain sentence in place of a reading, for a sensor that is allowed but gives nothing.
@@ -167,6 +173,7 @@
         cells[id].parentElement.className = 'row note';
       }
       cells[id].textContent = text;
+      gate.refresh();
     }
 
     // Rows for things the device does not report are removed, never listed.
@@ -176,6 +183,7 @@
       if (row && row.parentElement) row.parentElement.removeChild(row);
       delete cells[id];
       delete pending[id];
+      gate.refresh();
     }
 
     // One component per line, labels and numbers padded so the columns stay put as values change.
@@ -232,11 +240,14 @@
     var fromSensorApi = {};   // ids already fed by the Generic Sensor API; the legacy events fill the rest
     function motionValue(id, label, text, viaApi) {
       if (viaApi) fromSensorApi[id] = true; else if (fromSensorApi[id]) return;
-      ensureRow(motionEl, id, label);
+      gate.mark(id);
       setVal(id, text);
     }
 
     var L_ACCEL = 'accelerometer (m/s²)', L_LINEAR = 'linear acceleration (m/s²)', L_GYRO = 'gyroscope (°/s)', L_ORIENT = 'orientation (°)';
+    [['accelerometer', L_ACCEL], ['linearAccel', L_LINEAR], ['gravity', 'gravity (m/s²)'], ['gyroscope', L_GYRO],
+     ['magnetometer', 'magnetometer (µT)'], ['orientation', L_ORIENT], ['ambientLight', 'ambient light']
+    ].forEach(function (f) { defineRow(motionEl, f[0], f[1], [f[0]]); });
     var motionListening = false, sensorBlocked = false, motionDenied = false;
     function startGenericSensor(id, label, ctor, opts, fmt) {
       if (!(ctor in window)) return false;
@@ -284,8 +295,8 @@
 
     // ---------- calculated: speed and heading derived from motion and orientation ----------
 
-    addRow(calcEl, 'calcSpeed', 'speed', '--');
-    addRow(calcEl, 'calcHeading', 'heading (°)', '--');
+    defineRow(calcEl, 'calcSpeed', 'speed', ['linear-acceleration']);
+    defineRow(calcEl, 'calcHeading', 'heading (°)', ['gyro-rate', 'compass']);
 
     // The numbers come from the wasm module; this side only passes raw readings in and paints what comes out.
     var calc = null;
@@ -301,12 +312,15 @@
     function calcMotion(e) {
       if (!calc) return;
       var l = e.acceleration || {}, r = e.rotationRate || {};
+      if (num(l.x) && num(l.y) && num(l.z)) gate.mark('linear-acceleration');
+      if (num(r.alpha)) gate.mark('gyro-rate');
       calc.push_motion(performance.now(), num(l.x) ? l.x : NaN, num(l.y) ? l.y : NaN, num(l.z) ? l.z : NaN,
         num(r.beta) ? r.beta : NaN, num(r.gamma) ? r.gamma : NaN, num(r.alpha) ? r.alpha : NaN);
       paintCalc();
     }
     function calcOrientation(e) {
       if (!calc) return;
+      if (num(e.webkitCompassHeading) || (e.type === 'deviceorientationabsolute' && num(e.alpha))) gate.mark('compass');
       if (e.type === 'deviceorientation') calc.push_attitude(num(e.alpha) ? e.alpha : NaN, num(e.beta) ? e.beta : NaN, num(e.gamma) ? e.gamma : NaN);
       var absolute = e.type === 'deviceorientationabsolute' && num(e.alpha) ? e.alpha : NaN;
       calc.push_orientation(performance.now(), num(e.webkitCompassHeading) ? e.webkitCompassHeading : NaN, absolute);
@@ -332,6 +346,7 @@
     }
     function updateGeolocation(pos) {
       var c = pos.coords;
+      gate.mark('geo');
       geoPromoted = true;
       removeRow('geoNote');
       geoLast = pos.timestamp;
@@ -352,7 +367,7 @@
     }, 1000);
     [['geoPosition', 'location (°)'], ['geoAccuracy', 'location accuracy'], ['geoAge', 'last fix'],
      ['geoAltitude', 'altitude'], ['geoHeading', 'heading'], ['geoSpeed', 'speed'], ['geoRate', 'location updates']
-    ].forEach(function (f) { addRow(locationEl, f[0], f[1], '--'); });
+    ].forEach(function (f) { defineRow(locationEl, f[0], f[1], ['geo']); });
 
     // ---------- boot ----------
 
