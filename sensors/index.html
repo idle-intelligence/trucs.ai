@@ -334,7 +334,7 @@
 
     // ---------- calculated: speed and heading derived from motion and orientation ----------
 
-    addRow(calcEl, 'calcSpeed', 'speed (m/s)', '--');
+    addRow(calcEl, 'calcSpeed', 'speed', '--');
     addRow(calcEl, 'calcHeading', 'heading (°)', '--');
 
     // The numbers come from the wasm module; this side only passes raw readings in and paints what comes out.
@@ -345,7 +345,7 @@
     }).catch(function () {});
     function paintCalc() {
       var sp = calc.speed(), hd = calc.heading();
-      setVal('calcSpeed', isFinite(sp) ? n(sp, 2) : '--');
+      setVal('calcSpeed', isFinite(sp) ? lines([['m/s', sp], ['km/h', sp * 3.6]], 1) : '--');
       setVal('calcHeading', isFinite(hd) ? Math.round(hd) % 360 + '° ' + calc.heading_letter() : '--');
     }
     function calcMotion(e) {
@@ -390,7 +390,7 @@
       setVal('geoAccuracy', '±' + n(c.accuracy, 0) + ' m');
       geoField('geoAltitude', null, c.altitude, n(c.altitude, 1) + ' m' + (num(c.altitudeAccuracy) ? ' (±' + n(c.altitudeAccuracy, 0) + ' m)' : ''));
       geoField('geoHeading', null, c.heading, n(c.heading, 0) + '°');
-      geoField('geoSpeed', null, c.speed, n(c.speed, 2) + ' m/s (' + n(c.speed * 3.6, 1) + ' km/h)');
+      geoField('geoSpeed', null, c.speed, lines([['m/s', c.speed], ['km/h', c.speed * 3.6]], 1));
       if (geoFixes.length > 1) {
         var span = (geoFixes[geoFixes.length - 1] - geoFixes[0]) / 1000;
         setVal('geoRate', n((geoFixes.length - 1) / span, 2) + ' per second');
