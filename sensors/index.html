@@ -119,7 +119,7 @@
   </main>
 
   <script type="module">
-  import { createGate } from './gate.js?v=1';
+  import { createGate } from './gate.js?v=2';
   (function () {
     'use strict';
 
@@ -132,7 +132,7 @@
       { label: 'part-sensors', box: 'motion' },
       { label: 'part-location', box: 'location' },
       { label: 'part-calc', box: 'calc', also: ['hr-calc'] }
-    ]);
+    ], { orientation: ['deviceorientationabsolute', 'deviceorientation'] });
 
     function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
     function num(x) { return typeof x === 'number' && isFinite(x); }
@@ -288,11 +288,13 @@
         var r = e.rotationRate;
         if (r && num(r.alpha)) motionValue('gyroscope', L_GYRO, lines([['alpha', r.alpha], ['beta', r.beta], ['gamma', r.gamma]], 1));
       });
-      window.addEventListener('deviceorientationabsolute', calcOrientation);
-      window.addEventListener('deviceorientation', function (e) {
+      window.addEventListener('deviceorientationabsolute', onOrientation);
+      window.addEventListener('deviceorientation', onOrientation);
+      function onOrientation(e) {
         calcOrientation(e);
-        if (num(e.alpha) && num(e.beta) && num(e.gamma)) motionValue('orientation', L_ORIENT, lines([['alpha', e.alpha], ['beta', e.beta], ['gamma', e.gamma]], 0));
-      });
+        if (!(num(e.alpha) && num(e.beta) && num(e.gamma)) || !gate.accept('orientation', e.type)) return;
+        motionValue('orientation', L_ORIENT, lines([['alpha', e.alpha], ['beta', e.beta], ['gamma', e.gamma]], 0));
+      }
     }
 
     // ---------- calculated: speed and heading derived from motion and orientation ----------
@@ -323,7 +325,7 @@
     function calcOrientation(e) {
       if (!calc) return;
       if (num(e.webkitCompassHeading) || (e.type === 'deviceorientationabsolute' && num(e.alpha))) gate.mark('compass');
-      if (e.type === 'deviceorientation') calc.push_attitude(num(e.alpha) ? e.alpha : NaN, num(e.beta) ? e.beta : NaN, num(e.gamma) ? e.gamma : NaN);
+      if (num(e.alpha) && num(e.beta) && num(e.gamma) && gate.accept('orientation', e.type)) calc.push_attitude(e.alpha, e.beta, e.gamma);
       var absolute = e.type === 'deviceorientationabsolute' && num(e.alpha) ? e.alpha : NaN;
       calc.push_orientation(performance.now(), num(e.webkitCompassHeading) ? e.webkitCompassHeading : NaN, absolute);
       paintCalc();

@@ -135,7 +135,7 @@
   </main>
 
   <script type="module">
-    import { createGate } from '../gate.js?v=1';
+    import { createGate } from '../gate.js?v=2';
     const WINDOW_S = 10;
     const PAD_L = 44, PAD_R = 8, PAD_T = 10, PAD_B = 20;
     const TRACE_COLORS = ['#111', '#777', '#bbb'];
@@ -156,7 +156,7 @@
       { label: 'part-sensors', box: 'plots-sensors' },
       { label: 'part-location', box: 'plots-location' },
       { label: 'part-calc', box: 'plots-calc', also: ['hr-calc'] },
-    ]);
+    ], { orientation: ['deviceorientationabsolute', 'deviceorientation'] });
 
     function setStatus(text) { statusText.textContent = text; }
 
@@ -355,9 +355,10 @@
       }
     }
     function onOrientation(e) {
-      if (e.alpha !== null && e.beta !== null && e.gamma !== null) push('orient', [e.alpha, e.beta, e.gamma]);
+      const angles = finite(e.alpha) && finite(e.beta) && finite(e.gamma) && gate.accept('orientation', e.type);
+      if (angles) push('orient', [e.alpha, e.beta, e.gamma]);
       if (calc) {
-        if (e.type === 'deviceorientation') calc.push_attitude(orNaN(e.alpha), orNaN(e.beta), orNaN(e.gamma));
+        if (angles) calc.push_attitude(e.alpha, e.beta, e.gamma);
         if (finite(e.webkitCompassHeading) || (e.type === 'deviceorientationabsolute' && finite(e.alpha))) gate.mark('compass');
         const absolute = e.type === 'deviceorientationabsolute' ? orNaN(e.alpha) : NaN;
         calc.push_orientation(performance.now(), orNaN(e.webkitCompassHeading), absolute);
