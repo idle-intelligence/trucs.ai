@@ -289,7 +289,7 @@
 
     // The numbers come from the wasm module; this side only passes raw readings in and paints what comes out.
     var calc = null;
-    var CALC_TAG = '3';
+    var CALC_TAG = '4';
     import('./pkg/calc.js?v=' + CALC_TAG).then(function (m) {
       return m.default(new URL('./pkg/calc_bg.wasm?v=' + CALC_TAG, import.meta.url)).then(function () { calc = new m.Calc(); });
     }).catch(function () {});
