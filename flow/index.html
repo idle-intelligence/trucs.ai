@@ -70,52 +70,83 @@
   </main>
 
   <script type="module">
-    const ENGINE_BUILD = '2026-10-21-flow-v2-07';
+    const ENGINE_BUILD = '2026-10-21-flow-v2-08';
     const statusText = document.getElementById('status-text');
     const canvas = document.getElementById('view');
     const ctx = canvas.getContext('2d');
-    const flat = document.createElement('canvas');
-    const flatCtx = flat.getContext('2d');
     const main = document.querySelector('main');
     const worker = new Worker(`./worker.js?v=${ENGINE_BUILD}`, { type: 'module' });
     let frame = null;
+    const queue = [];
+    let redraw = false;
+    const gaps = [];
+    let last = 0;
+    let since = 0;
 
     // Levels of grey: 0 is mid grey, positive vorticity goes to black, negative
     // to white, the obstacle is black.
     function paint() {
       if (!frame) return;
       const { field, obstacle, width, height } = frame;
-      flat.width = width;
-      flat.height = height;
-      const img = flatCtx.createImageData(width, height);
+      // A narrow column shows the street vertically, inflow at the top: the
+      // image is written turned a quarter turn clockwise.
+      const vertical = main.clientWidth < 520;
+      const cw = vertical ? height : width;
+      const ch = vertical ? width : height;
+      if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw;
+        canvas.height = ch;
+      }
+      const img = ctx.createImageData(cw, ch);
+      const d = img.data;
       for (let i = 0; i < field.length; i++) {
         const v = Math.max(-1, Math.min(1, field[i]));
         const g = obstacle[i] ? 0 : 128 - 127 * v;
-        img.data.set([g, g, g, 255], 4 * i);
+        const x = i % width;
+        const y = (i - x) / width;
+        const o = 4 * (vertical ? x * cw + (height - 1 - y) : i);
+        d[o] = g;
+        d[o + 1] = g;
+        d[o + 2] = g;
+        d[o + 3] = 255;
       }
-      flatCtx.putImageData(img, 0, 0);
-      // A narrow column shows the street vertically, inflow at the top: the
-      // canvas is turned a quarter turn clockwise when it is drawn.
-      const vertical = main.clientWidth < 520;
-      canvas.width = vertical ? height : width;
-      canvas.height = vertical ? width : height;
-      if (vertical) ctx.setTransform(0, 1, -1, 0, height, 0);
-      ctx.drawImage(flat, 0, 0);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.putImageData(img, 0, 0);
     }
 
     worker.onmessage = (e) => {
       const msg = e.data;
       if (msg.type === 'frame') {
-        frame = msg;
-        paint();
+        queue.push(msg);
+      } else {
+        statusText.textContent = msg.status;
       }
-      statusText.textContent = msg.status;
     };
     worker.onerror = (e) => {
       statusText.textContent = 'failed to start: ' + (e.message || 'worker error');
     };
-    window.addEventListener('resize', paint);
+    // Painting follows the display refresh: one frame per 1/60 s, which is every
+    // refresh on a 60 Hz display and every second one on 120 Hz (the refresh
+    // interval is the shortest recent one). Each paint is reported to the worker.
+    function tick(now) {
+      if (last && now - last < 50) gaps.push(now - last);
+      if (gaps.length > 30) gaps.shift();
+      last = now;
+      since++;
+      const every = Math.max(1, Math.round(1000 / 60 / Math.min(...gaps, 1000 / 60)));
+      if (queue.length && since >= every) {
+        since = 0;
+        frame = queue.shift();
+        paint();
+        statusText.textContent = frame.status;
+        worker.postMessage({ type: 'painted' });
+      } else if (redraw) {
+        paint();
+      }
+      redraw = false;
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    window.addEventListener('resize', () => { redraw = true; });
     worker.postMessage({ type: 'init' });
   </script>
 </body>

@@ -3,8 +3,8 @@
 // than one hardware thread, else wasm single thread), loads that build, and
 // steps the simulation, posting the vorticity field and obstacle mask after
 // every batch of steps.
-//   in:  { type: 'init' }
-//   out: { type: 'frame', field, obstacle, width, height, status }
+//   in:  { type: 'init' } | { type: 'painted' }
+//   out: { type: 'frame', field, obstacle, width, height, status, steps, fixed, perStep }
 //        { type: 'error', status }
 const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
@@ -14,8 +14,6 @@ const MODE = 'randomize';
 // about 8k steps.
 const FULL = { model: 'signed', w: 1536, h: 512, u: 0.25, block: 16, refblock: 8 };
 const SMALL = { model: 'signed', w: 896, h: 336, u: 0.25, block: 8, refblock: 8 };
-
-let stepsPerFrame = 10;
 
 function post(msg, transfer) {
   self.postMessage(msg, transfer || []);
@@ -51,46 +49,69 @@ async function init() {
   return { sim, label };
 }
 
-// Fixed cost of one frame without steps (readback and field), best of 3.
-// Pacing aims each frame at max(40 ms, twice that cost), so a slow readback
-// lowers the picture rate instead of the step count.
-async function frameCost(sim) {
-  let best = Infinity;
-  for (let i = 0; i < 3; i++) {
+// One frame is a batch of steps, the readback and the field. Time one frame
+// at two step counts (best of five after a warm-up) and fit
+// ms = fixed + perStep * steps.
+async function calibrate(sim) {
+  const frame = async (n) => {
     const t = performance.now();
-    sim.advance(0);
+    sim.advance(n);
     await sim.sample();
     sim.field();
-    best = Math.min(best, performance.now() - t);
-  }
-  return best;
+    sim.obstacle();
+    return performance.now() - t;
+  };
+  const best = async (n) => {
+    const v = [];
+    for (let i = 0; i < 5; i++) v.push(await frame(n));
+    return Math.min(...v);
+  };
+  await frame(1);
+  const lo = await best(1);
+  const hi = await best(9);
+  const perStep = Math.max((hi - lo) / 8, 0.01);
+  return { fixed: Math.max(lo - perStep, 0), perStep };
 }
 
+// Pacing. The page paints one frame per 1/60 s (every second refresh on a
+// 120 Hz display) and answers each paint with { type: 'painted' }. The loop
+// keeps at most two frames unpainted, so frames are made at the pace they are
+// shown. Every frame runs the same whole number of steps, fixed once from the
+// calibration so that the steps, the readback and the field take 85% of 1/60 s:
+// the motion advances by equal amounts at an even pace.
+const FRAME_MS = 1000 / 60;
+let unpainted = 0;
+let wake = null;
+
 async function loop({ sim, label }) {
-  const target = Math.max(40, 2 * (await frameCost(sim)));
+  const { fixed, perStep } = await calibrate(sim);
+  const n = Math.min(4000, Math.max(1, Math.floor((0.85 * FRAME_MS - fixed) / perStep)));
   const recent = [];
   while (true) {
-    const n = stepsPerFrame;
-    const t0 = performance.now();
+    while (unpainted >= 2) await new Promise((r) => (wake = r));
     sim.advance(n);
     await sim.sample();
     const field = sim.field();
     const obstacle = sim.obstacle();
-    const dt = performance.now() - t0;
-    recent.push([n, dt]);
-    if (recent.length > 20) recent.shift();
-    const steps = recent.reduce((a, r) => a + r[0], 0);
-    const ms = recent.reduce((a, r) => a + r[1], 0);
-    const rate = (steps * sim.sites) / (ms / 1000);
+    const now = performance.now();
+    recent.push([n, now]);
+    if (recent.length > 21) recent.shift();
+    const steps = recent.reduce((a, r) => a + r[0], 0) - recent[0][0];
+    const ms = now - recent[0][1];
+    const rate = ms > 0 ? (steps * sim.sites) / (ms / 1000) : 0;
     const status = `${label}, ${(rate / 1e6).toFixed(0)} M site updates/s · Re ${sim.reynolds.toFixed(0)}`;
-    post({ type: 'frame', field, obstacle, width: sim.imageWidth, height: sim.imageHeight, status }, [field.buffer, obstacle.buffer]);
-    if (dt < 0.8 * target && stepsPerFrame < 4000) stepsPerFrame *= 2;
-    else if (dt > 2 * target && stepsPerFrame > 1) stepsPerFrame = Math.max(1, stepsPerFrame >> 1);
+    unpainted++;
+    post({ type: 'frame', field, obstacle, width: sim.imageWidth, height: sim.imageHeight, status, steps: n, fixed, perStep }, [field.buffer, obstacle.buffer]);
     await new Promise((r) => setTimeout(r, 0));
   }
 }
 
 self.onmessage = async (e) => {
+  if (e.data.type === 'painted') {
+    unpainted = Math.max(0, unpainted - 1);
+    if (wake) wake();
+    return;
+  }
   try {
     await loop(await init());
   } catch (err) {
