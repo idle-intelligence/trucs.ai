@@ -33,8 +33,8 @@ export class Sim {
         }
     }
     /**
-     * Run `n` steps (see `Page::advance`: the time average is sampled
-     * every 5 steps and folded every 50, whatever the split into calls).
+     * Run `n` steps (see `Page::advance`: the time average is sampled and
+     * folded every 5 steps, whatever the split into calls).
      * @param {number} n
      */
     advance(n) {
@@ -217,7 +217,7 @@ export class Sim {
         return ret;
     }
     /**
-     * Fold the completed windows' block sums into the time-averaged field
+     * Read back the GPU samples, fold them into the time-averaged field
      * and run the steps still pending. The worker awaits this before its
      * next call, so holding the borrow across the readback cannot collide
      * with another borrow.
@@ -311,6 +311,12 @@ function __wbg_get_imports() {
             const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
+        __wbg_clearBuffer_5c4f30438f07155a: function(arg0, arg1, arg2, arg3) {
+            arg0.clearBuffer(arg1, arg2, arg3);
+        },
+        __wbg_clearBuffer_de7e8cd418b56c30: function(arg0, arg1, arg2) {
+            arg0.clearBuffer(arg1, arg2);
+        },
         __wbg_copyBufferToBuffer_55e9540007aef863: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
             arg0.copyBufferToBuffer(arg1, arg2, arg3, arg4);
         }, arguments); },
