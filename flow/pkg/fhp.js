@@ -33,8 +33,8 @@ export class Sim {
         }
     }
     /**
-     * Run `n` steps; the last min(n, 50) are sampled every 5 steps into
-     * the frame's block sums.
+     * Run `n` steps (see `Page::advance`: the time average is sampled
+     * every 5 steps and folded every 50, whatever the split into calls).
      * @param {number} n
      */
     advance(n) {
@@ -217,9 +217,10 @@ export class Sim {
         return ret;
     }
     /**
-     * Fold the frame's block sums into the time-averaged field. The worker
-     * awaits this before its next call, so holding the borrow across the
-     * readback cannot collide with another borrow.
+     * Fold the completed windows' block sums into the time-averaged field
+     * and run the steps still pending. The worker awaits this before its
+     * next call, so holding the borrow across the readback cannot collide
+     * with another borrow.
      * @returns {Promise<any>}
      */
     sample() {

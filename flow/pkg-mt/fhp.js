@@ -1,5 +1,5 @@
 /* @ts-self-types="./fhp.d.ts" */
-import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-21-flow-v2-06';
+import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-21-flow-v2-09';
 
 
 export class Sim {
@@ -35,8 +35,8 @@ export class Sim {
         }
     }
     /**
-     * Run `n` steps; the last min(n, 50) are sampled every 5 steps into
-     * the frame's block sums.
+     * Run `n` steps (see `Page::advance`: the time average is sampled
+     * every 5 steps and folded every 50, whatever the split into calls).
      * @param {number} n
      */
     advance(n) {
@@ -192,7 +192,7 @@ export class Sim {
         return ret;
     }
     /**
-     * Fold the frame's block sums into the time-averaged field.
+     * CPU windows are folded as they complete; nothing is left to do.
      */
     sample() {
         wasm.sim_sample(this.__wbg_ptr);
