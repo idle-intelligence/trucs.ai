@@ -42,6 +42,15 @@ export class Calc {
         return this;
     }
     /**
+     * One deviceorientation reading in degrees; used to express acceleration in the earth frame.
+     * @param {number} alpha
+     * @param {number} beta
+     * @param {number} gamma
+     */
+    push_attitude(alpha, beta, gamma) {
+        wasm.calc_push_attitude(this.__wbg_ptr, alpha, beta, gamma);
+    }
+    /**
      * One devicemotion reading: time in ms, acceleration without gravity (m/s^2),
      * and the rotation rate about z (deg/s, counter-clockwise positive).
      * @param {number} t_ms
