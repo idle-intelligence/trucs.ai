@@ -51,25 +51,29 @@ export class Calc {
         wasm.calc_push_attitude(this.__wbg_ptr, alpha, beta, gamma);
     }
     /**
-     * One devicemotion reading: time in ms, acceleration without gravity (m/s^2),
-     * and the rotation rate about z (deg/s, counter-clockwise positive).
+     * One devicemotion reading: time in ms, acceleration without gravity (m/s^2) and the
+     * rotation rates (deg/s): `rot_x` = beta, `rot_y` = gamma, `rot_z` = alpha of rotationRate.
      * @param {number} t_ms
      * @param {number} ax
      * @param {number} ay
      * @param {number} az
+     * @param {number} rot_x
+     * @param {number} rot_y
      * @param {number} rot_z
      */
-    push_motion(t_ms, ax, ay, az, rot_z) {
-        wasm.calc_push_motion(this.__wbg_ptr, t_ms, ax, ay, az, rot_z);
+    push_motion(t_ms, ax, ay, az, rot_x, rot_y, rot_z) {
+        wasm.calc_push_motion(this.__wbg_ptr, t_ms, ax, ay, az, rot_x, rot_y, rot_z);
     }
     /**
-     * One orientation reading: `compass` is webkitCompassHeading (deg clockwise from north),
+     * One compass reading at time `t_ms`: `compass` is webkitCompassHeading (deg clockwise from north),
      * `absolute_alpha` is the alpha of deviceorientationabsolute (deg counter-clockwise from north).
+     * The heading is pulled toward it along the shortest way round.
+     * @param {number} t_ms
      * @param {number} compass
      * @param {number} absolute_alpha
      */
-    push_orientation(compass, absolute_alpha) {
-        wasm.calc_push_orientation(this.__wbg_ptr, compass, absolute_alpha);
+    push_orientation(t_ms, compass, absolute_alpha) {
+        wasm.calc_push_orientation(this.__wbg_ptr, t_ms, compass, absolute_alpha);
     }
     /**
      * Speed in m/s, NaN until an acceleration reading arrived.
