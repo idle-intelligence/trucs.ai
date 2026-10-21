@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sensors - trucs.ai</title>
-  <meta name="description" content="Live readings of the motion, orientation, location, network and battery sensors of your device, read in your browser.">
+  <meta name="description" content="Live readings of the motion, orientation and location sensors of your device, read in your browser.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../assets/style.css">
@@ -98,8 +98,6 @@
 
     <p class="part" style="margin-top:0">Sensors</p>
     <div id="motion"></div>
-    <div id="network"></div>
-    <div id="battery"></div>
 
     <p class="part">Location</p>
     <div id="location"></div>
@@ -126,8 +124,6 @@
     var stateEl = document.getElementById('status-text');
     var motionEl = document.getElementById('motion');
     var locationEl = document.getElementById('location');
-    var networkEl = document.getElementById('network');
-    var batteryEl = document.getElementById('battery');
     var calcEl = document.getElementById('calc');
 
     function n(x, d) { return (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) ? String(x) : x.toFixed(d === undefined ? 2 : d); }
@@ -158,8 +154,6 @@
       container.appendChild(row);
       cells[id] = v;
     }
-    function addNet(id, label, initial) { addRow(networkEl, id, label, initial); }
-    function addBattery(id, label, initial) { addRow(batteryEl, id, label, initial); }
 
     // A row for a value that only exists once it is first read.
     function ensureRow(container, id, label) {
@@ -220,50 +214,6 @@
       else if (waitOver) text = 'no motion or location readings on this device';
       else text = 'waiting for sensor data';
       if (stateEl.textContent !== text) stateEl.textContent = text;
-    }
-
-    // ---------- network and battery: readable without a click ----------
-
-    function buildNetwork() {
-      addNet('online', 'online', navigator.onLine ? 'yes' : 'no');
-      window.addEventListener('online', function () { setVal('online', 'yes'); });
-      window.addEventListener('offline', function () { setVal('online', 'no'); });
-      var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-      var fields = [
-        ['netType', 'connection type', 'type', function (v) { return v; }],
-        ['netEffective', 'effective type', 'effectiveType', function (v) { return v; }],
-        ['netDownlink', 'downlink', 'downlink', function (v) { return n(v, 2) + ' Mb/s'; }],
-        ['netDownlinkMax', 'max downlink', 'downlinkMax', function (v) { return v === Infinity ? 'unknown' : n(v, 0) + ' Mb/s'; }],
-        ['netRtt', 'round trip time', 'rtt', function (v) { return v + ' ms'; }],
-        ['netSaveData', 'data saver', 'saveData', function (v) { return v ? 'on' : 'off'; }]
-      ];
-      fields.forEach(function (f) {
-        if (conn && f[2] in conn) {
-          addNet(f[0], f[1], f[3](conn[f[2]]));
-        }
-      });
-      if (conn && conn.addEventListener) {
-        conn.addEventListener('change', function () {
-          fields.forEach(function (f) { if (f[2] in conn) setVal(f[0], f[3](conn[f[2]])); });
-        });
-      }
-    }
-
-    function buildPower() {
-      if (navigator.getBattery) {
-        addBattery('battery', 'battery', 'checking…');
-        navigator.getBattery().then(function (b) {
-          function mins(sec) { return sec >= 3600 ? n(sec / 3600, 1) + ' h' : Math.round(sec / 60) + ' min'; }
-          function upd() {
-            var t = '';
-            if (b.charging && isFinite(b.chargingTime) && b.level < 1) t = ', full in ' + mins(b.chargingTime);
-            else if (!b.charging && isFinite(b.dischargingTime)) t = ', ' + mins(b.dischargingTime) + ' left';
-            setVal('battery', Math.round(b.level * 100) + '% ' + (b.charging ? 'charging' : 'on battery') + t);
-          }
-          upd();
-          ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange'].forEach(function (ev) { b.addEventListener(ev, upd); });
-        }, function () { removeRow('battery'); });
-      }
     }
 
     // ---------- motion and orientation: a row appears with its first reading ----------
@@ -406,8 +356,6 @@
 
     // ---------- boot ----------
 
-    buildNetwork();
-    buildPower();
 
     document.getElementById('start').onclick = function () {
       this.textContent = 'restart';

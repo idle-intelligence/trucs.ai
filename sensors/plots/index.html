@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sensor plots - trucs.ai</title>
-  <meta name="description" content="Live plots of the motion, orientation, magnetic, light, position, network and battery readings of your device, read in your browser.">
+  <meta name="description" content="Live plots of the motion, orientation, magnetic, light and position readings of your device, read in your browser.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
   <link rel="stylesheet" href="../../assets/style.css">
@@ -89,7 +89,7 @@
   <main>
     <h1>sensor plots</h1>
     <p>
-      Live plots of the motion, orientation, position, network and battery readings of this device.<br>
+      Live plots of the motion, orientation and position readings of this device.<br>
       No server: the readings stay in your browser.
     </p>
 
@@ -143,9 +143,6 @@
       speed:    { title: 'speed', unit: 'm/s', names: ['speed'], minSpan: 2, dec: 1 },
       altitude: { title: 'altitude', unit: 'm', names: ['altitude'], minSpan: 10, dec: 0 },
       heading:  { title: 'heading', unit: '°', names: ['heading'], minSpan: 90, dec: 0, unwrap: 0 },
-      downlink: { title: 'network downlink', unit: 'Mb/s', names: ['downlink'], minSpan: 2, dec: 1 },
-      rtt:      { title: 'network round trip', unit: 'ms', names: ['rtt'], minSpan: 100, dec: 0 },
-      battery:  { title: 'battery level', unit: '%', names: ['level'], minSpan: 2, dec: 1 },
     };
     const ORDER = Object.keys(SENSORS);
 
@@ -310,18 +307,6 @@
       setInterval(pushLast, 1000);
     }
 
-    // Network and battery values change rarely and are read once a second.
-    function startPolled() {
-      const conn = navigator.connection;
-      if (conn) setInterval(() => {
-        if ('downlink' in conn) push('downlink', [conn.downlink]);
-        if ('rtt' in conn) push('rtt', [conn.rtt]);
-      }, 1000);
-      if (navigator.getBattery) navigator.getBattery().then((b) => {
-        setInterval(() => push('battery', [b.level * 100]), 1000);
-      }, () => {});
-    }
-
     async function requestPermissions() {
       let denied = false;
       for (const E of [window.DeviceMotionEvent, window.DeviceOrientationEvent]) {
@@ -344,7 +329,6 @@
         startGeneric('AmbientLightSensor', 'light', (s) => [s.illuminance]);
       }
       startGeolocation();
-      startPolled();
       setTimeout(() => {
         if (!Object.keys(plots).length) setStatus('no sensor data on this device');
       }, NO_DATA_MS);
