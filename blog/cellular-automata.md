@@ -46,7 +46,7 @@ The machine was then used for real fluid work. Bruce Boghosian, Washington Taylo
 
 ## From bits to averages
 
-A lattice gas is noisy. Every site is either occupied or not, so to see a smooth flow you have to average over many sites and many steps. In the late 1980s the field moved to the lattice Boltzmann method, which keeps the grid and the collision idea but replaces the on-or-off particle by its average, a number ([McNamara and Zanetti, 1988](https://doi.org/10.1103/PhysRevLett.61.2332)). That removed the noise.
+A lattice gas is noisy. Every site is either occupied or not, so to see a smooth flow you have to average over many sites and many steps. In the late 1980s the field moved to the lattice Boltzmann method, which keeps the grid and the collision idea but replaces the on-or-off particle by its average ([McNamara and Zanetti, 1988](https://doi.org/10.1103/PhysRevLett.61.2332)).
 
 ## Back to the particles, in a tab
 
