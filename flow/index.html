@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>flow · trucs.ai</title>
+  <meta name="author" content="Thomas Cambau">
+  <meta name="description" content="A lattice gas flowing past a plate in your browser: a von Karman vortex street from particles and collision rules alone.">
+  <meta property="og:title" content="flow · trucs.ai">
+  <meta property="og:description" content="A fluid made of particles moving on a triangular grid, flowing past a plate. The vortex street behind it emerges from the collision rules alone, computed in your browser.">
+  <meta property="og:image" content="https://trucs.ai/assets/og/flow.png?v=3">
+  <meta property="og:url" content="https://trucs.ai/flow/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32">
+  <link rel="stylesheet" href="../assets/style.css">
+  
+  <style>
+    #model-status {
+      display: flex;
+      align-items: center;
+      gap: 0.75em;
+    }
+    #status-text {
+      color: #555;
+      font-size: 0.85rem;
+    }
+    .panel-desc {
+      color: #999;
+      font-size: 0.8rem;
+    }
+    #view {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>flow</h1>
+    <p>
+      A fluid made of particles, flowing past a plate.<br>
+      The simulation runs in this tab.<br>
+      Signed ternary FHP lattice gas, vorticity averaged over time.
+    </p>
+
+    <div id="model-status">
+      <span id="status-text">loading...</span>
+    </div>
+
+    <hr>
+
+    <canvas id="view" width="128" height="32"></canvas>
+    <p>
+      A lattice gas is a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. The idea comes from Frisch, Hasslacher and Pomeau in 1986. Nothing else is programmed: the flow around the plate and the <a href="https://en.wikipedia.org/wiki/K%C3%A1rm%C3%A1n_vortex_street">vortex street</a> behind it come from those collisions alone.
+    </p>
+    <p>
+      In this signed ternary version, each link holds only the difference from the local average: &minus;1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid.
+    </p>
+    <p>
+      The picture shows how the fluid spins. Black and white are the two directions of rotation on a grey background, and the further from grey, the faster it spins.
+    </p>
+
+    <hr>
+
+    <p class="panel-desc">
+      Method: <a href="https://doi.org/10.1103/PhysRevLett.56.1505">FHP lattice gas</a> (Frisch, Hasslacher and Pomeau, 1986), flow past a plate after <a href="https://content.wolfram.com/sites/13/2018/02/01-4-5.pdf">d'Humi&egrave;res and Lallemand</a> (1987).<br>
+      The signed ternary model is mine. Each link stores only a deviation of &minus;1, 0 or +1 from a reference equilibrium set for each block of the grid, and everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.<br>
+      Source: <a href="https://github.com/ilnmtlbnm/jacobi2000">jacobi2000</a>, the same Rust code on the GPU and the CPU.
+    </p>
+
+    <hr>
+    <p><a href="/">&larr; trucs.ai</a></p>
+  </main>
+
+  <script type="module">
+    const ENGINE_BUILD = '2026-10-23-flow-v2-17';
+    const statusText = document.getElementById('status-text');
+    const canvas = document.getElementById('view');
+    const ctx = canvas.getContext('2d');
+    const main = document.querySelector('main');
+    const worker = new Worker(`./worker.js?v=${ENGINE_BUILD}`, { type: 'module' });
+    let frame = null;
+    let fresh = false;
+    let redraw = false;
+    const gaps = [];
+    let last = 0;
+    let since = 0;
+
+    // Levels of grey: 0 is mid grey, positive vorticity goes to black, negative
+    // to white, the obstacle is black.
+    function paint() {
+      if (!frame) return;
+      const { field, obstacle, width, height } = frame;
+      // A narrow column shows the street vertically, inflow at the top: the
+      // image is written turned a quarter turn clockwise.
+      const vertical = main.clientWidth < 520;
+      // Only the part of the channel between the inflow and the outlet zones is shown.
+      const x0 = Math.round(width * 0.075);
+      const x1 = Math.round(width * 0.92);
+      const cw = vertical ? height : x1 - x0;
+      const ch = vertical ? x1 - x0 : height;
+      if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw;
+        canvas.height = ch;
+      }
+      const img = ctx.createImageData(cw, ch);
+      const d = img.data;
+      for (let i = 0; i < field.length; i++) {
+        const x = i % width;
+        if (x < x0 || x >= x1) continue;
+        const y = (i - x) / width;
+        const v = Math.max(-1, Math.min(1, field[i]));
+        const g = obstacle[i] ? 0 : 128 - 127 * v;
+        const o = 4 * (vertical ? (x - x0) * cw + (height - 1 - y) : y * cw + x - x0);
+        d[o] = g;
+        d[o + 1] = g;
+        d[o + 2] = g;
+        d[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'frame') {
+        frame = msg;
+        fresh = true;
+      } else {
+        statusText.textContent = msg.status;
+      }
+    };
+    worker.onerror = (e) => {
+      statusText.textContent = 'failed to start: ' + (e.message || 'worker error');
+    };
+    // Painting follows the display refresh: at most one picture per 1/60 s,
+    // which is every refresh on a 60 Hz display and every second one on
+    // 120 Hz (the refresh interval is the shortest recent one). After each
+    // paint the page asks the worker for the next picture; the worker keeps
+    // stepping meanwhile and answers with its latest field.
+    function tick(now) {
+      if (last && now - last < 50) gaps.push(now - last);
+      if (gaps.length > 30) gaps.shift();
+      last = now;
+      since++;
+      const every = Math.max(1, Math.round(1000 / 60 / Math.min(...gaps, 1000 / 60)));
+      if (fresh && since >= every) {
+        since = 0;
+        fresh = false;
+        paint();
+        statusText.textContent = frame.status;
+        worker.postMessage({ type: 'want' });
+      } else if (redraw) {
+        paint();
+      }
+      redraw = false;
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    window.addEventListener('resize', () => { redraw = true; });
+    // Stepping pauses while the page is hidden.
+    document.addEventListener('visibilitychange', () => worker.postMessage({ type: document.hidden ? 'pause' : 'run' }));
+    // The street follows the layout the page starts in: the vertical layout
+    // (narrow column) runs a smaller street than the wide one.
+    worker.postMessage({ type: 'init', layout: main.clientWidth < 520 ? 'narrow' : 'wide' });
+  </script>
+</body>
+</html>
