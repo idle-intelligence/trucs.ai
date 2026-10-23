@@ -16,7 +16,7 @@ Read the code: [github.com/ilnmtlbnm/jacobi2000](https://github.com/ilnmtlbnm/ja
 
 ## A gas made of bits
 
-In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule.
+In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they leave at right angles. But on a square grid the gas does not flow like a real fluid: it favours the directions of the grid, and a flow at an angle to them comes out wrong.
 
 Put an obstacle in a stream of fluid and it sheds a street of vortices behind it, turning one way and then the other. A famous and impressive example is wind blowing clouds past an island, where the vortices can be seen from space.
 
