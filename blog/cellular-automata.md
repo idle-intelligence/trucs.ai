@@ -40,23 +40,25 @@ A lattice gas is noisy. Every site is either occupied or not, so to see a smooth
 
 ## Back to the particles, in a tab
 
-The flow page goes back to the particles. It is a lattice gas of about 1.5 million nodes, 2048 by 768, running in your browser on the GPU through WebGPU, with a plate in the middle of the channel. On the RTX 3080 I measured it on, it does about five billion node updates per second. When there is no GPU, it falls back to a smaller grid on the processor.
+The flow page goes back to the particles. It is a lattice gas of about 1.6 million nodes, 2048 by 768, running in your browser on the GPU through WebGPU, with a plate in the middle of the channel. On the RTX 3080 I measured it on, it does about five billion node updates per second. When there is no GPU, it falls back to a smaller grid on the processor.
 
 In this ternary version, each link holds −1, 0 or +1 relative to a local reference. That makes the gas less noisy, so it reaches a higher Reynolds number on the same grid.
 
-The core of one step, for the plain binary rule, is a gather and a table lookup. Each node reads one bit from each of its six neighbours, then the 8-bit result indexes a table that holds the collision rule:
+The core of one step, for each node, is three moves. Each link takes the value its neighbour had a step ago, corrected for how the local reference differs between the two nodes and rounded at random to a whole number. The value is clamped back to −1, 0 or +1. The six values then index a table that holds the collision rule:
 
 ```rust
-let mut s = self.cells[i] & (REST | OBST);
-for d in 0..NDIR {
-    s |= self.cells[self.src[i][d] as usize] & (1 << d);
-}
+*dv = self.delta[(c & STATE) as usize][d] as i32;
+*rv = p[d].wrapping_sub(pi[d]);
 // ...
-let c = ((chir >> b) & 1) as usize;
-let mut post = if wall && s & OBST == 0 { mirror(s) } else { self.table[c][s as usize] };
+let k = sround(rp[x], lowbias32(ks ^ i.wrapping_mul(8).wrapping_add(d as u32).wrapping_mul(0x9e37_79b9)));
+let v = dlp[x] + k;
+let c = v.clamp(-1, 1);
+code[x] += (c + 1) as u32 * POW3[d] as u32;
+// ...
+*o = if own & OBST != 0 { OBST | crate::ternary::bounce(s) } else { self.table.collide(s, rnd, rule) };
 ```
 
-`REST` is a seventh, motionless particle, `OBST` marks the plate, and `c` is a random bit that picks which way a collision rotates.
+`delta` is the −1, 0 or +1 value of a link, `p` is the reference at a node, `code` packs the six values into one number in base 3, and `OBST` marks the plate, which bounces particles back.
 
 ![The vortex street behind the plate: alternating white and black spots on a grey background.](/blog/images/flow-street.png)
 
