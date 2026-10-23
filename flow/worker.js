@@ -11,9 +11,8 @@ const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
 const MODE = 'randomize';
 // On WebGPU the wide layout runs the large street and the narrow (vertical)
-// layout the street the page was first tuned on; the CPU paths run a smaller
-// one (a third of the sites of the latter, Re about 78), where the street
-// forms in about 8k steps.
+// layout a smaller one that forms sooner on a phone; the CPU paths run the
+// smallest, where the street forms in about 8k steps.
 const STREETS = {
   wide: { model: 'signed', w: 2048, h: 768, u: 0.2, block: 8, refblock: 8 },
   narrow: { model: 'signed', w: 1536, h: 512, u: 0.25, block: 16, refblock: 8 },

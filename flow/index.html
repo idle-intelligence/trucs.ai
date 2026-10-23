@@ -7,7 +7,7 @@
   <meta name="author" content="Thomas Cambau">
   <meta name="description" content="A lattice gas flowing past a plate in your browser: a von Karman vortex street from particles and collision rules alone.">
   <meta property="og:title" content="flow · trucs.ai">
-  <meta property="og:description" content="A fluid made of particles hopping on a hexagonal grid, flowing past a plate. The vortex street behind it emerges from the collision rules alone, computed in your browser.">
+  <meta property="og:description" content="A fluid made of particles moving on a triangular grid, flowing past a plate. The vortex street behind it emerges from the collision rules alone, computed in your browser.">
   <meta property="og:image" content="https://trucs.ai/assets/og/flow.png?v=2">
   <meta property="og:url" content="https://trucs.ai/flow/">
   <meta property="og:type" content="website">
@@ -58,7 +58,7 @@
       A lattice gas is a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. The idea comes from Frisch, Hasslacher and Pomeau in 1986. Nothing else is programmed: the flow around the plate and the <a href="https://en.wikipedia.org/wiki/K%C3%A1rm%C3%A1n_vortex_street">vortex street</a> behind it come from those collisions alone.
     </p>
     <p>
-      In this signed ternary version, each link holds only the difference from the local average: &minus;1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid.
+      In this signed ternary version, each link holds only the difference from a reference equilibrium kept for each block of the grid: &minus;1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit.
     </p>
     <p>
       The picture shows how the fluid spins. Black and white are the two directions of rotation on a grey background, and the further from grey, the faster it spins.
@@ -67,8 +67,8 @@
     <hr>
 
     <p class="panel-desc">
-      Method: <a href="https://doi.org/10.1103/PhysRevLett.56.1505">FHP lattice gas</a> (Frisch, Hasslacher and Pomeau, 1986), flow past a plate after <a href="https://content.wolfram.com/sites/13/2018/02/01-4-5.pdf">d'Humi&egrave;res and Lallemand</a> (1987).<br>
-      The signed ternary model is mine. Each link stores only a deviation of &minus;1, 0 or +1 from a reference equilibrium set for each block of the grid, and everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.<br>
+      <a href="https://doi.org/10.1103/PhysRevLett.56.1505">FHP lattice gas</a> (Frisch, Hasslacher and Pomeau, 1986), flow past a plate after <a href="https://content.wolfram.com/sites/13/2018/02/01-4-5.pdf">d'Humi&egrave;res and Lallemand</a> (1987).<br>
+      The signed ternary variant is mine; I found no earlier lattice gas built this way.<br>
       Source: <a href="https://github.com/ilnmtlbnm/jacobi2000">jacobi2000</a>, the same Rust code on the GPU and the CPU.
     </p>
 
