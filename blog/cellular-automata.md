@@ -34,11 +34,15 @@ Here is one node of that grid and its six links, with the collision rule at its 
 
 ## The Connection Machine
 
-Each node holds a handful of bits and every node follows the same rule, so a lattice gas fits a machine with a very large number of very small processors. The Connection Machine, built by Danny Hillis's Thinking Machines, was that machine: the CM-2, from 1987, has up to 65,536 one-bit processors ([Hillis, Scientific American, 1987](https://doi.org/10.1038/scientificamerican0687-108)). Lattice gases were run on it for real work, for example [Hénon's 1992 implementation of a four-dimensional lattice gas](https://doi.org/10.1007/BF01341753).
+Danny Hillis's Thinking Machines built the Connection Machine in the 1980s: a computer of about 64,000 very small processors that all run the same instruction at once. A lattice gas suits it. Each node holds a few bits and follows the same rule as its neighbours, so one processor can take one node.
 
-![A Connection Machine CM-2 with its rows of red lights.](/blog/images/cm2.webp)
+In [Richard Feynman and the Connection Machine](https://longnow.org/ideas/richard-feynman-and-the-connection-machine/), Hillis tells how Feynman, who called the idea of a parallel computer with a million processors "positively the dopiest idea I ever heard", agreed to spend a summer at the company anyway. The first program run on the machine, in April 1985, was Conway's Life. Later Stephen Wolfram ran a lattice gas of the Frisch, Hasslacher and Pomeau kind on it and made a movie of turbulent flow in two dimensions, which got everyone excited about physical simulation, Feynman included. Feynman's own way of explaining it was a perfect ball bearing that moves at a single speed in one of six directions.
 
-*A Connection Machine CM-2 and its DataVault storage unit, at the Mimms Museum of Technology and Art. Photo: Logg Tandy, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Connection_Machine_CM-2_and_DataVault_at_The_Mimms_Museum_of_Technology_and_Art.webp) (the background was replaced by a later editor).*
+![Richard Feynman, outdoors in 1984, in a black and white photograph.](/blog/images/feynman-1984.jpg)
+
+*Richard Feynman in 1984, while working at Thinking Machines on the design of the Connection Machine. Photo: Tamiko Thiel, [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:RichardFeynman-PaineMansionWoods1984_copyrightTamikoThiel_bw.jpg).*
+
+The machine was then used for real fluid work. Chen, Doolen and Eggert ran the standard seven-bit lattice gas in two dimensions on a CM-2, including the [Kelvin-Helmholtz instability](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
 
 ## From bits to averages
 
