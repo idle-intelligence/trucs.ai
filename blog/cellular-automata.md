@@ -16,15 +16,15 @@ Read the code: [github.com/ilnmtlbnm/jacobi2000](https://github.com/ilnmtlbnm/ja
 
 ## A gas made of bits
 
-In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule. The trouble is the grid: seen from far away, a flow along the grid lines does not behave like the same flow along a diagonal, which a real fluid does not do.
+In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule. The trouble is the grid: seen from far away, the gas flows differently along the grid lines and along the diagonals, while a real fluid flows the same way in every direction.
 
-Put a plate in a stream of fluid and it sheds a street of vortices behind it, alternating one way and the other. Clouds blowing past an island show it from space.
+Put an obstacle in a stream of fluid and it sheds a street of vortices behind it, turning one way and then the other. Wind blowing clouds past an island shows it from space.
 
-![Clouds streaming past Guadalupe Island, Mexico, forming a trail of spiralling vortices.](/blog/images/guadalupe-vortices.jpg)
+![Clouds streaming past an island, forming a trail of vortices that turn in alternate directions.](/blog/images/juan-fernandez-vortices.jpg)
 
-*A von Kármán vortex street in the clouds downwind of Guadalupe Island, 19 May 2012. Image: NASA, MODIS Rapid Response System, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Guadalupe_island_May_19_2012_Von_Karman_Vortex_street.jpg) (cropped).*
+*A von Kármán vortex street in the clouds downwind of Alejandro Selkirk Island, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg) (rotated and cropped).*
 
-A lattice gas gets the same street from a very different starting point. A lattice gas is a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours and the symmetry is hexagonal, the flow comes out the same in every direction and follows the equations of fluid flow ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
+The flow page gets the same street from a very different starting point: a lattice gas, a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours and the symmetry is hexagonal, the flow comes out the same in every direction and follows the equations of fluid flow ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
 
 Here is one node of that grid and its six links, with the collision rule at its simplest.
 
