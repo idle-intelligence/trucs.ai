@@ -10,9 +10,10 @@
 const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
 const MODE = 'randomize';
-// On WebGPU the wide layout runs the large street and the narrow (vertical)
-// layout a smaller one that forms sooner on a phone; the CPU paths run the
-// smallest, where the street forms in about 8k steps.
+// On WebGPU the wide layout runs the large street. The narrow (vertical)
+// layout runs a smaller one that forms sooner on a phone, on the GPU and on
+// the CPU alike; the wide layout on the CPU runs the smallest, where the
+// street forms in about 8k steps.
 const STREETS = {
   wide: { model: 'signed', w: 2048, h: 768, u: 0.2, block: 8, refblock: 8 },
   narrow: { model: 'signed', w: 1536, h: 512, u: 0.25, block: 8, refblock: 8 },
@@ -49,13 +50,13 @@ async function initGpu(layout) {
   }
 }
 
-async function initCpu() {
+async function initCpu(layout) {
   const threads = self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' && navigator.hardwareConcurrency > 1;
   const mod = await import(`./${threads ? 'pkg-mt' : 'pkg'}/fhp.js?v=${ENGINE_BUILD}`);
   await mod.default({ module_or_path: `./${threads ? 'pkg-mt' : 'pkg'}/fhp_bg.wasm?v=${ENGINE_BUILD}` });
   mod.fhpInit();
   if (threads) await mod.initThreadPool(navigator.hardwareConcurrency);
-  const sim = create(mod, STREETS.cpu, false);
+  const sim = create(mod, layout === 'narrow' ? STREETS.narrow : STREETS.cpu, false);
   return { sim, label: threads ? `wasm threads (${sim.threads})` : 'wasm single', gpu: false };
 }
 
@@ -205,7 +206,7 @@ async function start(layout) {
     g.sim.free();
     post({ type: 'status', status: `WebGPU stopped (${reason}); continuing on the CPU` });
   }
-  await loop(await initCpu());
+  await loop(await initCpu(layout));
 }
 
 self.addEventListener('unhandledrejection', (e) => post({ type: 'error', status: `stopped: ${e.reason && e.reason.message ? e.reason.message : e.reason}` }));
