@@ -22,7 +22,7 @@ Put an obstacle in a stream of fluid and it sheds a street of vortices behind it
 
 ![Clouds streaming past an island, forming a trail of vortices that turn in alternate directions.](/blog/images/juan-fernandez-vortices.jpg)
 
-*A von Kármán vortex street in the clouds downwind of Alejandro Selkirk Island, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg) (rotated and cropped).*
+*A von Kármán vortex street in the clouds downwind of one of the Juan Fernández Islands, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg) (rotated and cropped).*
 
 The flow page gets the same street from a very different starting point: a lattice gas, a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours and the symmetry is hexagonal, the flow comes out the same in every direction and follows the equations of fluid flow ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
 
