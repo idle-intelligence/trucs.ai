@@ -42,7 +42,7 @@ A lattice gas is noisy. Every site is either occupied or not, so to see a smooth
 
 The flow page goes back to the particles. It is a lattice gas of about 1.6 million nodes, 2048 by 768, running in your browser on the GPU through WebGPU, with a plate in the middle of the channel. On the RTX 3080 I measured it on, it does about five billion node updates per second. When there is no GPU, it falls back to a smaller grid on the processor.
 
-The model on the page is my own variant, signed ternary. Each link holds only the difference from a reference equilibrium set for each block of the grid: −1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. The idea is close to the [deviational methods](https://arxiv.org/abs/0905.2218) of particle simulations, but I found no earlier lattice gas built this way.
+The model on the page is my own variant, signed ternary. Each link holds only the difference from a reference equilibrium set for each block of the grid: −1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
 
 The core of one step, for each node, is three moves. Each link takes the value its neighbour had a step ago, corrected for how the local reference differs between the two nodes and rounded at random to a whole number. The value is clamped back to −1, 0 or +1. The six values then index a table that holds the collision rule:
 
