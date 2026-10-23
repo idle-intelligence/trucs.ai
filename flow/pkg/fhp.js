@@ -209,6 +209,14 @@ export class Sim {
         return v1;
     }
     /**
+     * Read-backs whose map failed (dropped; a new request starts a new one).
+     * @returns {number}
+     */
+    get readFailures() {
+        const ret = wasm.sim_readFailures(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Whether a read-back is in flight.
      * @returns {boolean}
      */

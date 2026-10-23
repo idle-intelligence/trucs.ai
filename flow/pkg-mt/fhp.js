@@ -1,5 +1,5 @@
 /* @ts-self-types="./fhp.d.ts" */
-import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-23-flow-v2-11';
+import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-23-flow-v2-12';
 
 
 export class Sim {
@@ -182,6 +182,14 @@ export class Sim {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * Read-backs whose map failed (dropped; a new request starts a new one).
+     * @returns {number}
+     */
+    get readFailures() {
+        const ret = wasm.sim_readFailures(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * Whether a read-back is in flight.

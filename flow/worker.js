@@ -34,14 +34,14 @@ async function init() {
   let sim, label;
   if (path === 'threads') {
     const mod = await import(`./pkg-mt/fhp.js?v=${ENGINE_BUILD}`);
-    await mod.default(`./pkg-mt/fhp_bg.wasm?v=${ENGINE_BUILD}`);
+    await mod.default({ module_or_path: `./pkg-mt/fhp_bg.wasm?v=${ENGINE_BUILD}` });
     mod.fhpInit();
     await mod.initThreadPool(navigator.hardwareConcurrency);
     sim = mod.Sim.createCpu(MODEL, W, H, U, MODE, BLOCK, REFBLOCK);
     label = `wasm threads (${sim.threads})`;
   } else {
     const mod = await import(`./pkg/fhp.js?v=${ENGINE_BUILD}`);
-    await mod.default(`./pkg/fhp_bg.wasm?v=${ENGINE_BUILD}`);
+    await mod.default({ module_or_path: `./pkg/fhp_bg.wasm?v=${ENGINE_BUILD}` });
     mod.fhpInit();
     sim = path === 'webgpu' ? await mod.Sim.createGpu(MODEL, W, H, U, MODE, BLOCK, REFBLOCK) : mod.Sim.createCpu(MODEL, W, H, U, MODE, BLOCK, REFBLOCK);
     label = path === 'webgpu' ? 'WebGPU' : 'wasm single';
@@ -49,22 +49,25 @@ async function init() {
   return { sim, label, gpu: path === 'webgpu' };
 }
 
-// Running and drawing are separate. The simulation steps in batches as
-// fast as it can and never waits on the display; the time average is folded
-// on the device, so stepping reads nothing back. The page asks for a picture
-// when it is ready to draw one ({ type: 'want' }) and gets the latest field.
+// Running and drawing are separate. The simulation steps in batches and never
+// waits on the display; the time average is folded on the device, so stepping
+// reads nothing back. The page asks for a picture when it is ready to draw one
+// ({ type: 'want' }) and gets the latest field.
 //
-// On WebGPU one read-back of the average is kept in flight: a new one is
-// queued as soon as the last has landed. The worker stops queueing steps
-// only when more than Q ms of work is queued beyond the last landed read,
-// with Q the shortest recent read delay and at least one display frame: the
-// GPU stays busy even where a read takes long to land, and the queue stays
-// short enough for a read to land about every frame. A batch is 1/120 s of the measured stepping rate (at least one
-// sample, 5 steps). On the CPU paths the field is always current and the
-// same batch rule keeps each batch near 8 ms of work.
+// On WebGPU one read-back of the average is kept in flight, a new one queued
+// as soon as the last lands. The GPU is kept busy (an idle GPU also clocks
+// down): the worker stops queueing only when the work queued beyond the last
+// landed read exceeds Q = one display frame plus the read latency, capped at
+// MAX_QUEUE_MS. Work is counted in ms at the stepping rate, the highest rate
+// measured over the recent reads (so waiting never lowers it), and the read
+// latency is a read's delay minus the work queued ahead of it, the smallest
+// recent one. A batch is 1/120 s at that rate (at least one sample, 5 steps).
+// On the CPU paths the field is always current and the same batch rule keeps
+// each batch near 8 ms of work.
 const SAMPLE_EVERY = 5;
 const MAX_BATCH = 4000;
 const FRAME_MS = 1000 / 60;
+const MAX_QUEUE_MS = 100;
 let wanted = true;
 
 // A yield to the event loop that is not clamped like setTimeout.
@@ -76,36 +79,49 @@ const yieldNow = () => new Promise((r) => { resume = r; channel.port2.postMessag
 async function loop({ sim, label, gpu }) {
   let batch = SAMPLE_EVERY;
   let issued = 0;
+  let done = 0; // steps known to be done (at the last landed read)
   let readAt = 0; // steps issued when the read in flight was queued
   let readT = 0; // and when
-  let done = 0; // steps known to be done (at the last landed read)
+  let readAhead = 0; // steps queued ahead of it then
   let rate = 0; // steps per second
   const landed = []; // [steps, time] at the recent landed reads (GPU) or batches (CPU)
-  const delays = []; // recent read delays, ms
+  const rates = []; // [time, rate] over windows of recent landings
+  const latencies = []; // recent read latencies, ms
   while (true) {
     sim.advance(batch);
     issued += batch;
     if (!sim.reading) {
       sim.requestField();
-      readAt = issued;
       readT = performance.now();
+      readAhead = issued - done;
+      readAt = issued;
     }
-    const q = Math.max(FRAME_MS, Math.min(...delays, Infinity));
-    const queued = rate > 0 ? ((issued - done) / rate) * 1000 : issued - readAt >= 2 * batch ? Infinity : 0;
-    if (sim.reading && queued > q) await sim.waitField();
-    else await yieldNow();
+    let wait = false;
+    if (sim.reading) {
+      if (rate > 0) {
+        const q = Math.min(MAX_QUEUE_MS, FRAME_MS + Math.min(...latencies, Infinity));
+        wait = ((issued - done) / rate) * 1000 > q;
+      } else {
+        wait = issued - done >= 4 * batch;
+      }
+    }
+    await (wait ? sim.waitField() : yieldNow());
     if (!sim.fieldReady()) continue;
     // A newer field: from the read just landed (GPU) or current (CPU).
     const now = performance.now();
     done = gpu ? readAt : issued;
-    if (gpu) {
-      delays.push(now - readT);
-      if (delays.length > 30) delays.shift();
-    }
     landed.push([done, now]);
-    if (landed.length > 30) landed.shift();
+    if (landed.length > 12) landed.shift();
     const [s0, t1] = landed[0];
-    if (now > t1 && done > s0) rate = ((done - s0) / (now - t1)) * 1000;
+    if (landed.length >= 4 && now > t1) {
+      rates.push([now, ((done - s0) / (now - t1)) * 1000]);
+      while (rates.length && now - rates[0][0] > 5000) rates.shift();
+      rate = Math.max(...rates.map((r) => r[1]));
+    }
+    if (gpu && rate > 0) {
+      latencies.push(Math.max(0, now - readT - (readAhead / rate) * 1000));
+      if (latencies.length > 30) latencies.shift();
+    }
     if (rate > 0) {
       const target = rate / 120;
       batch = Math.min(MAX_BATCH, Math.max(SAMPLE_EVERY, Math.round((0.8 * batch + 0.2 * target) / SAMPLE_EVERY) * SAMPLE_EVERY));
@@ -114,7 +130,8 @@ async function loop({ sim, label, gpu }) {
       wanted = false;
       const field = sim.field();
       const obstacle = sim.obstacle();
-      const status = `${label}, ${((rate * sim.sites) / 1e6).toFixed(0)} M site updates/s · Re ${sim.reynolds.toFixed(0)}`;
+      const shown = landed.length > 1 ? ((done - s0) / (now - t1)) * 1000 : 0;
+      const status = `${label}, ${((shown * sim.sites) / 1e6).toFixed(0)} M site updates/s · Re ${sim.reynolds.toFixed(0)}`;
       post({ type: 'frame', field, obstacle, width: sim.imageWidth, height: sim.imageHeight, status, steps: batch }, [field.buffer, obstacle.buffer]);
     }
   }
