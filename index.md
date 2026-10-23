@@ -21,13 +21,9 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>A <a href="/swarm/">swarm</a> of LLMs running on users' idle compute</dd>
   <dd>A small <a href="/classifier/">BERT Classifier</a></dd>
 
-  <dt>STT → LLM → TTS</dt>
-  <dd>Browser <a href="/stt/">Speech-to-Text</a></dd>
-  <dd>Browser <a href="/llm/">LLM</a></dd>
-  <dd>Browser <a href="/tts/">Text-to-Speech</a></dd>
-  <dd><a href="/llm-tts/">LLM → TTS</a></dd>
-  <dd><a href="/stt-llm-tts/">STT → LLM → TTS</a></dd>
-  <dd><a href="/sts/">Speech-to-speech</a> (almost)</dd>
+  <dt>Cellular Automata</dt>
+  <dd>LLM of <a href="/llm-life/">Life</a></dd>
+  <dd>Von Kármán <a href="/flow/">vortex street</a></dd>
 
   <dt>Data</dt>
   <dd>Browser <a href="/sensors/">sensors</a></dd>
@@ -35,9 +31,13 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>Browser <a href="/knn-weather/">weather</a></dd>
   <dd>Browser <a href="/t0/">forecasting</a></dd>
 
-  <dt>Cellular Automata</dt>
-  <dd>LLM of <a href="/llm-life/">Life</a></dd>
-  <dd>Von Kármán <a href="/flow/">vortex street</a></dd>
+  <dt>STT → LLM → TTS</dt>
+  <dd>Browser <a href="/stt/">Speech-to-Text</a></dd>
+  <dd>Browser <a href="/llm/">LLM</a></dd>
+  <dd>Browser <a href="/tts/">Text-to-Speech</a></dd>
+  <dd><a href="/llm-tts/">LLM → TTS</a></dd>
+  <dd><a href="/stt-llm-tts/">STT → LLM → TTS</a></dd>
+  <dd><a href="/sts/">Speech-to-speech</a> (almost)</dd>
 </dl>
   
 ---
