@@ -7,28 +7,34 @@ description: "A fluid made of particles on a grid, from the 1986 lattice gas pap
 
 # Cellular automata in science
 
-A cellular automaton is a grid of cells, each holding a small state, updated all at once by the same rule applied to every cell and its neighbours. That is the whole definition.
+A cellular automaton is a grid of cells, each holding a small state, updated all at once by the same rule applied to every cell and its neighbours.
 
-Stanislaw Ulam and John von Neumann came up with the idea at Los Alamos in the 1940s: Ulam was studying crystal growth on a lattice, and von Neumann used a grid of cells to build a machine that could copy itself ([Wikipedia](https://en.wikipedia.org/wiki/Cellular_automaton)). The one most people know is John Conway's Game of Life, which Martin Gardner described in Scientific American in 1970 ([Wikipedia](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life)). This post is about another use of the idea, as a way of doing physics.
+Stanislaw Ulam and John von Neumann came up with the idea at Los Alamos in the 1940s: Ulam was studying crystal growth on a lattice, and von Neumann used a grid of cells to build a machine that could copy itself. The one most people know is John Conway's Game of Life, which Martin Gardner described in [Scientific American in October 1970](https://doi.org/10.1038/scientificamerican1070-120). In my [llm-life](/llm-life/) demo, a small language model plays Life in your browser, one cell at a time. This post is about another use of the idea, as a way of doing physics, with the same kind of rule on a different grid.
 
 Try the demo: [flow](/flow/)  
 Read the code: [github.com/ilnmtlbnm/jacobi2000](https://github.com/ilnmtlbnm/jacobi2000)
 
 ## A gas made of bits
 
-In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid. Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule. It had one problem: a square grid has too few symmetries, and the flow it produces is not that of an ordinary fluid ([Wikipedia](https://en.wikipedia.org/wiki/Lattice_gas_automaton)).
+In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule. The trouble is the grid: seen from far away, a flow along the grid lines does not behave like the same flow along a diagonal, which a real fluid does not do.
 
-In 1986 Uriel Frisch, Brosl Hasslacher and Pomeau fixed it by moving to a triangular grid, where each node has six neighbours and the symmetry is hexagonal ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their lattice gas, FHP, reproduces the equations of fluid flow when you look at it from far enough away.
+Put a plate in a stream of fluid and it sheds a street of vortices behind it, alternating one way and the other. Clouds blowing past an island show it from space.
+
+![Clouds streaming past Guadalupe Island, Mexico, forming a trail of spiralling vortices.](/blog/images/guadalupe-vortices.jpg)
+
+*A von Kármán vortex street in the clouds downwind of Guadalupe Island, 19 May 2012. Image: NASA, MODIS Rapid Response System, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Guadalupe_island_May_19_2012_Von_Karman_Vortex_street.jpg) (cropped).*
+
+A lattice gas gets the same street from a very different starting point. A lattice gas is a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours and the symmetry is hexagonal, the flow comes out the same in every direction and follows the equations of fluid flow ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
+
+Here is one node of that grid and its six links, with the collision rule at its simplest.
 
 ![A node of the triangular grid with its six links. Before the collision, two particles arrive head on along the east and west links; after it, they leave along the north-east and south-west links.](/blog/images/fhp-cell.svg)
 
 *A node and its six links. Each link holds a particle or does not. Here a head-on pair collides and leaves rotated by 60 degrees (the rotation can go either way). The count of particles and the total momentum are the same before and after.*
 
-A lattice gas is a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the [vortex street](https://en.wikipedia.org/wiki/K%C3%A1rm%C3%A1n_vortex_street) behind it come from those collisions alone.
-
 ## The Connection Machine
 
-Each node holds a handful of bits and every node follows the same rule, so a lattice gas fits a machine with a very large number of very small processors. The Connection Machine, built by Danny Hillis's Thinking Machines, was that machine: the CM-2, from 1987, has up to 65,536 one-bit processors ([Wikipedia](https://en.wikipedia.org/wiki/Connection_Machine)). Lattice gases were run on it for real work, for example [Hénon's 1992 implementation of a four-dimensional lattice gas](https://doi.org/10.1007/BF01341753).
+Each node holds a handful of bits and every node follows the same rule, so a lattice gas fits a machine with a very large number of very small processors. The Connection Machine, built by Danny Hillis's Thinking Machines, was that machine: the CM-2, from 1987, has up to 65,536 one-bit processors ([Hillis, Scientific American, 1987](https://doi.org/10.1038/scientificamerican0687-108)). Lattice gases were run on it for real work, for example [Hénon's 1992 implementation of a four-dimensional lattice gas](https://doi.org/10.1007/BF01341753).
 
 ![A Connection Machine CM-2 with its rows of red lights.](/blog/images/cm2.webp)
 
@@ -36,7 +42,7 @@ Each node holds a handful of bits and every node follows the same rule, so a lat
 
 ## From bits to averages
 
-A lattice gas is noisy. Every site is either occupied or not, so to see a smooth flow you have to average over many sites and many steps. In the late 1980s the field moved to the lattice Boltzmann method, which keeps the grid and the collision idea but replaces the on-or-off particle by its average, a number ([Wikipedia](https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods); the first such scheme is [McNamara and Zanetti, 1988](https://doi.org/10.1103/PhysRevLett.61.2332)). That removed the noise.
+A lattice gas is noisy. Every site is either occupied or not, so to see a smooth flow you have to average over many sites and many steps. In the late 1980s the field moved to the lattice Boltzmann method, which keeps the grid and the collision idea but replaces the on-or-off particle by its average, a number ([McNamara and Zanetti, 1988](https://doi.org/10.1103/PhysRevLett.61.2332)). That removed the noise.
 
 ## Back to the particles, in a tab
 
