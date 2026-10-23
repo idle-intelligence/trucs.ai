@@ -3,6 +3,7 @@ author: Thomas Cambau
 layout: default
 title: "Cellular automata in science"
 description: "A fluid made of particles on a grid, from the 1986 lattice gas papers to a vortex street computed in a browser tab."
+og_image: /assets/og/cellular-automata.png
 ---
 
 # Cellular automata in science
