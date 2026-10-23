@@ -37,7 +37,7 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
 
   <dt>Cellular Automata</dt>
   <dd>LLM of <a href="/llm-life/">Life</a></dd>
-  <dd>Lattice gas <a href="/flow/">flow</a></dd>
+  <dd>Von Kármán <a href="/flow/">vortex street</a></dd>
 </dl>
   
 ---
