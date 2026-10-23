@@ -44,7 +44,7 @@ In [Richard Feynman and the Connection Machine](https://longnow.org/ideas/richar
 
 The machine was then used for real fluid work. Bruce Boghosian, Washington Taylor, Daniel Rothman and Ralph Santos ran a two-colour variant of the triangular-lattice gas on a CM-2, at about 100 million site updates per second ([talk slides](https://people.csail.mit.edu/bradley/cm5docs/Cellular-Automata-Simulation-on-CM-2.pdf)). Chen, Doolen and Eggert ran the standard seven-bit gas in two dimensions, including the [Kelvin-Helmholtz instability](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
 
-## Back to the particles, in a tab
+## In a browser tab
 
 Each site of a lattice gas is either occupied or not, so the flow page averages before it draws: the picture is the spin of the fluid, averaged over blocks of sites and over time.
 
