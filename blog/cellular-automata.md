@@ -59,8 +59,6 @@ As in the original FHP, each step has two phases:
 - streaming: each value moves along its link to the neighbouring node;
 - collision: each node looks up its six values in a collision table, and the nodes of the plate send every particle back where it came from.
 
-There is one catch in the streaming. A value only means something next to its reference, so a value that arrives where the reference is higher or lower has to be re-expressed: a +1 over a low reference may be worth only a 0 over a higher one. The correction is usually a fraction, so it is rounded up or down at random, with odds that make it right on average. Whatever does not fit is kept in a reservoir for the block, so nothing is lost.
-
 Everything is computed in integers: mass and momentum are conserved exactly, and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
 
 In pseudo code (the real code is in [the source](https://github.com/ilnmtlbnm/jacobi2000/blob/main/crates/fhp/src/signed/mod.rs)):
