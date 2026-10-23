@@ -16,7 +16,7 @@ Read the code: [github.com/ilnmtlbnm/jacobi2000](https://github.com/ilnmtlbnm/ja
 
 ## A gas made of bits
 
-In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they leave at right angles. But on a square grid the gas does not flow like a real fluid: it favours the directions of the grid, and a flow at an angle to them comes out wrong.
+In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves along a link at every tick, and when two meet head on they leave at right angles. But on a square grid the gas does not flow like a real fluid: it favours the directions of the grid, and a flow at an angle to them comes out wrong.
 
 Put an obstacle in a stream of fluid and it sheds a street of vortices behind it, turning one way and then the other. A famous and impressive example is wind blowing clouds past an island, where the vortices can be seen from space.
 
@@ -24,7 +24,7 @@ Put an obstacle in a stream of fluid and it sheds a street of vortices behind it
 
 *A von Kármán vortex street in the clouds downwind of one of the Juan Fernández Islands, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg).*
 
-A lattice gas reproduces these vortices from a few simple rules. Its particles move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours, such a gas of on-or-off particles does follow the Navier–Stokes equation, and that it can be used to design simple, massively parallel computing machines ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
+A lattice gas reproduces these vortices from a few simple rules. Its particles move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours, such a gas of on-or-off particles does follow, at large scales, the Navier–Stokes equation, and that it can be used to design simple, massively parallel computing machines ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
 
 Here is one node of that grid and its six links, with the collision rule at its simplest.
 
@@ -42,7 +42,7 @@ In [Richard Feynman and the Connection Machine](https://longnow.org/ideas/richar
 
 *A Connection Machine CM-2 and its DataVault storage unit. Photo: Logg Tandy, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Connection_Machine_CM-2_and_DataVault_at_Computer_Museum_of_America.png).*
 
-The machine was then used for real fluid work. Bruce Boghosian, Washington Taylor, Daniel Rothman and Ralph Santos ran a two-colour variant of the triangular-lattice gas on a CM-2, at about 100 million site updates per second ([talk slides](https://people.csail.mit.edu/bradley/cm5docs/Cellular-Automata-Simulation-on-CM-2.pdf)). Chen, Doolen and Eggert ran the standard seven-bit gas in two dimensions, including the [Kelvin-Helmholtz instability](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
+The machine was then used for real fluid work. Bruce Boghosian, Washington Taylor, Daniel Rothman and Ralph Santos ran a two-colour variant of the triangular-lattice gas on a CM-2, at about 100 million site updates per second ([talk slides](https://people.csail.mit.edu/bradley/cm5docs/Cellular-Automata-Simulation-on-CM-2.pdf)). Chen, Doolen, Eggert and colleagues used a CM-2 for [lattice gas simulations of one- and two-phase flows](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
 
 ## In a browser tab
 
@@ -71,7 +71,8 @@ In pseudo code (the real code is in [the source](https://github.com/ilnmtlbnm/ja
 for every node x:
     for each of the six links d:
         v = value of link d at the neighbour it comes from
-        v = v + random_round(reference[neighbour][d] - reference[x][d])
+        shift = reference[neighbour][d] - reference[x][d]
+        v = v + random_round(shift)
         v = clamp(v, -1, +1)          # the remainder goes to the reservoir
         link[d] = v
     if x is part of the plate:
