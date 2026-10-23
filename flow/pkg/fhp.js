@@ -145,6 +145,23 @@ export class Sim {
         return v1;
     }
     /**
+     * The first GPU error or device loss ('' if none). In the browser an
+     * error no longer panics: the engine keeps it here for the page.
+     * @returns {string}
+     */
+    get gpuError() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.sim_gpuError(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Lattice height actually used (after rounding).
      * @returns {number}
      */
@@ -408,6 +425,10 @@ function __wbg_get_imports() {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
         },
+        __wbg_error_beb038df66a14956: function(arg0) {
+            const ret = arg0.error;
+            return ret;
+        },
         __wbg_finish_7370ad1c0e62b448: function(arg0) {
             const ret = arg0.finish();
             return ret;
@@ -438,6 +459,36 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
+        __wbg_instanceof_GpuDeviceLostInfo_00e487bdd59348b8: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof GPUDeviceLostInfo;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
+        __wbg_instanceof_GpuOutOfMemoryError_7b1554dded417c4f: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof GPUOutOfMemoryError;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
+        __wbg_instanceof_GpuValidationError_124458c5a6bb3b58: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof GPUValidationError;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
         __wbg_label_84abde6506fa15b7: function(arg0, arg1) {
             const ret = arg1.label;
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -451,6 +502,10 @@ function __wbg_get_imports() {
         },
         __wbg_limits_a80585efb442d985: function(arg0) {
             const ret = arg0.limits;
+            return ret;
+        },
+        __wbg_lost_c3901fb62342cb46: function(arg0) {
+            const ret = arg0.lost;
             return ret;
         },
         __wbg_mapAsync_3546b4b874e14738: function(arg0, arg1, arg2, arg3) {
@@ -565,6 +620,20 @@ function __wbg_get_imports() {
             const ret = arg0.maxVertexBuffers;
             return ret;
         },
+        __wbg_message_994af15a233e5151: function(arg0, arg1) {
+            const ret = arg1.message;
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
+        __wbg_message_bd5755a324c3b999: function(arg0, arg1) {
+            const ret = arg1.message;
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
         __wbg_minStorageBufferOffsetAlignment_58fcc139ce14bbb9: function(arg0) {
             const ret = arg0.minStorageBufferOffsetAlignment;
             return ret;
@@ -636,6 +705,10 @@ function __wbg_get_imports() {
         __wbg_queue_8cb065d04b06cb13: function(arg0) {
             const ret = arg0.queue;
             return ret;
+        },
+        __wbg_reason_c4b183fe1301eb24: function(arg0) {
+            const ret = arg0.reason;
+            return (__wbindgen_enum_GpuDeviceLostReason.indexOf(ret) + 1 || 3) - 1;
         },
         __wbg_requestAdapter_4814cb479d2dcf15: function(arg0, arg1) {
             const ret = arg0.requestAdapter(arg1);
@@ -764,6 +837,9 @@ function __wbg_get_imports() {
         __wbg_set_offset_f07a73165707eb4c: function(arg0, arg1) {
             arg0.offset = arg1;
         },
+        __wbg_set_onuncapturederror_22c87f0c852e46ca: function(arg0, arg1) {
+            arg0.onuncapturederror = arg1;
+        },
         __wbg_set_power_preference_0721cf46746c0c7d: function(arg0, arg1) {
             arg0.powerPreference = __wbindgen_enum_GpuPowerPreference[arg1];
         },
@@ -853,6 +929,10 @@ function __wbg_get_imports() {
             const ret = arg0.then(arg1, arg2);
             return ret;
         },
+        __wbg_then_8ebf7f4d2b402f98: function(arg0, arg1) {
+            const ret = arg0.then(arg1);
+            return ret;
+        },
         __wbg_then_b830475380919203: function(arg0, arg1) {
             const ret = arg0.then(arg1);
             return ret;
@@ -860,30 +940,39 @@ function __wbg_get_imports() {
         __wbg_unmap_50b3be4aaf23fa39: function(arg0) {
             arg0.unmap();
         },
+        __wbg_valueOf_24fc886d85bf55b5: function(arg0) {
+            const ret = arg0.valueOf();
+            return ret;
+        },
         __wbg_writeBuffer_7d54524c36f1c7e2: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4, arg5) {
             arg0.writeBuffer(arg1, arg2, arg3, arg4, arg5);
         }, arguments); },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 51, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 57, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 79, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 99, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_67038bb384f11e71___JsError___true_);
             return ret;
         },
-        __wbindgen_generic_0000000000000003: function(arg0) {
+        __wbindgen_generic_0000000000000003: function(arg0, arg1) {
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUUncapturedErrorEvent")], shim_idx: 57, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue______true__32);
+            return ret;
+        },
+        __wbindgen_generic_0000000000000004: function(arg0) {
             // Cast intrinsic for `F64 -> Externref`.
             const ret = arg0;
             return ret;
         },
-        __wbindgen_generic_0000000000000004: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000005: function(arg0, arg1) {
             // Cast intrinsic for `Ref(Slice(U8)) -> NamedExternref("Uint8Array")`.
             const ret = getArrayU8FromWasm0(arg0, arg1);
             return ret;
         },
-        __wbindgen_generic_0000000000000005: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000006: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
@@ -908,6 +997,10 @@ function wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bin
     wasm.wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue______true_(arg0, arg1, arg2);
 }
 
+function wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue______true__32(arg0, arg1, arg2) {
+    wasm.wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue______true__32(arg0, arg1, arg2);
+}
+
 function wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_67038bb384f11e71___JsError___true_(arg0, arg1, arg2) {
     const ret = wasm.wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_67038bb384f11e71___JsError___true_(arg0, arg1, arg2);
     if (ret[1]) {
@@ -921,6 +1014,9 @@ function wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___js_sys_7
 
 
 const __wbindgen_enum_GpuBufferBindingType = ["uniform", "storage", "read-only-storage"];
+
+
+const __wbindgen_enum_GpuDeviceLostReason = ["unknown", "destroyed"];
 
 
 const __wbindgen_enum_GpuPowerPreference = ["low-power", "high-performance"];

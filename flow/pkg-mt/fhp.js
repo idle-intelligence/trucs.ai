@@ -1,5 +1,5 @@
 /* @ts-self-types="./fhp.d.ts" */
-import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-23-flow-v2-12';
+import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-23-flow-v2-14';
 
 
 export class Sim {
@@ -118,6 +118,23 @@ export class Sim {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * The first GPU error or device loss ('' if none). In the browser an
+     * error no longer panics: the engine keeps it here for the page.
+     * @returns {string}
+     */
+    get gpuError() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.sim_gpuError(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
     }
     /**
      * Lattice height actually used (after rounding).
