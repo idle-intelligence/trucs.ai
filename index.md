@@ -22,7 +22,7 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>A small <a href="/classifier/">BERT Classifier</a></dd>
 
   <dt>STT → LLM → TTS</dt>
-  <dd>Browser <a href="/stt/">Speech-to-text</a></dd>
+  <dd>Browser <a href="/stt/">Speech-to-Text</a></dd>
   <dd>Browser <a href="/llm/">LLM</a></dd>
   <dd>Browser <a href="/tts/">Text-to-Speech</a></dd>
   <dd><a href="/llm-tts/">LLM → TTS</a></dd>
