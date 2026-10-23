@@ -11,6 +11,8 @@ title: blog
 
 [Browser weather](/blog/browser-weather)
 
+[Cellular automata in science](/blog/cellular-automata)
+
 ---
 
 ## clauderies
