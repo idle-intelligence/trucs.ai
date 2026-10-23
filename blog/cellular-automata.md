@@ -58,6 +58,8 @@ The flow page does the opposite. It keeps the particles and averages the picture
 
 A plate stands in a channel and fluid comes in from the left. After a short while the vortex street forms behind the plate. The grid is about 1.6 million nodes, smaller on a phone. When the browser has WebGPU the simulation runs on the GPU, and otherwise it runs on the processor's threads.
 
+The CM-2 runs above reached about 100 million site updates per second, on a machine of 64,000 processors, nearly forty years ago. On an RTX 3080, a gaming GPU from 2020, the flow page does about 5 billion: some fifty times more, in a browser tab.
+
 The model on the page is my own variant, signed ternary. Each link holds only the difference from a reference equilibrium set for each block of the grid: −1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
 
 One step of the update, in pseudo code. The real code is in [the source](https://github.com/ilnmtlbnm/jacobi2000/blob/main/crates/fhp/src/signed/mod.rs).
