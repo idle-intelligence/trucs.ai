@@ -34,7 +34,7 @@ export class Sim {
     }
     /**
      * Run `n` steps (see `Page::advance`: the time average is sampled and
-     * folded every 5 steps, whatever the split into calls).
+     * folded every 5 steps, whatever the split into calls; nothing waits).
      * @param {number} n
      */
     advance(n) {
@@ -112,6 +112,15 @@ export class Sim {
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.sim_createGpu(ptr0, len0, w, h, u, ptr1, len1, block, refblock);
         return ret;
+    }
+    /**
+     * Whether `field` now holds a newer average (the read-back has landed;
+     * always true on the CPU). Does not wait.
+     * @returns {boolean}
+     */
+    fieldReady() {
+        const ret = wasm.sim_fieldReady(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Time-averaged vorticity per block over the frame's 4U/D scale, as
@@ -200,6 +209,14 @@ export class Sim {
         return v1;
     }
     /**
+     * Whether a read-back is in flight.
+     * @returns {boolean}
+     */
+    get reading() {
+        const ret = wasm.sim_reading(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * The signed model's reference block, independent of the display
      * block (0 for the other models).
      * @returns {number}
@@ -207,6 +224,14 @@ export class Sim {
     get refBlock() {
         const ret = wasm.sim_refBlock(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Ask for the current time-averaged field: on the GPU a read-back is
+     * queued unless one is in flight (steps go on meanwhile); on the CPU
+     * the field is always current.
+     */
+    requestField() {
+        wasm.sim_requestField(this.__wbg_ptr);
     }
     /**
      * Reynolds number of the current mean flow.
@@ -217,10 +242,8 @@ export class Sim {
         return ret;
     }
     /**
-     * Read back the GPU samples, fold them into the time-averaged field
-     * and run the steps still pending. The worker awaits this before its
-     * next call, so holding the borrow across the readback cannot collide
-     * with another borrow.
+     * Bring the field up to the current step: wait for any read-back in
+     * flight, then read back the current average (on the CPU, at once).
      * @returns {Promise<any>}
      */
     sample() {
@@ -248,6 +271,15 @@ export class Sim {
     get threads() {
         const ret = wasm.sim_threads(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Resolves when the read-back in flight lands (at once if none). Holds
+     * no borrow while pending, so `advance` can be called meanwhile.
+     * @returns {Promise<any>}
+     */
+    waitField() {
+        const ret = wasm.sim_waitField(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Lattice width actually used (after rounding).
@@ -824,12 +856,12 @@ function __wbg_get_imports() {
             arg0.writeBuffer(arg1, arg2, arg3, arg4, arg5);
         }, arguments); },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 48, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 51, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 76, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 79, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_67038bb384f11e71___convert__closures_____invoke___wasm_bindgen_67038bb384f11e71___JsValue__core_608f92abc48d28da___result__Result_____wasm_bindgen_67038bb384f11e71___JsError___true_);
             return ret;
         },

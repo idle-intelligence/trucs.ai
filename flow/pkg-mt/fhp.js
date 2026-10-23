@@ -1,5 +1,5 @@
 /* @ts-self-types="./fhp.d.ts" */
-import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-21-flow-v2-10';
+import { startWorkers } from './snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.js?v=2026-10-23-flow-v2-11';
 
 
 export class Sim {
@@ -36,7 +36,7 @@ export class Sim {
     }
     /**
      * Run `n` steps (see `Page::advance`: the time average is sampled and
-     * folded every 5 steps, whatever the split into calls).
+     * folded every 5 steps, whatever the split into calls; nothing waits).
      * @param {number} n
      */
     advance(n) {
@@ -87,6 +87,15 @@ export class Sim {
             throw takeFromExternrefTable0(ret[1]);
         }
         return Sim.__wrap(ret[0]);
+    }
+    /**
+     * Whether `field` now holds a newer average (the read-back has landed;
+     * always true on the CPU). Does not wait.
+     * @returns {boolean}
+     */
+    fieldReady() {
+        const ret = wasm.sim_fieldReady(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Time-averaged vorticity per block over the frame's 4U/D scale, as
@@ -175,6 +184,14 @@ export class Sim {
         return v1;
     }
     /**
+     * Whether a read-back is in flight.
+     * @returns {boolean}
+     */
+    get reading() {
+        const ret = wasm.sim_reading(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * The signed model's reference block, independent of the display
      * block (0 for the other models).
      * @returns {number}
@@ -182,6 +199,14 @@ export class Sim {
     get refBlock() {
         const ret = wasm.sim_refBlock(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Ask for the current time-averaged field: on the GPU a read-back is
+     * queued unless one is in flight (steps go on meanwhile); on the CPU
+     * the field is always current.
+     */
+    requestField() {
+        wasm.sim_requestField(this.__wbg_ptr);
     }
     /**
      * Reynolds number of the current mean flow.
@@ -192,7 +217,7 @@ export class Sim {
         return ret;
     }
     /**
-     * CPU samples are folded as they are taken; nothing is left to do.
+     * The CPU field is always current.
      */
     sample() {
         wasm.sim_sample(this.__wbg_ptr);

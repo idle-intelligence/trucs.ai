@@ -1,10 +1,10 @@
 // Module worker: picks the path by capability (WebGPU if an adapter is
 // granted, else wasm threads if the page is cross-origin isolated with more
 // than one hardware thread, else wasm single thread), loads that build, and
-// steps the simulation, posting the vorticity field and obstacle mask after
-// every batch of steps.
-//   in:  { type: 'init' } | { type: 'painted' }
-//   out: { type: 'frame', field, obstacle, width, height, status, steps, fixed, perStep }
+// steps the simulation, posting the vorticity field and obstacle mask when
+// the page asks for a picture.
+//   in:  { type: 'init' } | { type: 'want' }
+//   out: { type: 'frame', field, obstacle, width, height, status, steps }
 //        { type: 'error', status }
 const ENGINE_BUILD = new URL(import.meta.url).searchParams.get('v');
 
@@ -46,70 +46,83 @@ async function init() {
     sim = path === 'webgpu' ? await mod.Sim.createGpu(MODEL, W, H, U, MODE, BLOCK, REFBLOCK) : mod.Sim.createCpu(MODEL, W, H, U, MODE, BLOCK, REFBLOCK);
     label = path === 'webgpu' ? 'WebGPU' : 'wasm single';
   }
-  return { sim, label };
+  return { sim, label, gpu: path === 'webgpu' };
 }
 
-// One frame is a batch of steps, the readback and the field. Time one frame
-// at two step counts (best of five after a warm-up) and fit
-// ms = fixed + perStep * steps.
-async function calibrate(sim) {
-  const frame = async (n) => {
-    const t = performance.now();
-    sim.advance(n);
-    await sim.sample();
-    sim.field();
-    sim.obstacle();
-    return performance.now() - t;
-  };
-  const best = async (n) => {
-    const v = [];
-    for (let i = 0; i < 5; i++) v.push(await frame(n));
-    return Math.min(...v);
-  };
-  await frame(1);
-  const lo = await best(1);
-  const hi = await best(9);
-  const perStep = Math.max((hi - lo) / 8, 0.01);
-  return { fixed: Math.max(lo - perStep, 0), perStep };
-}
-
-// Pacing. The page paints one frame per 1/60 s (every second refresh on a
-// 120 Hz display) and answers each paint with { type: 'painted' }. The loop
-// keeps at most two frames unpainted, so frames are made at the pace they are
-// shown. Every frame runs the same whole number of steps, fixed once from the
-// calibration so that the steps, the readback and the field take 85% of 1/60 s:
-// the motion advances by equal amounts at an even pace.
+// Running and drawing are separate. The simulation steps in batches as
+// fast as it can and never waits on the display; the time average is folded
+// on the device, so stepping reads nothing back. The page asks for a picture
+// when it is ready to draw one ({ type: 'want' }) and gets the latest field.
+//
+// On WebGPU one read-back of the average is kept in flight: a new one is
+// queued as soon as the last has landed. The worker stops queueing steps
+// only when more than Q ms of work is queued beyond the last landed read,
+// with Q the shortest recent read delay and at least one display frame: the
+// GPU stays busy even where a read takes long to land, and the queue stays
+// short enough for a read to land about every frame. A batch is 1/120 s of the measured stepping rate (at least one
+// sample, 5 steps). On the CPU paths the field is always current and the
+// same batch rule keeps each batch near 8 ms of work.
+const SAMPLE_EVERY = 5;
+const MAX_BATCH = 4000;
 const FRAME_MS = 1000 / 60;
-let unpainted = 0;
-let wake = null;
+let wanted = true;
 
-async function loop({ sim, label }) {
-  const { fixed, perStep } = await calibrate(sim);
-  const n = Math.min(4000, Math.max(1, Math.floor((0.85 * FRAME_MS - fixed) / perStep)));
-  const recent = [];
+// A yield to the event loop that is not clamped like setTimeout.
+const channel = new MessageChannel();
+let resume = null;
+channel.port1.onmessage = () => resume && resume();
+const yieldNow = () => new Promise((r) => { resume = r; channel.port2.postMessage(0); });
+
+async function loop({ sim, label, gpu }) {
+  let batch = SAMPLE_EVERY;
+  let issued = 0;
+  let readAt = 0; // steps issued when the read in flight was queued
+  let readT = 0; // and when
+  let done = 0; // steps known to be done (at the last landed read)
+  let rate = 0; // steps per second
+  const landed = []; // [steps, time] at the recent landed reads (GPU) or batches (CPU)
+  const delays = []; // recent read delays, ms
   while (true) {
-    while (unpainted >= 2) await new Promise((r) => (wake = r));
-    sim.advance(n);
-    await sim.sample();
-    const field = sim.field();
-    const obstacle = sim.obstacle();
+    sim.advance(batch);
+    issued += batch;
+    if (!sim.reading) {
+      sim.requestField();
+      readAt = issued;
+      readT = performance.now();
+    }
+    const q = Math.max(FRAME_MS, Math.min(...delays, Infinity));
+    const queued = rate > 0 ? ((issued - done) / rate) * 1000 : issued - readAt >= 2 * batch ? Infinity : 0;
+    if (sim.reading && queued > q) await sim.waitField();
+    else await yieldNow();
+    if (!sim.fieldReady()) continue;
+    // A newer field: from the read just landed (GPU) or current (CPU).
     const now = performance.now();
-    recent.push([n, now]);
-    if (recent.length > 21) recent.shift();
-    const steps = recent.reduce((a, r) => a + r[0], 0) - recent[0][0];
-    const ms = now - recent[0][1];
-    const rate = ms > 0 ? (steps * sim.sites) / (ms / 1000) : 0;
-    const status = `${label}, ${(rate / 1e6).toFixed(0)} M site updates/s · Re ${sim.reynolds.toFixed(0)}`;
-    unpainted++;
-    post({ type: 'frame', field, obstacle, width: sim.imageWidth, height: sim.imageHeight, status, steps: n, fixed, perStep }, [field.buffer, obstacle.buffer]);
-    await new Promise((r) => setTimeout(r, 0));
+    done = gpu ? readAt : issued;
+    if (gpu) {
+      delays.push(now - readT);
+      if (delays.length > 30) delays.shift();
+    }
+    landed.push([done, now]);
+    if (landed.length > 30) landed.shift();
+    const [s0, t1] = landed[0];
+    if (now > t1 && done > s0) rate = ((done - s0) / (now - t1)) * 1000;
+    if (rate > 0) {
+      const target = rate / 120;
+      batch = Math.min(MAX_BATCH, Math.max(SAMPLE_EVERY, Math.round((0.8 * batch + 0.2 * target) / SAMPLE_EVERY) * SAMPLE_EVERY));
+    }
+    if (wanted) {
+      wanted = false;
+      const field = sim.field();
+      const obstacle = sim.obstacle();
+      const status = `${label}, ${((rate * sim.sites) / 1e6).toFixed(0)} M site updates/s · Re ${sim.reynolds.toFixed(0)}`;
+      post({ type: 'frame', field, obstacle, width: sim.imageWidth, height: sim.imageHeight, status, steps: batch }, [field.buffer, obstacle.buffer]);
+    }
   }
 }
 
 self.onmessage = async (e) => {
-  if (e.data.type === 'painted') {
-    unpainted = Math.max(0, unpainted - 1);
-    if (wake) wake();
+  if (e.data.type === 'want') {
+    wanted = true;
     return;
   }
   try {
