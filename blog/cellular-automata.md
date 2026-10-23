@@ -54,7 +54,14 @@ The flow page sets up the classic experiment: a channel, a flat plate across it,
 
 The model is my own variant of FHP, which I call signed ternary. In FHP each link holds a particle or not. Here the grid is divided into blocks of 8 by 8 nodes, and for each block the engine keeps a reference: the equilibrium state that matches the block's density and mean velocity, that is, what a link would hold on average. A link stores only its difference from that reference, as −1, 0 or +1. The mean motion of the fluid lives in the references, and the links carry the fluctuations around it. With less noise to average away, the gas reaches a higher Reynolds number on the same grid.
 
-Each step has the two phases of any lattice gas, streaming and collision. In the streaming phase, values move along their links to the neighbouring node. Because the reference is not the same everywhere, each value that moves is corrected for the difference between the reference it leaves and the one it reaches, and rounded at random to a whole number. What the rounding and the clamp to −1, 0 or +1 leave over goes into the block's reservoir, so nothing is lost. In the collision phase, each node looks up its six values in a collision table, and the nodes of the plate send every particle back where it came from. Everything is computed in integers: mass and momentum are conserved exactly, and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
+As in the original FHP, each step has two phases:
+
+- streaming: each value moves along its link to the neighbouring node;
+- collision: each node looks up its six values in a collision table, and the nodes of the plate send every particle back where it came from.
+
+There is one catch in the streaming. A value only means something next to its reference, so a value that arrives where the reference is higher or lower has to be re-expressed: a +1 over a low reference may be worth only a 0 over a higher one. The correction is usually a fraction, so it is rounded up or down at random, with odds that make it right on average. Whatever does not fit is kept in a reservoir for the block, so nothing is lost.
+
+Everything is computed in integers: mass and momentum are conserved exactly, and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
 
 In pseudo code (the real code is in [the source](https://github.com/ilnmtlbnm/jacobi2000/blob/main/crates/fhp/src/signed/mod.rs)):
 
