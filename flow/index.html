@@ -55,7 +55,13 @@
 
     <canvas id="view" width="128" height="32"></canvas>
     <p>
-      A lattice gas is a fluid made of particles that hop between the points of a hexagonal grid and collide by a fixed rule, an idea of Frisch, Hasslacher and Pomeau from 1986. Nothing else is programmed: the flow around the plate and the vortex street behind it emerge from those collisions alone. Ternary means that each link holds -1, 0 or +1 relative to a local reference, which makes the gas less noisy and lets it reach a higher Reynolds number on the same grid. Black and white are the two directions of rotation, on a grey background; the further from grey, the stronger it is.
+      A lattice gas is a fluid made of particles that hop between the points of a hexagonal grid and collide by a fixed rule. The idea comes from Frisch, Hasslacher and Pomeau in 1986. Nothing else is programmed: the flow around the plate and the vortex street behind it come from those collisions alone.
+    </p>
+    <p>
+      In this ternary version, each link holds &minus;1, 0 or +1 relative to a local reference. That makes the gas less noisy, so it reaches a higher Reynolds number on the same grid.
+    </p>
+    <p>
+      The picture shows how the fluid spins. Black and white are the two directions of rotation on a grey background, and the further from grey, the faster it spins.
     </p>
 
     <hr>
@@ -70,7 +76,7 @@
   </main>
 
   <script type="module">
-    const ENGINE_BUILD = '2026-10-23-flow-v2-12';
+    const ENGINE_BUILD = '2026-10-23-flow-v2-13';
     const statusText = document.getElementById('status-text');
     const canvas = document.getElementById('view');
     const ctx = canvas.getContext('2d');
@@ -91,8 +97,11 @@
       // A narrow column shows the street vertically, inflow at the top: the
       // image is written turned a quarter turn clockwise.
       const vertical = main.clientWidth < 520;
-      const cw = vertical ? height : width;
-      const ch = vertical ? width : height;
+      // Only the part of the channel between the inflow and the outlet zones is shown.
+      const x0 = Math.round(width * 0.075);
+      const x1 = Math.round(width * 0.92);
+      const cw = vertical ? height : x1 - x0;
+      const ch = vertical ? x1 - x0 : height;
       if (canvas.width !== cw || canvas.height !== ch) {
         canvas.width = cw;
         canvas.height = ch;
@@ -100,11 +109,12 @@
       const img = ctx.createImageData(cw, ch);
       const d = img.data;
       for (let i = 0; i < field.length; i++) {
+        const x = i % width;
+        if (x < x0 || x >= x1) continue;
+        const y = (i - x) / width;
         const v = Math.max(-1, Math.min(1, field[i]));
         const g = obstacle[i] ? 0 : 128 - 127 * v;
-        const x = i % width;
-        const y = (i - x) / width;
-        const o = 4 * (vertical ? x * cw + (height - 1 - y) : i);
+        const o = 4 * (vertical ? (x - x0) * cw + (height - 1 - y) : y * cw + x - x0);
         d[o] = g;
         d[o + 1] = g;
         d[o + 2] = g;

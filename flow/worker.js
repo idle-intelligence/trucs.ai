@@ -12,7 +12,7 @@ const MODE = 'randomize';
 // The street the page was tuned on, run on WebGPU, and a smaller one for the
 // CPU paths (a third of the sites, Re about 78), where the street forms in
 // about 8k steps.
-const FULL = { model: 'signed', w: 1536, h: 512, u: 0.25, block: 16, refblock: 8 };
+const FULL = { model: 'signed', w: 2048, h: 768, u: 0.2, block: 8, refblock: 8 };
 const SMALL = { model: 'signed', w: 896, h: 336, u: 0.25, block: 8, refblock: 8 };
 
 function post(msg, transfer) {
