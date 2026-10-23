@@ -46,35 +46,34 @@ The machine was then used for real fluid work. Bruce Boghosian, Washington Taylo
 
 ## In a browser tab
 
-Each site of a lattice gas is either occupied or not, so the flow page averages before it draws: the picture is the spin of the fluid, averaged over blocks of sites and over time.
+The flow page sets up the classic experiment: a channel, a flat plate across it, and fluid entering from the left at constant speed. Nothing else is imposed. After a couple of minutes the wake behind the plate becomes unstable and starts shedding vortices, first on one side and then on the other, at a Reynolds number of about 140.
 
 ![The vortex street behind the plate: alternating white and black spots on a grey background.](/blog/images/flow-street.png)
 
 *The page after a couple of minutes. The picture shows how the fluid spins. Black and white are the two directions of rotation on a grey background, and the further from grey, the faster it spins. The plate is at the left, the flow comes from the left, and the spots are the vortices it sheds.*
 
-A plate stands in a channel and fluid comes in from the left. After a short while the vortex street forms behind the plate. The grid is about 1.6 million nodes, smaller on a phone. When the browser has WebGPU the simulation runs on the GPU, and otherwise it runs on the processor's threads.
+The model is my own variant of FHP, which I call signed ternary. In FHP each link holds a particle or not. Here the grid is divided into blocks of 8 by 8 nodes, and for each block the engine keeps a reference: the equilibrium state that matches the block's density and mean velocity, that is, what a link would hold on average. A link stores only its difference from that reference, as −1, 0 or +1. The mean motion of the fluid lives in the references, and the links carry the fluctuations around it. With less noise to average away, the gas reaches a higher Reynolds number on the same grid.
 
-The CM-2 runs above reached about 100 million site updates per second, on a machine of 64,000 processors, nearly forty years ago. On an RTX 3080, a gaming GPU from 2020, the flow page does about 5 billion: some fifty times more, in a browser tab.
+The rest of the step is the usual one. Values move along their links to the neighbouring node. When a value crosses into another block, it is corrected for the difference between the two references and rounded at random to a whole number. What the rounding and the clamp to −1, 0 or +1 leave over goes into the block's reservoir, so nothing is lost. Then each node looks up its six values in a collision table, and the nodes of the plate send every particle back where it came from. Everything is computed in integers: mass and momentum are conserved exactly, and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
 
-The model on the page is my own variant, signed ternary. Each link holds only the difference from a reference equilibrium set for each block of the grid: −1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
-
-One step of the update, in pseudo code. The real code is in [the source](https://github.com/ilnmtlbnm/jacobi2000/blob/main/crates/fhp/src/signed/mod.rs).
+In pseudo code (the real code is in [the source](https://github.com/ilnmtlbnm/jacobi2000/blob/main/crates/fhp/src/signed/mod.rs)):
 
 ```
 for every node x:
     for each of the six links d:
         v = value of link d at the neighbour it comes from
         v = v + random_round(reference[neighbour][d] - reference[x][d])
-        v = clamp(v, -1, +1)
+        v = clamp(v, -1, +1)          # the remainder goes to the reservoir
         link[d] = v
-    # what rounding and clamping leave over goes to a reservoir
     if x is part of the plate:
         send every particle back where it came from
     else:
         new state = collision_table[link values, random bit]
 ```
 
-The reference is the local average flow that each value is measured against. A value of −1, 0 or +1 is a small deviation from it.
+A single node is still noisy, so the page averages before it draws: the picture is the spin of the fluid over blocks of nodes, averaged over time. The grid has about 1.6 million nodes (fewer on a phone). It runs on the GPU when the browser has WebGPU, and otherwise on the processor's threads.
+
+The CM-2 runs above reached about 100 million site updates per second, on a machine of 64,000 processors, nearly forty years ago. On an RTX 3080, a gaming GPU from 2020, the flow page does about 5 billion: some fifty times more, in a browser tab.
 
 ---
 
