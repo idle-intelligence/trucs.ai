@@ -16,7 +16,7 @@ Read the code: [github.com/ilnmtlbnm/jacobi2000](https://github.com/ilnmtlbnm/ja
 
 ## A gas made of bits
 
-In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule. But on a square grid, seen from far away, the gas flows differently along the grid lines and along the diagonals, while a real fluid flows the same way in every direction.
+In 1973 Jean Hardy, Yves Pomeau and Olivier de Pazzis proposed a fluid made of particles on a square grid ([J. Math. Phys. 14, 1746](https://doi.org/10.1063/1.1666248)). Each particle moves one step per tick along a link, and when two meet head on they collide by a fixed rule. But on a square grid, seen from far away, the gas does not follow the Navier–Stokes equation, the equation of motion of real fluids: the same flow behaves differently along the grid lines and along the diagonals.
 
 Put an obstacle in a stream of fluid and it sheds a street of vortices behind it, turning one way and then the other. A famous and impressive example is wind blowing clouds past an island, where the vortices can be seen from space.
 
@@ -24,7 +24,7 @@ Put an obstacle in a stream of fluid and it sheds a street of vortices behind it
 
 *A von Kármán vortex street in the clouds downwind of one of the Juan Fernández Islands, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg).*
 
-A lattice gas reproduces these vortices from a few simple rules. Its particles move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours and the symmetry is hexagonal, the flow comes out the same in every direction and follows the equations of fluid flow ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
+A lattice gas reproduces these vortices from a few simple rules. Its particles move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours, such a gas of on-or-off particles does follow the Navier–Stokes equation, and that it can be used to design simple, massively parallel computing machines ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
 
 Here is one node of that grid and its six links, with the collision rule at its simplest.
 
