@@ -40,7 +40,7 @@ In [Richard Feynman and the Connection Machine](https://longnow.org/ideas/richar
 
 ![A Connection Machine CM-2 with its red LED panels lit, next to its DataVault storage unit.](/blog/images/cm2-lit.jpg)
 
-*A Connection Machine CM-2 and its DataVault storage unit. Photo: Logg Tandy, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Connection_Machine_CM-2_and_DataVault_at_Computer_Museum_of_America.png) (background removed).*
+*A Connection Machine CM-2 and its DataVault storage unit. Photo: Logg Tandy, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Connection_Machine_CM-2_and_DataVault_at_Computer_Museum_of_America.png).*
 
 The machine was then used for real fluid work. Bruce Boghosian, Washington Taylor, Daniel Rothman and Ralph Santos ran a two-colour variant of the triangular-lattice gas on a CM-2, at about 100 million site updates per second ([talk slides](https://people.csail.mit.edu/bradley/cm5docs/Cellular-Automata-Simulation-on-CM-2.pdf)). Chen, Doolen and Eggert ran the standard seven-bit gas in two dimensions, including the [Kelvin-Helmholtz instability](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
 
