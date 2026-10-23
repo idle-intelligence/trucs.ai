@@ -21,10 +21,6 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>A <a href="/swarm/">swarm</a> of LLMs running on users idle compute</dd>
   <dd>A small <a href="/classifier/">BERT Classifier</a></dd>
 
-  <dt>sensors</dt>
-  <dd>Browser <a href="/sensors/">sensors</a></dd>
-  <dd>Live <a href="/sensors/plots/">sensor plots</a></dd>
-
   <dt>STT → LLM → TTS</dt>
   <dd>Browser <a href="/stt/">Speech-to-text</a></dd>
   <dd>Browser <a href="/llm/">LLM</a></dd>
@@ -33,17 +29,15 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd><a href="/stt-llm-tts/">STT → LLM → TTS</a></dd>
   <dd><a href="/sts/">Speech-to-speech</a> (almost)</dd>
 
-  <dt>Time series</dt>
-  <dd>Browser <a href="/t0/">forecasting</a></dd>
-
-  <dt>Weather</dt>
+  <dt>Data</dt>
+  <dd>Browser <a href="/sensors/">sensors</a></dd>
+  <dd>Live <a href="/sensors/plots/">sensor plots</a></dd>
   <dd>Browser <a href="/knn-weather/">weather</a></dd>
+  <dd>Browser <a href="/t0/">forecasting</a></dd>
 
   <dt>Cellular Automata</dt>
   <dd>LLM of <a href="/llm-life/">Life</a></dd>
-
-  <dt>Fluids</dt>
-  <dd>A lattice gas <a href="/flow/">flowing past a plate</a></dd>
+  <dd>Lattice gas <a href="/flow/">flow</a></dd>
 </dl>
   
 ---
