@@ -9,7 +9,7 @@ description: "A fluid made of particles on a grid, from the 1986 lattice gas pap
 
 A cellular automaton is a grid of cells, each holding a small state, updated all at once by the same rule applied to every cell and its neighbours.
 
-Stanislaw Ulam and John von Neumann came up with the idea at Los Alamos in the 1940s: Ulam was studying crystal growth on a lattice, and von Neumann used a grid of cells to build a machine that could copy itself. The one most people know is John Conway's Game of Life, which Martin Gardner described in [Scientific American in October 1970](https://doi.org/10.1038/scientificamerican1070-120). In my [llm-life](/llm-life/) demo, a small language model plays Life in your browser, one cell at a time. This post is about another use of the idea, as a way of doing physics, with the same kind of rule on a different grid.
+Stanislaw Ulam and John von Neumann came up with the idea at Los Alamos in the 1940s: Ulam was studying crystal growth on a lattice, and von Neumann used a grid of cells to build a machine that could copy itself. One of the best-known examples is John Conway's Game of Life, which Martin Gardner described in [Scientific American in October 1970](https://doi.org/10.1038/scientificamerican1070-120). In my [llm-life](/llm-life/) demo, a small language model plays Life in your browser, one cell at a time. This post is about another use of the idea, as a way of doing physics, with the same kind of rule on a different grid.
 
 Try the demo: [flow](/flow/)  
 Read the code: [github.com/ilnmtlbnm/jacobi2000](https://github.com/ilnmtlbnm/jacobi2000)
@@ -22,7 +22,7 @@ Put an obstacle in a stream of fluid and it sheds a street of vortices behind it
 
 ![Clouds streaming past an island, forming a trail of vortices that turn in alternate directions.](/blog/images/juan-fernandez-vortices.jpg)
 
-*A von Kármán vortex street in the clouds downwind of one of the Juan Fernández Islands, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg) (rotated and cropped).*
+*A von Kármán vortex street in the clouds downwind of one of the Juan Fernández Islands, off Chile, seen by Landsat 7 on 15 September 1999. The island is at the top left. Image: Robert Cahalan, NASA/GSFC, public domain, [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Vortex-street-1.jpg).*
 
 The flow page gets the same street from a very different starting point: a lattice gas, a fluid made of particles that move along the six directions of a triangular grid, one step per tick, and collide at the nodes by a fixed rule. Nothing else is programmed: the flow around an obstacle and the vortex street behind it come from those collisions alone. In 1986 Uriel Frisch, Brosl Hasslacher and Yves Pomeau showed that on a triangular grid, where each node has six neighbours and the symmetry is hexagonal, the flow comes out the same in every direction and follows the equations of fluid flow ([Phys. Rev. Lett. 56, 1505](https://doi.org/10.1103/PhysRevLett.56.1505)). Their model is known as FHP, for Frisch, Hasslacher and Pomeau.
 
@@ -34,15 +34,15 @@ Here is one node of that grid and its six links, with the collision rule at its 
 
 ## The Connection Machine
 
-Danny Hillis's Thinking Machines built the Connection Machine in the 1980s: a computer of about 64,000 very small processors that all run the same instruction at once. A lattice gas suits it. Each node holds a few bits and follows the same rule as its neighbours, so one processor can take one node.
+Danny Hillis's Thinking Machines built the Connection Machine in the 1980s: a computer of about 64,000 very small processors that all run the same instruction at once. It is a perfect machine for cellular automata, because each processor can take one cell. A node of a lattice gas holds a few bits and follows the same rule as its neighbours.
 
-In [Richard Feynman and the Connection Machine](https://longnow.org/ideas/richard-feynman-and-the-connection-machine/), Hillis tells how Feynman, who called the idea of a parallel computer with a million processors "positively the dopiest idea I ever heard", agreed to spend a summer at the company anyway. The first program run on the machine, in April 1985, was Conway's Life. Later Stephen Wolfram ran a lattice gas of the Frisch, Hasslacher and Pomeau kind on it and made a movie of turbulent flow in two dimensions, which got everyone excited about physical simulation, Feynman included. Feynman's own way of explaining it was a perfect ball bearing that moves at a single speed in one of six directions.
+In [Richard Feynman and the Connection Machine](https://longnow.org/ideas/richard-feynman-and-the-connection-machine/), Hillis tells how Feynman first called the idea of a parallel computer with a million processors "positively the dopiest idea I ever heard", then agreed to spend a summer at the company. The first program run on the machine, in April 1985, was Conway's Life. Later Stephen Wolfram ran a lattice gas of the Frisch, Hasslacher and Pomeau kind on it and made a movie of turbulent flow in two dimensions.
 
-![Richard Feynman, outdoors in 1984, in a black and white photograph.](/blog/images/feynman-1984.jpg)
+![A Connection Machine CM-2 with its red LED panels lit, next to its DataVault storage unit.](/blog/images/cm2-lit.jpg)
 
-*Richard Feynman in 1984, while working at Thinking Machines on the design of the Connection Machine. Photo: Tamiko Thiel, [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:RichardFeynman-PaineMansionWoods1984_copyrightTamikoThiel_bw.jpg).*
+*A Connection Machine CM-2 and its DataVault storage unit. Photo: Logg Tandy, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), [via Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Connection_Machine_CM-2_and_DataVault_at_Computer_Museum_of_America.png) (background removed).*
 
-The machine was then used for real fluid work. Chen, Doolen and Eggert ran the standard seven-bit lattice gas in two dimensions on a CM-2, including the [Kelvin-Helmholtz instability](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
+The machine was then used for real fluid work. Bruce Boghosian, Washington Taylor, Daniel Rothman and Ralph Santos ran a two-colour variant of the triangular-lattice gas on a CM-2, about 95 million sites at 100 million site updates per second ([talk slides](https://people.csail.mit.edu/bradley/cm5docs/Cellular-Automata-Simulation-on-CM-2.pdf)). Chen, Doolen and Eggert ran the standard seven-bit gas in two dimensions, including the [Kelvin-Helmholtz instability](https://doi.org/10.1142/9789814503525_0023). At MIT, the Information Mechanics group built a machine of its own for this kind of simulation, CAM-8, and its [1994 brochure](http://www.ai.mit.edu/projects/im/broch/lat1.html) shows a lattice gas flow in a channel.
 
 ## From bits to averages
 
@@ -50,29 +50,33 @@ A lattice gas is noisy. Every site is either occupied or not, so to see a smooth
 
 ## Back to the particles, in a tab
 
-The flow page goes back to the particles. It is a lattice gas of about 1.6 million nodes, 2048 by 768, running in your browser on the GPU through WebGPU, with a plate in the middle of the channel. On the RTX 3080 I measured it on, it does about five billion node updates per second. When there is no GPU, it falls back to a smaller grid on the processor.
-
-The model on the page is my own variant, signed ternary. Each link holds only the difference from a reference equilibrium set for each block of the grid: −1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
-
-The core of one step, for each node, is three moves. Each link takes the value its neighbour had a step ago, corrected for how the local reference differs between the two nodes and rounded at random to a whole number. The value is clamped back to −1, 0 or +1. The six values then index a table that holds the collision rule:
-
-```rust
-*dv = self.delta[(c & STATE) as usize][d] as i32;
-*rv = p[d].wrapping_sub(pi[d]);
-// ...
-let k = sround(rp[x], lowbias32(ks ^ i.wrapping_mul(8).wrapping_add(d as u32).wrapping_mul(0x9e37_79b9)));
-let v = dlp[x] + k;
-let c = v.clamp(-1, 1);
-code[x] += (c + 1) as u32 * POW3[d] as u32;
-// ...
-*o = if own & OBST != 0 { OBST | crate::ternary::bounce(s) } else { self.table.collide(s, rnd, rule) };
-```
-
-`delta` is the −1, 0 or +1 value of a link, `p` is the reference at a node, `code` packs the six values into one number in base 3, and `OBST` marks the plate, which bounces particles back.
+The flow page does the opposite. It keeps the particles and averages the picture instead: what it draws is the spin of the fluid, averaged over blocks of sites and over time.
 
 ![The vortex street behind the plate: alternating white and black spots on a grey background.](/blog/images/flow-street.png)
 
 *The page after a couple of minutes. The picture shows how the fluid spins. Black and white are the two directions of rotation on a grey background, and the further from grey, the faster it spins. The plate is at the left, the flow comes from the left, and the spots are the vortices it sheds.*
+
+A plate stands in a channel and fluid comes in from the left. After a short while the vortex street forms behind the plate. The grid is about 1.6 million nodes, smaller on a phone. When the browser has WebGPU the simulation runs on the GPU, and otherwise it runs on the processor's threads.
+
+The model on the page is my own variant, signed ternary. Each link holds only the difference from a reference equilibrium set for each block of the grid: −1, 0 or +1. The gas carries less noise, so it reaches a higher Reynolds number on the same grid. Everything is computed in integers, so mass and momentum are conserved exactly and the GPU and the CPU give the same result bit for bit. I found no earlier lattice gas built this way.
+
+One step of the update, in pseudo code. The real code is in [the source](https://github.com/ilnmtlbnm/jacobi2000/blob/main/crates/fhp/src/signed/mod.rs).
+
+```
+for every node x:
+    for each of the six links d:
+        v = value of link d at the neighbour it comes from
+        v = v + random_round(reference[neighbour][d] - reference[x][d])
+        v = clamp(v, -1, +1)
+        link[d] = v
+    # what rounding and clamping leave over goes to a reservoir
+    if x is part of the plate:
+        send every particle back where it came from
+    else:
+        new state = collision_table[link values, random bit]
+```
+
+The reference is the local average flow that each value is measured against. A value of −1, 0 or +1 is a small deviation from it.
 
 ---
 
