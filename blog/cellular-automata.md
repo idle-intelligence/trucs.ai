@@ -52,7 +52,11 @@ The flow page sets up the classic experiment: a channel, a flat plate across it,
 
 *The page after a couple of minutes. The picture shows how the fluid spins. Black and white are the two directions of rotation on a grey background, and the further from grey, the faster it spins. The plate is at the left, the flow comes from the left, and the spots are the vortices it sheds.*
 
-The model is my own variant of FHP, which I call signed ternary. In FHP each link holds a particle or not. Here the grid is divided into blocks of 8 by 8 nodes, and for each block the engine keeps a reference: for each of the six directions, the number of particles a link would carry on average if the fluid in the block were at equilibrium, with the block's density and mean velocity. It is a fraction, for example 0.3 of a particle. A link stores only its difference from that reference, as −1, 0 or +1. The mean motion of the fluid lives in the references, and the links carry the fluctuations around it. With less noise to average away, the gas reaches a higher Reynolds number on the same grid.
+The model is my own variant of FHP, which I call signed ternary. In FHP, each link holds one bit: a particle or no particle. In signed ternary, each link holds one of three values, −1, 0 or +1, measured against a reference.
+
+The reference is the average flow, computed over blocks of 8 by 8 nodes: how many particles each of the six links should carry on average, given the density and the velocity of the fluid in that block. A link then only records whether it carries one particle more than that average, one less, or the same.
+
+The smooth part of the flow is held by the references, and the links only carry the fluctuations around it. There is less noise, so the gas reaches a higher Reynolds number on the same grid.
 
 As in the original FHP, each step has two phases:
 
