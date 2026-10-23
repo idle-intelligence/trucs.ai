@@ -78,7 +78,7 @@ for every node x:
 
 A single node is still noisy, so the page averages before it draws: the picture is the spin of the fluid over blocks of nodes, averaged over time. The grid has about 1.6 million nodes (fewer on a phone). It runs on the GPU when the browser has WebGPU, and otherwise on the processor's threads.
 
-The CM-2 runs above reached about 100 million site updates per second, on a machine of 64,000 processors, nearly forty years ago. On an RTX 3080, a gaming GPU from 2020, the flow page does about 5 billion: some fifty times more, in a browser tab.
+The CM-2 runs above reached about 100 million site updates per second, on a machine of 64,000 processors, nearly forty years ago. The flow page does about a billion, in a browser tab on a laptop.
 
 ---
 
