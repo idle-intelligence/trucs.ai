@@ -18,7 +18,7 @@ This is a collection of experiments and ideas, mainly around running <s>AI</s> s
   <dd>An <a href="/astres/">Unknown Pleasures</a> visualisation</dd>
 
   <dt>Ruche (inference at home)</dt>
-  <dd>A <a href="/swarm/">swarm</a> of LLMs running on users idle compute</dd>
+  <dd>A <a href="/swarm/">swarm</a> of LLMs running on users' idle compute</dd>
   <dd>A small <a href="/classifier/">BERT Classifier</a></dd>
 
   <dt>STT → LLM → TTS</dt>
