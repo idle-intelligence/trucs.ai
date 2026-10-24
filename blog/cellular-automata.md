@@ -74,7 +74,7 @@ for every node x:
         v = value of link d at the neighbour it comes from
         shift = reference[neighbour][d] - reference[x][d]
         v = v + random_round(shift)
-        v = clamp(v, -1, +1)          # the remainder goes to the reservoir
+        v = clamp(v, -1, +1)
         link[d] = v
     if x is part of the plate:
         send every particle back where it came from
