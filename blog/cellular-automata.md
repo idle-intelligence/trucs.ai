@@ -84,7 +84,7 @@ for every node x:
 
 A single node is still noisy, so the picture is averaged before it is drawn: it shows the spin of the fluid over blocks of nodes, averaged over time. The grid has about 1.6 million nodes (fewer on a phone).
 
-The simulation is written in Rust and compiled to WebAssembly, following the design of my [lean](https://github.com/idle-intelligence/llm-web) inference engine: one source for the GPU and the CPU, with the same results on both. It runs in a web worker, apart from the page, on the GPU through WebGPU when the browser has it, and otherwise on the processor's threads. The worker steps the gas and keeps the averaged field up to date; the page only asks for the latest values and draws them.
+The simulation is written in Rust and compiled to WebAssembly, following the design of my [lean](https://github.com/idle-intelligence/llm-web) inference engine: one source for the GPU and the CPU, with the same results on both. It runs in a web worker, apart from the page, on the GPU through WebGPU when the browser has it, and otherwise on the processor's threads. The worker runs the simulation and keeps the averaged field up to date; the page only asks for the latest values and draws them.
 
 The CM-2 runs above reached about 100 million site updates per second, on a machine of 64,000 processors, nearly forty years ago. The flow page does about a billion, in a browser tab on a laptop.
 
